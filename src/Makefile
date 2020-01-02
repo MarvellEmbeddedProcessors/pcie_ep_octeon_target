@@ -58,6 +58,7 @@ OBJS += octeon_poll.o
 OBJS += cavium_proc.o
 OBJS += octeon_device.o
 OBJS += octeon_mem_ops.o
+OBJS += facility.o
 
 # The driver object file
 obj-m         :=  pcie_host.o

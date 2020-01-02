@@ -1,3 +1,7 @@
+v0.2
+----
+- support for facility framework
+
 v0.1
 ----
 - basic device initialization (taken from cnnic83xx)

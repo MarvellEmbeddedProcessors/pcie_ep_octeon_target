@@ -1597,18 +1597,23 @@ void npu_mem_and_intr_test (octeon_device_t *octeon_dev,
 }
 
 struct npu_bar_map npu_memmap_info;
+
+static void npu_bar_map_save(void *src)
+{
+	memcpy(&npu_memmap_info, src, sizeof(struct npu_bar_map));
+	npu_barmap_dump(&npu_memmap_info);
+}
+
 void octeon_dump_npu_bar1_map (octeon_device_t *octeon_dev, uint32_t offset)
 {
 	printk("%s: invoked; offset=0x%X\n", __func__, offset);
-	//TODO: fix hardcoding of bar index to mmio[]
-	memcpy(&npu_memmap_info, octeon_dev->mmio[1].hw_addr + offset,
-	       sizeof(struct npu_bar_map));
 	npu_barmap_dump((void *)&npu_memmap_info);
 	//TODO: check verion in barmap; Error if host and NPU use different version
 	npu_mem_and_intr_test(octeon_dev, &npu_memmap_info);
 }
 
 #define NPU_BASE_READY_MAGIC 0xABCDABCD
+extern void mv_facility_conf_init(octeon_device_t *oct);
 oct_poll_fn_status_t 
 octeon_wait_for_npu_base(void *octptr, unsigned long arg UNUSED)
 {
@@ -1631,7 +1636,9 @@ octeon_wait_for_npu_base(void *octptr, unsigned long arg UNUSED)
 		}
 		printk("%s: CN83xx NPU is ready; MAGIC=0x%llX; memmap=0x%llX\n",
 		       __func__, reg_val & 0xffffffff, reg_val >> 32);
+		npu_bar_map_save(octeon_dev->mmio[1].hw_addr + (reg_val >> 32));
 		octeon_dump_npu_bar1_map(octeon_dev, reg_val >> 32);
+		mv_facility_conf_init(octeon_dev);
 	}
 	return OCT_POLL_FN_FINISHED;
 }

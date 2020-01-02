@@ -181,7 +181,7 @@ static void otx_init_device_list(void)
 	memset(oceton_device, 0, (sizeof(void *) * MAX_OTX_DEVICES));
 }
 
-#define OTX_VERSION "DEVEL-0.1"
+#define OTX_VERSION "DEVEL-0.2"
 int otx_base_init_module(void)
 {
 	int ret;
