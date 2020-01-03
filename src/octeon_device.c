@@ -1580,20 +1580,30 @@ int dump_hostfw_config(octeon_config_t * temp_oct_conf)
 void npu_mem_and_intr_test (octeon_device_t *octeon_dev,
 			    struct npu_bar_map *barmap)
 {
+	struct facility_bar_map *facility_map;
+
 	//write to first 4-bytes of every region
+	facility_map = &barmap->facility_map[MV_FACILITY_CONTROL];
 	*(volatile uint32_t *)(octeon_dev->mmio[1].hw_addr +
-				barmap->ctrl_offset) = 0xA5A5A5A5;
+				facility_map->offset) = 0xA5A5A5A5;
+
+	facility_map = &barmap->facility_map[MV_FACILITY_MGMT_NETDEV];
 	*(volatile uint32_t *)(octeon_dev->mmio[1].hw_addr +
-				barmap->mgmt_netdev_offset) = 0xA6A6A6A6;
+				facility_map->offset) = 0xA6A6A6A6;
+
+	facility_map = &barmap->facility_map[MV_FACILITY_NW_AGENT];
 	*(volatile uint32_t *)(octeon_dev->mmio[1].hw_addr +
-				barmap->nw_agent_offset) = 0x5A5A5A5A;
+				facility_map->offset) = 0x5A5A5A5A;
+
+	facility_map = &barmap->facility_map[MV_FACILITY_RPC];
 	*(volatile uint32_t *)(octeon_dev->mmio[1].hw_addr +
-				barmap->rpc_offset) = 0xABABABAB;
+				facility_map->offset) = 0xABABABAB;
 	//raise control interrupt
-	printk("Raising interrupt; offset=%x, val=%x\n",
-	       barmap->ctrl_dbell_offset, 1 << barmap->ctrl_dbell_bit);
+	facility_map = &barmap->facility_map[MV_FACILITY_CONTROL];
+	printk("Raising interrupt; offset=%x, #spi=%x\n",
+	       barmap->gicd_offset, facility_map->h2t_dbell_start);
 	*(volatile uint32_t *)(octeon_dev->mmio[1].hw_addr +
-		barmap->ctrl_dbell_offset) = (1 << barmap->ctrl_dbell_bit);
+		 barmap->gicd_offset) = facility_map->h2t_dbell_start;
 }
 
 struct npu_bar_map npu_memmap_info;
@@ -1601,15 +1611,6 @@ struct npu_bar_map npu_memmap_info;
 static void npu_bar_map_save(void *src)
 {
 	memcpy(&npu_memmap_info, src, sizeof(struct npu_bar_map));
-	npu_barmap_dump(&npu_memmap_info);
-}
-
-void octeon_dump_npu_bar1_map (octeon_device_t *octeon_dev, uint32_t offset)
-{
-	printk("%s: invoked; offset=0x%X\n", __func__, offset);
-	npu_barmap_dump((void *)&npu_memmap_info);
-	//TODO: check verion in barmap; Error if host and NPU use different version
-	npu_mem_and_intr_test(octeon_dev, &npu_memmap_info);
 }
 
 #define NPU_BASE_READY_MAGIC 0xABCDABCD
@@ -1637,7 +1638,8 @@ octeon_wait_for_npu_base(void *octptr, unsigned long arg UNUSED)
 		printk("%s: CN83xx NPU is ready; MAGIC=0x%llX; memmap=0x%llX\n",
 		       __func__, reg_val & 0xffffffff, reg_val >> 32);
 		npu_bar_map_save(octeon_dev->mmio[1].hw_addr + (reg_val >> 32));
-		octeon_dump_npu_bar1_map(octeon_dev, reg_val >> 32);
+		npu_barmap_dump((void *)&npu_memmap_info);
+		npu_mem_and_intr_test(octeon_dev, &npu_memmap_info);
 		mv_facility_conf_init(octeon_dev);
 	}
 	return OCT_POLL_FN_FINISHED;

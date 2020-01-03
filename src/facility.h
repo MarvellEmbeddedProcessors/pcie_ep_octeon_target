@@ -27,6 +27,8 @@ enum mv_facility_type {
 	MV_FACILITY_COUNT          /* Number of facilities */
 };
 
+#define MV_FACILITY_FLAG(flag) (1 << flag)
+
 /**
  * @brief Facility flags
  *
@@ -37,6 +39,19 @@ enum mv_facility_flag {
         /* Add new flags here */
 	MV_FACILITY_FLAG_MAX /* Number of facilities */
 };
+
+#define FACILITY_NAME_LEN 32
+#define MV_FACILITY_NAME_CONTROL "control"
+#define MV_FACILITY_NAME_MGMT_NETDEV "mgmt-netdev"
+#define MV_FACILITY_NAME_NETWORK_AGENT "network-agent"
+#define MV_FACILITY_NAME_RPC "rpc"
+
+#define MV_FACILITY_CONTROL_IRQ_CNT 1
+#define MV_FACILITY_MGMT_NETDEV_IRQ_CNT 1
+#define MV_FACILITY_NW_AGENT_IRQ_CNT 1
+#define MV_FACILITY_RPC_IRQ_CNT 5
+
+#define MV_FACILITY_MAX_DBELLS 16
 
 /**
  * @brief facility memory address
@@ -53,9 +68,6 @@ typedef union {
 	void *target_addr;
 } mv_facility_map_addr_t;
 
-#define MV_FACILITY_FLAG(flag) (1 << flag)
-#define MV_FACILITY_MAX_DBELLS 16
-
 /**
  * @brief Facility DMA device
  *
@@ -68,12 +80,6 @@ typedef union {
 	/* Target DMA device */
 	struct device *target_dma_dev;
 } mv_facility_dev_t;
-
-#define FACILITY_NAME_LEN 32
-#define MV_FACILITY_NAME_CONTROL "control"
-#define MV_FACILITY_NAME_MGMT_NETDEV "mgmt-netdev"
-#define MV_FACILITY_NAME_NETWORK_AGENT "network-agent"
-#define MV_FACILITY_NAME_RPC "rpc"
 
 /**
  * @brief Facility Configuration

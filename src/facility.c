@@ -19,53 +19,56 @@ void mv_facility_conf_init(octeon_device_t *oct)
 {
 	void *bar1_addr = oct->mmio[1].hw_addr;
 	struct device *dev = &oct->pci_dev->dev;
+	struct facility_bar_map *facility_map;
 
 	memset(&facility_conf, 0,
 	       sizeof(mv_facility_conf_t) * MV_FACILITY_COUNT);
 
 	/* TODO: set name for all facility names */
+	facility_map = &npu_memmap_info.facility_map[MV_FACILITY_CONTROL];
 	facility_conf[MV_FACILITY_CONTROL].type = MV_FACILITY_CONTROL;
 	facility_conf[MV_FACILITY_CONTROL].dma_dev.host_ep_dev = dev;
 	facility_conf[MV_FACILITY_CONTROL].memmap.host_addr =
-				bar1_addr + npu_memmap_info.ctrl_offset;
-	facility_conf[MV_FACILITY_CONTROL].memsize = npu_memmap_info.ctrl_size;
+				bar1_addr + facility_map->offset;
+	facility_conf[MV_FACILITY_CONTROL].memsize = facility_map->size;
 	facility_conf[MV_FACILITY_CONTROL].num_h2t_dbells =
-				npu_memmap_info.ctrl_dbell_count;
+				facility_map->h2t_dbell_count;
 	facility_conf[MV_FACILITY_CONTROL].num_t2h_dbells = 0;
 	strncpy(facility_conf[MV_FACILITY_CONTROL].name,
 		MV_FACILITY_NAME_CONTROL, FACILITY_NAME_LEN-1);
 
+	facility_map = &npu_memmap_info.facility_map[MV_FACILITY_MGMT_NETDEV];
 	facility_conf[MV_FACILITY_MGMT_NETDEV].type = MV_FACILITY_MGMT_NETDEV;
 	facility_conf[MV_FACILITY_MGMT_NETDEV].dma_dev.host_ep_dev = dev;
 	facility_conf[MV_FACILITY_MGMT_NETDEV].memmap.host_addr =
-				bar1_addr + npu_memmap_info.mgmt_netdev_offset;
-	facility_conf[MV_FACILITY_MGMT_NETDEV].memsize =
-				npu_memmap_info.mgmt_netdev_size;
+				bar1_addr + facility_map->offset;
+	facility_conf[MV_FACILITY_MGMT_NETDEV].memsize = facility_map->size;
 	facility_conf[MV_FACILITY_MGMT_NETDEV].num_h2t_dbells =
-				npu_memmap_info.mgmt_netdev_dbell_count;
+				facility_map->h2t_dbell_count;
 	facility_conf[MV_FACILITY_MGMT_NETDEV].num_t2h_dbells = 0;
 	strncpy(facility_conf[MV_FACILITY_MGMT_NETDEV].name,
 		MV_FACILITY_NAME_MGMT_NETDEV, FACILITY_NAME_LEN-1);
 
+	facility_map = &npu_memmap_info.facility_map[MV_FACILITY_NW_AGENT];
 	facility_conf[MV_FACILITY_NW_AGENT].type = MV_FACILITY_NW_AGENT;
 	facility_conf[MV_FACILITY_NW_AGENT].dma_dev.host_ep_dev = dev;
 	facility_conf[MV_FACILITY_NW_AGENT].memmap.host_addr =
-				bar1_addr + npu_memmap_info.nw_agent_offset;
-	facility_conf[MV_FACILITY_NW_AGENT].memsize =
-				npu_memmap_info.nw_agent_size;
+				bar1_addr + facility_map->offset;
+	facility_conf[MV_FACILITY_NW_AGENT].memsize = facility_map->size;
 	facility_conf[MV_FACILITY_NW_AGENT].num_h2t_dbells =
-				npu_memmap_info.nw_agent_dbell_count;
+				facility_map->h2t_dbell_count;
 	facility_conf[MV_FACILITY_NW_AGENT].num_t2h_dbells = 0;
 	strncpy(facility_conf[MV_FACILITY_NW_AGENT].name,
 		MV_FACILITY_NAME_NETWORK_AGENT, FACILITY_NAME_LEN-1);
 
+	facility_map = &npu_memmap_info.facility_map[MV_FACILITY_RPC];
 	facility_conf[MV_FACILITY_RPC].type = MV_FACILITY_RPC;
 	facility_conf[MV_FACILITY_RPC].dma_dev.host_ep_dev = dev;
 	facility_conf[MV_FACILITY_RPC].memmap.host_addr =
-				bar1_addr + npu_memmap_info.rpc_offset;
-	facility_conf[MV_FACILITY_RPC].memsize = npu_memmap_info.rpc_size;
+				bar1_addr + facility_map->offset;
+	facility_conf[MV_FACILITY_RPC].memsize = facility_map->size;
 	facility_conf[MV_FACILITY_RPC].num_h2t_dbells =
-				npu_memmap_info.rpc_dbell_count;
+				facility_map->h2t_dbell_count;
 	facility_conf[MV_FACILITY_RPC].num_t2h_dbells = 0;
 	strncpy(facility_conf[MV_FACILITY_RPC].name,
 		MV_FACILITY_NAME_RPC, FACILITY_NAME_LEN-1);
