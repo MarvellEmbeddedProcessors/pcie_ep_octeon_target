@@ -1,58 +1,41 @@
-#ifndef  _BARMAP_H_
+#ifndef _BARMAP_H_
 #define _BARMAP_H_
 
+#include "facility.h"
+
 #define NPU_BARMAP_VERSION_MAJOR 0
-#define NPU_BARMAP_VERSION_MINOR 1
+#define NPU_BARMAP_VERSION_MINOR 2
 
 #define NPU_BARMAP_VERSION \
 	((NPU_BARMAP_VERSION_MAJOR << 16) | NPU_BARMAP_VERSION_MINOR)
 
-struct npu_module_rmem_info
+/* Facility mapping in BAR1 */
+struct facility_bar_map
 {
-	uint32_t ctrl_offset;		// Offset in BAR1 where Control & Mgmt ring is stored
-	uint32_t ctrl_size;		// Size of the BAR1 space allocated for Control & Mgmt ring
-	uint32_t ctrl_dbell_offset;	// offset in BAR1 where host should write to trigger 
-					// Control & Mgmt interrupt
-	uint32_t ctrl_dbell_bit;	// bit to be set in ctrl_dbell_offset to trigger interrupt
-	uint32_t ctrl_dbell_count;
+	/* Offset of facility memory region in BAR1 */
+        uint32_t offset;
+
+	/* Size of faciltiy memory region in BAR1 */
+        uint32_t size;
+
+	/* First SPI interrupt assigned to facility on host to
+	 * send interrupt to target
+	 */
+        uint32_t h2t_dbell_start;
+
+	/* Number of SPI interrupts assigned for facility
+	 * starting from h2t_dbell_start
+	 */
+        uint32_t h2t_dbell_count;
 };
+
 
 struct npu_bar_map {
 	uint32_t version;		// version of the memory map structure
 
-	uint32_t ctrl_offset;		// Offset in BAR1 where Control & Mgmt ring is stored
-	uint32_t ctrl_size;		// Size of the BAR1 space allocated for Control & Mgmt ring
-	uint32_t ctrl_dbell_offset;	// offset in BAR1 where host should write to trigger 
-					// Control & Mgmt interrupt
-	uint32_t ctrl_dbell_bit;	// bit to be set in ctrl_dbell_offset to trigger interrupt
-	uint32_t ctrl_dbell_count;
-
-	uint32_t mgmt_netdev_offset;	// Offset in BAR1 where mgmt netdev ring is stored
-	uint32_t mgmt_netdev_size;	// size of the BAR1 space allocated for mgmt netdev operations
-	uint32_t mgmt_netdev_dbell_offset;	// offset in BAR1 where eth_mux should write to trigger mgmt netdev
-						// interrupt to NPU.
-	uint32_t mgmt_netdev_dbell_bit;		// bit to be set in mgmt_netdev_dbell_offset to trigger interrupt
-	uint32_t mgmt_netdev_dbell_count;
-
-	uint32_t nw_agent_offset;	// Offset in BAR1 where NPU network agent ring is stored
-	uint32_t nw_agent_size;		// Size of the BAR1 space allocated for NPU network agent
-	uint32_t nw_agent_dbell_offset;	// offset in BAR1 where host should write to trigger 
-					// NPU network agent interrupt
-	uint32_t nw_agent_dbell_bit;	// bit to be set in nw_agent_dbell_offset to trigger interrupt
-	uint32_t nw_agent_dbell_count;
-
-	uint32_t rpc_offset;		// Offset in BAR1 where RPC rings are stored
-	uint32_t rpc_size;		// Size of BAR space allocated for RPC rings
-	uint32_t rpc_dbell_offset;	// There are multiple priority rings and each ring has separate
-					// interrupt bit; this is the bit for first ring;
-	uint32_t rpc_dbell_bit;		// host shall set this bit in rpc_dbell_offset to trigger interrupt for 
-					// priority ring 0;
-	uint32_t rpc_dbell_count;	// number of doorbell interrupts assigned to RPC;
-					// bits rpc_dbell_bit_0 to (rpc_dbell_bit_0+ rpc_dbell_count-1) are 
-					// assigned to RPC rings.
-					//       bit rpc_dbell_bit_0 for ring-0
-					//       bit (rpc_dbell_bit_0 + 1) for ring-1 ring …
-					//       bit (rpc_dbell_bit_0 + rpc_dbell_count - 1) for last ring.
+	struct facility_bar_map facility_map[MV_FACILITY_COUNT];
+	/* offset in BAR1 where GICD CSR space is mapped */
+	uint32_t gicd_offset;
 };
 
 /* BAR1 provides 64MB of OcteonTX memory for Host access in EndPoint mode.
@@ -94,36 +77,82 @@ struct npu_bar_map {
 	(NPU_BARMAP_ENTRY_SIZE * NPU_BARMAP_FIREWALL_MAX_ENTRY)
 
 /* Use last entry of BAR1_INDEX for host to trigger interrupt to NPU */
+#define GICD_SETSPI_NSR  0x40
 #define NPU_BARMAP_SPI_ENTRY  15
 #define NPU_BARMAP_SPI_OFFSET \
-	((NPU_BARMAP_SPI_ENTRY * NPU_BARMAP_ENTRY_SIZE) | \
-	 NPU_GICD_DBELL_OFFSET)
+	((NPU_BARMAP_SPI_ENTRY * NPU_BARMAP_ENTRY_SIZE) + \
+	 GICD_SETSPI_NSR)
 #define NPU_GICD_BASE          0x801000000000
-#define NPU_GICD_DBELL_OFFSET  0x204 /* GICD_ISPENDR(1..4) */
 
-static inline void npu_barmap_get_info(struct npu_bar_map *map)
+#define NPU_FACILITY_CONTROL_IRQ_IDX 0
+#define NPU_FACILITY_MGMT_NETDEV_IRQ_IDX \
+	(NPU_FACILITY_CONTROL_IRQ_IDX + MV_FACILITY_CONTROL_IRQ_CNT)
+#define NPU_FACILITY_NW_AGENT_IRQ_IDX \
+	(NPU_FACILITY_MGMT_NETDEV_IRQ_IDX + MV_FACILITY_MGMT_NETDEV_IRQ_CNT)
+#define NPU_FACILITY_RPC_IRQ_IDX \
+	(NPU_FACILITY_NW_AGENT_IRQ_IDX + MV_FACILITY_NW_AGENT_IRQ_CNT)
+#define NPU_FACILITY_IRQ_CNT \
+	(NPU_FACILITY_RPC_IRQ_IDX + MV_FACILITY_RPC_IRQ_CNT)
+
+#define NPU_SPI_IRQ_START 32
+
+static inline int npu_bar_map_init(struct npu_bar_map *map,
+				   int first_irq, int irq_count)
 {
+	struct facility_bar_map *facility_map;
+
+	/* Translate SPI IRQ index to global IRQ index */
+	first_irq = NPU_SPI_IRQ_START + first_irq;
 	if (map == NULL) {
 		printk("%s: Error; NULL pointer\n", __func__);
-		return;
+		return -1;
 	}
 
+	/* Validate sufficient IRQ's are provided by FDT */
+	if (irq_count < NPU_FACILITY_IRQ_CNT) {
+		printk("Error: Insufficient number of IRQs in FDT\n");
+		printk("Required IRQ count=%d; IRQs provided by FDT=%d\n",
+		       NPU_FACILITY_IRQ_CNT, irq_count);
+		return -1;
+	}
 	map->version =  NPU_BARMAP_VERSION;
-	map->ctrl_offset = NPU_BARMAP_CTRL_OFFSET;
-	map->ctrl_size   = NPU_BARMAP_CTRL_SIZE;
 
-	map->mgmt_netdev_offset = NPU_BARMAP_MGMT_NETDEV_OFFSET;
-	map->mgmt_netdev_size   = NPU_BARMAP_MGMT_NETDEV_SIZE;
+	facility_map = &map->facility_map[MV_FACILITY_CONTROL];
+	facility_map->offset = NPU_BARMAP_CTRL_OFFSET;
+	facility_map->size = NPU_BARMAP_CTRL_SIZE;
+	facility_map->h2t_dbell_start =
+		first_irq + NPU_FACILITY_CONTROL_IRQ_IDX;
+	facility_map->h2t_dbell_count = MV_FACILITY_CONTROL_IRQ_CNT;
 
-	map->nw_agent_offset = NPU_BARMAP_NW_AGENT_OFFSET;
-	map->nw_agent_size   = NPU_BARMAP_NW_AGENT_SIZE;
+	facility_map = &map->facility_map[MV_FACILITY_MGMT_NETDEV];
+	facility_map->offset = NPU_BARMAP_MGMT_NETDEV_OFFSET;
+	facility_map->size = NPU_BARMAP_MGMT_NETDEV_SIZE;
+	facility_map->h2t_dbell_start =
+		first_irq + NPU_FACILITY_MGMT_NETDEV_IRQ_IDX;
+	facility_map->h2t_dbell_count = MV_FACILITY_MGMT_NETDEV_IRQ_CNT;
 
-	map->rpc_offset = NPU_BARMAP_RPC_OFFSET;
-	map->rpc_size   = NPU_BARMAP_RPC_SIZE;
+	facility_map = &map->facility_map[MV_FACILITY_NW_AGENT];
+	facility_map->offset = NPU_BARMAP_NW_AGENT_OFFSET;
+	facility_map->size = NPU_BARMAP_NW_AGENT_SIZE;
+	facility_map->h2t_dbell_start =
+		first_irq + NPU_FACILITY_NW_AGENT_IRQ_IDX;
+	facility_map->h2t_dbell_count = MV_FACILITY_NW_AGENT_IRQ_CNT;
+
+	facility_map = &map->facility_map[MV_FACILITY_RPC];
+	facility_map->offset = NPU_BARMAP_RPC_OFFSET;
+	facility_map->size = NPU_BARMAP_RPC_SIZE;
+	facility_map->h2t_dbell_start =
+		first_irq + NPU_FACILITY_RPC_IRQ_IDX;
+	facility_map->h2t_dbell_count = MV_FACILITY_RPC_IRQ_CNT;
+
+	map->gicd_offset = NPU_BARMAP_SPI_OFFSET;
+	return 0;
 }
 
 static inline void npu_barmap_dump(struct npu_bar_map *map)
 {
+	struct facility_bar_map *facility_map;
+
 	if (map == NULL) {
 		printk("%s: Error; NULL pointer\n", __func__);
 		return;
@@ -132,22 +161,26 @@ static inline void npu_barmap_dump(struct npu_bar_map *map)
 	printk("Version: major=%d minor=%d\n",
 	       map->version >> 16, map->version & 0xffff);
 
-	printk("Control: Offset=%x, size=%x, db_offset=%x, db_bit=%d db_count=%d\n",
-	       map->ctrl_offset, map->ctrl_size, map->ctrl_dbell_offset,
-	       map->ctrl_dbell_bit, map->ctrl_dbell_count);
+	facility_map = &map->facility_map[MV_FACILITY_CONTROL];
+	printk("Control: Offset=%x, size=%x, first_db=%d db_count=%d\n",
+	       facility_map->offset, facility_map->size,
+	       facility_map->h2t_dbell_start, facility_map->h2t_dbell_count);
 
-	printk("Mgmt-netdev: Offset=%x, size=%x, db_offset=%x, db_bit=%d db_count=%d\n",
-	       map->mgmt_netdev_offset, map->mgmt_netdev_size,
-	       map->mgmt_netdev_dbell_offset, map->mgmt_netdev_dbell_bit,
-	       map->mgmt_netdev_dbell_count);
+	facility_map = &map->facility_map[MV_FACILITY_MGMT_NETDEV];
+	printk("Mgmt-netdev: Offset=%x, size=%x, first_db=%d db_count=%d\n",
+	       facility_map->offset, facility_map->size,
+	       facility_map->h2t_dbell_start, facility_map->h2t_dbell_count);
 
-	printk("Network-Agent: Offset=%x, size=%x, db_offset=%x, db_bit=%d db_count=%d\n",
-	       map->nw_agent_offset, map->nw_agent_size,
-	       map->nw_agent_dbell_offset, map->nw_agent_dbell_bit,
-	       map->nw_agent_dbell_count);
+	facility_map = &map->facility_map[MV_FACILITY_NW_AGENT];
+	printk("Network-Agent: Offset=%x, size=%x, first_db=%d db_count=%d\n",
+	       facility_map->offset, facility_map->size,
+	       facility_map->h2t_dbell_start, facility_map->h2t_dbell_count);
 
-	printk("RPC: Offset=%x, size=%x, db_offset=%x, db_bit=%d db_count=%d\n",
-	       map->rpc_offset, map->rpc_size, map->rpc_dbell_offset,
-	       map->rpc_dbell_bit, map->rpc_dbell_count);
+	facility_map = &map->facility_map[MV_FACILITY_RPC];
+	printk("RPC: Offset=%x, size=%x, first_db=%d db_count=%d\n",
+	       facility_map->offset, facility_map->size,
+	       facility_map->h2t_dbell_start, facility_map->h2t_dbell_count);
+
+	printk("GICD offset in BAR = %x\n", map->gicd_offset);
 }
 #endif /* _BARMAP_H_ */

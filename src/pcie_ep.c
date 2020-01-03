@@ -16,10 +16,11 @@
 #define NPU_BASE_DRV_NAME  "npu_base"
 #define NPU_BASE_DEVICE_ID "NPU base driver"
 
-#define FIREWALL_CTRL_FDT_NAME         "firewall-ctrl-intr"
-#define FIREWALL_MGMT_NETDEV_FDT_NAME  "firewall-mgmt-netdev-intr"
-#define FIREWALL_NW_AGENT_FDT_NAME     "firewall-network-agent-intr"
-#define FIREWALL_RPC_FDT_NAME          "firewall-rpc-intr"
+#define FIREWALL_FDT_NAME         "firewall-intr"
+//#define FIREWALL_FDT_NAME         "firewall-ctrl-intr"
+//#define FIREWALL_MGMT_NETDEV_FDT_NAME  "firewall-mgmt-netdev-intr"
+//#define FIREWALL_NW_AGENT_FDT_NAME     "firewall-network-agent-intr"
+//#define FIREWALL_RPC_FDT_NAME          "firewall-rpc-intr"
 
 #define PEMX_REG_BASE(pem)  (0x87E0C0000000ULL | (pem << 24))
 #define NPU_HANDSHAKE_SIGNATURE 0xABCDABCD
@@ -101,45 +102,6 @@ err:
 	return ret;
 }
 
-static int npu_barmap_get_irq_info(struct npu_bar_map *bar_map)
-{
-	int irq_count = -1;
-	int first_irq = -1;
-
-	if (get_device_irq_info(FIREWALL_CTRL_FDT_NAME,
-				&irq_count, &first_irq))
-		return -1;
-	bar_map->ctrl_dbell_offset = NPU_BARMAP_SPI_OFFSET;
-	bar_map->ctrl_dbell_bit = first_irq;
-	bar_map->ctrl_dbell_count = irq_count;
-
-	irq_count = first_irq = -1;
-	if (get_device_irq_info(FIREWALL_MGMT_NETDEV_FDT_NAME,
-				&irq_count, &first_irq))
-		return -1;
-	bar_map->mgmt_netdev_dbell_offset = NPU_BARMAP_SPI_OFFSET;
-	bar_map->mgmt_netdev_dbell_bit = first_irq;
-	bar_map->mgmt_netdev_dbell_count = irq_count;
-
-	irq_count = first_irq = -1;
-	if (get_device_irq_info(FIREWALL_NW_AGENT_FDT_NAME,
-				&irq_count, &first_irq))
-		return -1;
-	bar_map->nw_agent_dbell_offset = NPU_BARMAP_SPI_OFFSET;
-	bar_map->nw_agent_dbell_bit = first_irq;
-	bar_map->nw_agent_dbell_count = irq_count;
-
-	irq_count = first_irq = -1;
-	if (get_device_irq_info(FIREWALL_RPC_FDT_NAME,
-				&irq_count, &first_irq))
-		return -1;
-	bar_map->rpc_dbell_offset = NPU_BARMAP_SPI_OFFSET;
-	bar_map->rpc_dbell_bit = first_irq;
-	bar_map->rpc_dbell_count = irq_count;
-
-	return 0;
-}
-
 /*
  * TODO:
  * 1. populate entry-8 for ring memory
@@ -166,7 +128,7 @@ static int npu_handshake(struct npu_bar_map *bar_map)
 	       __func__, NPU_BARMAP_FIREWALL_SIZE, npu_barmap_mem, barmap_mem_phys);
 
 	/* write the control structure to mapped space */
-	printk("Copying NPU bar map info to base of mapped memory\n");
+	printk("Copying NPU bar map info to base of mapped memory ...\n");
 	memcpy(npu_barmap_mem, (void *)bar_map, sizeof(struct npu_bar_map));
 
 #define PEM_BAR1_INDEX_OFFSET(idx) (0x100 + (idx << 3))
@@ -208,9 +170,7 @@ static int npu_handshake(struct npu_bar_map *bar_map)
 	/* enable all interrupt bits */
 #define CN83XX_GICD_BASE (0x801000000000ULL)
 #define CN83XX_GICD_ISENABLER_OFFSET(x) (0x100 + (x * 4))
-#define CN83xx_GICD_ISPENDR(x) (0x200 + (x*4))
-	//TODO: fix based on bap_map
-	//all firewall related interrupts use among first 32 SPIs
+	//TODO: fix based on bar_map
 	gicd_base = ioremap(CN83XX_GICD_BASE, (1024*1024));
 	if (gicd_base == NULL) {
 		printk("Failed to ioremap GICD CSR space\n");
@@ -218,6 +178,7 @@ static int npu_handshake(struct npu_bar_map *bar_map)
 	}
 
 	intr_ena_addr = gicd_base + CN83XX_GICD_ISENABLER_OFFSET(1);
+	//TODO: below need to be replaced with info from bar_map
 	*(volatile uint32_t *)intr_ena_addr =
 			BIT(15) | BIT(16) | BIT(17) | BIT(18) |
 			BIT(19) | BIT(20) | BIT(21) | BIT(22);
@@ -246,12 +207,12 @@ static int npu_handshake(struct npu_bar_map *bar_map)
 	return 0;
 }
 
+struct npu_bar_map bar_map;
 static int npu_base_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
-	int irq;
+	int irq, first_irq, irq_count;
 	char *dev_id = NPU_BASE_DEVICE_ID;
-	struct npu_bar_map bar_map;
 
 	irq = platform_get_irq(pdev, 0);
 	if (irq < 0) {
@@ -265,9 +226,13 @@ static int npu_base_probe(struct platform_device *pdev)
 		}
 	}
 
-	npu_barmap_get_info(&bar_map);
-	if (npu_barmap_get_irq_info(&bar_map))
-		return -ENODEV;
+	if (get_device_irq_info(FIREWALL_FDT_NAME,
+				&irq_count, &first_irq))
+		return -1;
+
+	if (npu_bar_map_init(&bar_map, first_irq, irq_count))
+		return -1;
+
 	//TODO: npu_enable_barmap_intr();
 	npu_handshake(&bar_map);
 	return 0;
@@ -303,7 +268,7 @@ static const struct dev_pm_ops npu_base_pm_ops = {
 };
 
 static const struct of_device_id npu_base_off_match[] = {
-	{ .compatible = "cavium,firewall-ctrl", },
+	{ .compatible = "cavium,firewall", },
 	{},
 };
 MODULE_DEVICE_TABLE(of, npu_base_off_match);

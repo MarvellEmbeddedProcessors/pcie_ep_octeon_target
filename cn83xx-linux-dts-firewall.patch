@@ -1,29 +1,20 @@
 --- OCTEONTX-SDK-old/dts/cn83xx-linux.dtsi	2019-12-26 09:17:21.818748066 -0500
-+++ OCTEONTX-SDK/dts/cn83xx-linux.dtsi	2019-12-20 02:23:16.259225151 -0500
-@@ -782,6 +782,28 @@
++++ OCTEONTX-SDK/dts/cn83xx-linux.dtsi	2020-01-03 15:32:34.003710101 -0500
+@@ -782,6 +782,19 @@
                                          <0 0 0 3 &gic0 0 0 0 30 4>, /* INTC */
                                          <0 0 0 4 &gic0 0 0 0 31 4>; /* INTD */
                  };
 +
-+		firewall-ctrl-intr@0 {
-+			compatible = "cavium,firewall-ctrl";
-+			interrupts = <0 15 4>;
-+		};
-+		firewall-mgmt-netdev-intr@0 {
-+			compatible = "cavium,firewall-mgmt-netdev";
-+			interrupts = <0 16 4>;
-+		};
-+		firewall-network-agent-intr@0 {
-+			compatible = "cavium,firewall-network-agent";
-+			interrupts = <0 17 4>;
-+		};
-+		firewall-rpc-intr@0 {
-+			compatible = "cavium,firewall-rpc";
-+			interrupts = <0 18 4>,
-+				     <0 19 4>,
-+				     <0 20 4>,
-+				     <0 21 4>,
-+				     <0 22 4>;
++		firewall-intr@0 {
++			compatible = "cavium,firewall";
++			interrupts = <0 15 1>,
++				     <0 16 1>,
++				     <0 17 1>,
++				     <0 18 1>,
++				     <0 19 1>,
++				     <0 20 1>,
++				     <0 21 1>,
++				     <0 22 1>;
 +		};
 +		
  	};
