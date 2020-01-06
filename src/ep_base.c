@@ -27,7 +27,13 @@
 void *pem_io_base;
 void *gicd_base;
 void *sdp_base;
+
+//TODO: fix the names npu_barmap_mem and npu_bar_map
+/* local memory mapped through BAR for access from host */
 void *npu_barmap_mem;
+
+/* NPU BAR map structure */
+struct npu_bar_map bar_map;
 
 static irqreturn_t npu_base_interrupt(int irq, void *dev_id)
 {
@@ -107,15 +113,13 @@ err:
  * 1. populate entry-8 for ring memory
  * 2. populate entry-15 for GICD CSRs, so that host can write through BARs
  */
-static int npu_handshake(struct npu_bar_map *bar_map)
+static int npu_base_setup(struct npu_bar_map *bar_map)
 {
 	phys_addr_t barmap_mem_phys;
 	phys_addr_t phys_addr_i;
 	uint64_t bar1_idx_val;
 	void *bar1_idx_addr;
-	uint64_t scratch_val;
 	void *intr_ena_addr;
-	void *scratch_addr;
 	int i;
 
 	npu_barmap_mem = kmalloc(NPU_BARMAP_FIREWALL_SIZE, GFP_KERNEL);
@@ -131,6 +135,7 @@ static int npu_handshake(struct npu_bar_map *bar_map)
 	printk("Copying NPU bar map info to base of mapped memory ...\n");
 	memcpy(npu_barmap_mem, (void *)bar_map, sizeof(struct npu_bar_map));
 
+//TODO: remove BAR1 references; 96xx has BAR4
 #define PEM_BAR1_INDEX_OFFSET(idx) (0x100 + (idx << 3))
 	//TODO: unmap() in unload
 	pem_io_base = ioremap(PEMX_REG_BASE(0), 1024*1024);
@@ -194,6 +199,14 @@ static int npu_handshake(struct npu_bar_map *bar_map)
 		return -1;
 	}
 
+	return 0;
+}
+
+static void npu_handshake_ready(struct npu_bar_map *bar_map)
+{
+	uint64_t scratch_val;
+	void *scratch_addr;
+
 	printk("Writing to scratch register\n");
 	scratch_addr = sdp_base + CN83XX_SDP0_SCRATCH_OFFSET(0);
 	scratch_val = ((uint64_t)(NPU_BARMAP_FIREWALL_FIRST_ENTRY *
@@ -202,12 +215,11 @@ static int npu_handshake(struct npu_bar_map *bar_map)
 	*(volatile uint64_t *)scratch_addr = scratch_val;
 	printk("Wrote to scratch: %p=%llx\n",
 	       scratch_addr, *(volatile uint64_t *)scratch_addr);
-	kfree(npu_barmap_mem);
-
-	return 0;
 }
 
-struct npu_bar_map bar_map;
+extern void mv_facility_conf_init(struct device *dev,
+				  void *mapaddr,
+				  struct npu_bar_map *barmap);
 static int npu_base_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
@@ -233,8 +245,11 @@ static int npu_base_probe(struct platform_device *pdev)
 	if (npu_bar_map_init(&bar_map, first_irq, irq_count))
 		return -1;
 
-	//TODO: npu_enable_barmap_intr();
-	npu_handshake(&bar_map);
+	if (npu_base_setup(&bar_map))
+		return -1;
+
+	npu_handshake_ready(&bar_map);
+	mv_facility_conf_init(dev, npu_barmap_mem, &bar_map);
 	return 0;
 }
 
