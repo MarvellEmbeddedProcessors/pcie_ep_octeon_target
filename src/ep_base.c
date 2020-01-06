@@ -25,7 +25,6 @@
 #define PEMX_REG_BASE(pem)  (0x87E0C0000000ULL | (pem << 24))
 #define NPU_HANDSHAKE_SIGNATURE 0xABCDABCD
 void *pem_io_base;
-void *gicd_base;
 void *sdp_base;
 
 //TODO: fix the names npu_barmap_mem and npu_bar_map
@@ -119,7 +118,6 @@ static int npu_base_setup(struct npu_bar_map *bar_map)
 	phys_addr_t phys_addr_i;
 	uint64_t bar1_idx_val;
 	void *bar1_idx_addr;
-	void *intr_ena_addr;
 	int i;
 
 	npu_barmap_mem = kmalloc(NPU_BARMAP_FIREWALL_SIZE, GFP_KERNEL);
@@ -171,25 +169,6 @@ static int npu_base_setup(struct npu_bar_map *bar_map)
 	       bar1_idx_addr, bar1_idx_val);
 	*(volatile uint64_t *)bar1_idx_addr = bar1_idx_val;
 	
-
-	/* enable all interrupt bits */
-#define CN83XX_GICD_BASE (0x801000000000ULL)
-#define CN83XX_GICD_ISENABLER_OFFSET(x) (0x100 + (x * 4))
-	//TODO: fix based on bar_map
-	gicd_base = ioremap(CN83XX_GICD_BASE, (1024*1024));
-	if (gicd_base == NULL) {
-		printk("Failed to ioremap GICD CSR space\n");
-		return -1;
-	}
-
-	intr_ena_addr = gicd_base + CN83XX_GICD_ISENABLER_OFFSET(1);
-	//TODO: below need to be replaced with info from bar_map
-	*(volatile uint32_t *)intr_ena_addr =
-			BIT(15) | BIT(16) | BIT(17) | BIT(18) |
-			BIT(19) | BIT(20) | BIT(21) | BIT(22);
-	printk("%s: Interrupts are enabled: phys=%p, val=%x\n",
-		__func__, intr_ena_addr, *(volatile uint32_t *)intr_ena_addr);
-
 	/* write the mapped memory addr to scratch */
 #define CN83xx_SDP_BASE 0x874080000000
 #define CN83XX_SDP0_SCRATCH_OFFSET(x) (0x00020180 | (x << 23))
