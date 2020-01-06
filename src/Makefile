@@ -74,7 +74,5 @@ install:
 	$(MAKE) -C $(kernel_source) SUBDIRS=`pwd`  modules_install 
 
 clean:
-	@rm -f *.ko .*.cmd *.mod.* *.o *~ .*.o.d
-	@rm -f modules.order Module.symvers *.ko.unsigned
-	@rm -f redefine_symbols.mk
-	@rm -rf .tmp_versions
+	$(MAKE) -C $(kernel_source) SUBDIRS=`pwd` clean
+	@rm -f *.o.ur-safe redefine_symbols.mk

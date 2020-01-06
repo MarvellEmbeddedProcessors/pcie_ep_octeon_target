@@ -76,18 +76,6 @@ static struct pci_error_handlers otx_err_handler = {
 };
 #endif
 
-#ifndef  DEFINE_PCI_DEVICE_TABLE
-#define  DEFINE_PCI_DEVICE_TABLE(otx_pci_table) struct pci_device_id otx_pci_tbl[] __devinitdata
-#endif
-
-#define OCTEONTX_VENDOR_ID 0x177D
-static DEFINE_PCI_DEVICE_TABLE(otx_pci_tbl) = {
-	{
-	OCTEONTX_VENDOR_ID, 0xA300, PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0},	//83xx PF
-	{
-	0, 0, 0, 0, 0, 0, 0}
-};
-
 static octeon_device_t *otx_allocate_device(int pci_id)
 {
 	int otx_id = 0;
@@ -164,6 +152,11 @@ int otx_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	printk("OCTEONTX: OcteonTX device %d is ready\n", otx_dev->octeon_id);
 	return 0;
 }
+
+static struct pci_device_id otx_pci_tbl[] = {
+	{ PCI_DEVICE(PCI_VENDOR_ID_CAVIUM, 0xA300) },	//83xx PF
+	{ 0, } /* end of table */
+};
 
 static struct pci_driver otx_pci_driver = {
 	.name = "OcteonTX",
