@@ -44,6 +44,7 @@ INCLUDE += -I.
 OCTDRVFLAGS  += -DOCTEON_HOST
 EXTRA_CFLAGS +=	-D__SMP__ -O2 -finline-functions $(INCLUDE) $(WARNINGS)
 EXTRA_CFLAGS += ${OCTDRVFLAGS}
+KERNEL_DIR ?= /lib/modules/$(shell uname -r)/build
 
 #
 # Driver object files
@@ -64,15 +65,13 @@ OBJS += facility.o
 obj-m         :=  pcie_host.o
 pcie_host-y  :=  $(OBJS)
 
-kernel_source := /lib/modules/$(shell uname -r)/build
-
 all:
-	$(MAKE) -C $(kernel_source) SUBDIRS=`pwd`  modules
+	$(MAKE) -C $(KERNEL_DIR) SUBDIRS=`pwd`  modules
 	@awk 'BEGIN {print "EXTRA_CFLAGS += \t\\"} {print "-D"$$2"=vf_"$$2"\t\\"}' Module.symvers  > redefine_symbols.mk
 
 install:
-	$(MAKE) -C $(kernel_source) SUBDIRS=`pwd`  modules_install 
+	$(MAKE) -C $(KERNEL_DIR) SUBDIRS=`pwd`  modules_install 
 
 clean:
-	$(MAKE) -C $(kernel_source) SUBDIRS=`pwd` clean
+	$(MAKE) -C $(KERNEL_DIR) SUBDIRS=`pwd` clean
 	@rm -f *.o.ur-safe redefine_symbols.mk
