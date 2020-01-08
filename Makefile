@@ -2,7 +2,9 @@ CROSS=aarch64-marvell-linux-gnu-
 KERNEL?=${OCTEONTX_ROOT}/linux/kernel/linux
 MODULE_NAME = mgmt_net
 SRCS = target_ethdev.c 
-INCLUDE_DIR = -I$(src) -I$(src)/../pcie_ep/src  -I$(src)/../dma_api
+FACILITY_DIR?=$(src)/../pcie_ep/src
+DMA_API_DIR?=$(src)/../dma_api
+INCLUDE_DIR = -I$(src) -I$(FACILITY_DIR)  -I$(DMA_API_DIR)
 ccflags-y := $(INCLUDE_DIR)
  
 OBJS =  $(SRCS:.c=.o)
