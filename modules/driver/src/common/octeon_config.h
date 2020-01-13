@@ -675,7 +675,7 @@ typedef octeon_config_t cn83xx_vf_config_t;
 /* The following config values are fixed and should not be modified. */
 
 /* Maximum address space to be mapped for Octeon's BAR1 index-based access. */
-#define  MAX_BAR1_MAP_INDEX			2
+#define  MAX_BAR1_MAP_INDEX			16
 #define  OCTEON_BAR1_ENTRY_SIZE		(4 * 1024 * 1024)
 
 /* BAR1 Index 0 to (MAX_BAR1_MAP_INDEX - 1) for normal mapped memory access.

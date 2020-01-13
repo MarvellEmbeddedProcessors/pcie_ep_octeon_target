@@ -71,6 +71,7 @@ static int cn83xx_pf_soft_reset(octeon_device_t * oct)
 
 	/* restore the  reset value */
 	octeon_write_csr64(oct, CN83XX_SLI_WIN_WR_MASK_REG(oct->epf_num), 0xFF);
+	octeon_write_csr64(oct, CN83XX_SDP_SCRATCH(0), 0x0ULL);
 #endif
 	return 0;
 }

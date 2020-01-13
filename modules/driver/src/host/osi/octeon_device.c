@@ -26,6 +26,7 @@
 #include "octeon_macros.h"
 #include "octeon_mem_ops.h"
 #include "oct_config_data.h"
+#include "barmap.h"
 
 extern int octeon_msix;
 extern int cn83xx_pf_setup_global_oq_reg(octeon_device_t *, int);
@@ -1450,6 +1451,8 @@ oct_poll_module_starter(void *octptr, unsigned long arg UNUSED)
 		return OCT_POLL_FN_CONTINUE;
 
 	if (oct->app_mode) {
+		printk("OCTEON[%d]: Starting module for app type: %s\n",
+		       oct->octeon_id, get_oct_app_string(oct->app_mode));
 		cavium_print(PRINT_DEBUG,
 			     "OCTEON[%d]: Starting module for app type: %s\n",
 			     oct->octeon_id, get_oct_app_string(oct->app_mode));
@@ -1563,6 +1566,81 @@ int dump_hostfw_config(octeon_config_t * temp_oct_conf)
 	return 0;
 }
 
+void npu_mem_and_intr_test (octeon_device_t *octeon_dev,
+			    struct npu_bar_map *barmap)
+{
+	struct facility_bar_map *facility_map;
+
+	//write to first 4-bytes of every region
+	facility_map = &barmap->facility_map[MV_FACILITY_CONTROL];
+	*(volatile uint32_t *)(octeon_dev->mmio[1].hw_addr +
+				facility_map->offset) = 0xA5A5A5A5;
+
+	facility_map = &barmap->facility_map[MV_FACILITY_MGMT_NETDEV];
+	*(volatile uint32_t *)(octeon_dev->mmio[1].hw_addr +
+				facility_map->offset) = 0xA6A6A6A6;
+
+	facility_map = &barmap->facility_map[MV_FACILITY_NW_AGENT];
+	*(volatile uint32_t *)(octeon_dev->mmio[1].hw_addr +
+				facility_map->offset) = 0x5A5A5A5A;
+
+	facility_map = &barmap->facility_map[MV_FACILITY_RPC];
+	*(volatile uint32_t *)(octeon_dev->mmio[1].hw_addr +
+				facility_map->offset) = 0xABABABAB;
+	//raise control interrupt
+	facility_map = &barmap->facility_map[MV_FACILITY_CONTROL];
+	printk("Raising interrupt; offset=%x, #spi=%x\n",
+	       barmap->gicd_offset, facility_map->h2t_dbell_start);
+	*(volatile uint32_t *)(octeon_dev->mmio[1].hw_addr +
+		 barmap->gicd_offset) = facility_map->h2t_dbell_start;
+}
+
+struct npu_bar_map npu_memmap_info;
+
+static void npu_bar_map_save(void *src)
+{
+	memcpy(&npu_memmap_info, src, sizeof(struct npu_bar_map));
+}
+
+#define NPU_BASE_READY_MAGIC 0xABCDABCD
+bool npu_handshake_done=false;
+extern void mv_facility_conf_init(octeon_device_t *oct);
+oct_poll_fn_status_t 
+octeon_wait_for_npu_base(void *octptr, unsigned long arg UNUSED)
+{
+	octeon_device_t *octeon_dev = (octeon_device_t *) octptr;
+	volatile uint64_t reg_val = 0;
+
+	/** 
+	 * Along with the app mode firmware sends core clock(in MHz),
+	 * co-processor clock(in MHz) and pkind value.
+	 * Bits: 00-31  Signature indicating NPU base driver ready
+	 * Bits: 32-63  offset in BAR1 where the memory map structure is written
+	 **/
+	if(octeon_dev->chip_id == OCTEON_CN83XX_PF) {
+		reg_val = octeon_read_csr64(octeon_dev, CN83XX_SDP_SCRATCH(0));
+		if((reg_val & 0xffffffff) != NPU_BASE_READY_MAGIC) {
+			return OCT_POLL_FN_CONTINUE;
+		}
+		printk("%s: CN83xx NPU is ready; MAGIC=0x%llX; memmap=0x%llX\n",
+		       __func__, reg_val & 0xffffffff, reg_val >> 32);
+	printk("hw_addr = 0x%llx\n", (unsigned long long)octeon_dev->mmio[1].hw_addr);
+		npu_bar_map_save(octeon_dev->mmio[1].hw_addr + (reg_val >> 32));
+		npu_barmap_dump((void *)&npu_memmap_info);
+		npu_mem_and_intr_test(octeon_dev, &npu_memmap_info);
+	//npu_handshake_done = true;
+	//return OCT_POLL_FN_FINISHED;
+		mv_facility_conf_init(octeon_dev);
+	} else {
+		printk("%s: Chip id 0x%x is not supported\n",
+		       __func__, octeon_dev->chip_id);
+		return OCT_POLL_FN_CONTINUE;
+	}
+	npu_handshake_done = true;
+	return OCT_POLL_FN_FINISHED;
+}
+
+
 oct_poll_fn_status_t 
 octeon_get_app_mode(void *octptr, unsigned long arg UNUSED)
 {
@@ -1571,6 +1649,9 @@ octeon_get_app_mode(void *octptr, unsigned long arg UNUSED)
     uint16_t core_clk, coproc_clk;
     static octeon_config_t *default_oct_conf = NULL;
  
+    if (npu_handshake_done == false)
+        return OCT_POLL_FN_CONTINUE;
+
     /** 
      * Along with the app mode firmware sends core clock(in MHz),
      * co-processor clock(in MHz) and pkind value.
@@ -1631,6 +1712,7 @@ octeon_hostfw_handshake(void *octptr, unsigned long arg UNUSED)
 	static octeon_config_t temp_oct_conf, *default_oct_conf = NULL;
 	octeon_device_t *oct = (octeon_device_t *) octptr;
 	char app_name[16];
+
 
 	switch (oct->chip_id) {
 	case OCTEON_CN83XX_PF:

@@ -91,6 +91,7 @@ OBJS += octeon_linux.o            	\
 	octeon_poll.o             		\
 	octeon_ioctl.o            		\
 	cavium_proc.o             		\
+	facility.o             		\
 	../../../osi/request_manager.o  \
 	../../../osi/octeon_iq.o  	\
 	../../../osi/response_manager.o \
@@ -143,7 +144,7 @@ all: check_cnnic
 
 clean: check_cnnic
 	@rm -rf $(BINDIR)/octeon_drv.ko *.ko .*.cmd *.mod.* *.o *~ .tmp_versions .*.o.d
-	@rm -f modules.order Module.symvers *.ko.unsigned
+	@rm -f modules.order Module.symvers *.ko.unsigned .cache.mk
 	@rm -f ../../../osi/.*.cmd ../../../osi/*.o  ../../../osi/*~
 	@rm -f ../test/.*.cmd ../test/*.o ../test/*~ *.ko 
 	@rm -f redefine_symbols.mk

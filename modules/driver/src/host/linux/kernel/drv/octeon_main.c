@@ -786,6 +786,9 @@ octeon_hostfw_handshake(void *octptr, unsigned long arg);
 extern oct_poll_fn_status_t
 octeon_get_app_mode(void *octptr, unsigned long arg);
 
+extern oct_poll_fn_status_t
+octeon_wait_for_npu_base(void *octptr, unsigned long arg);
+
 extern int oct_stop_base_module(int oct_id, void *oct_dev);
 
 int octeon_setup_droq(int oct_id, int q_no, void *app_ctx)
@@ -834,9 +837,11 @@ int octeon_device_init(octeon_device_t * octeon_dev)
 
 	cavium_spin_lock_init(&octeon_dev->oct_lock);
 
+#if 0 //VSR: disabled for testing
 	/* Do a soft reset of the Octeon device. */
 	if (octeon_dev->fn_list.soft_reset(octeon_dev))
 		return 1;
+#endif
 
     cavium_print_msg(" Soft reset completed\n");
 
@@ -937,6 +942,12 @@ int octeon_device_init(octeon_device_t * octeon_dev)
     	strcpy(poll_ops.name, "Host Firmware Handshake Thread");
         octeon_register_poll_fn(octeon_dev->octeon_id, &poll_ops);
 
+	/* Register a Host eth_mux - NPU base driver handshake poll function */
+	poll_ops.fn = octeon_wait_for_npu_base;
+    	poll_ops.fn_arg = 0UL;
+	poll_ops.ticks = CAVIUM_TICKS_PER_SEC;
+    	strcpy(poll_ops.name, "Host-NPU Handshake Thread");
+        octeon_register_poll_fn(octeon_dev->octeon_id, &poll_ops);
     }else {
     	/* Register a Host - Firmware (OCTEON) handshake poll function */
 	    poll_ops.fn = octeon_hostfw_handshake;
