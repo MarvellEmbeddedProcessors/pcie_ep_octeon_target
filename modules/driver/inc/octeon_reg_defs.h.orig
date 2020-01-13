@@ -1,0 +1,17 @@
+
+/*! \file  octeon_reg_defs.h
+    \brief  Host Driver: Octeon register addresses/offsets.
+*/
+
+#ifndef __OCTEON_REG_DEFS_H__
+#define __OCTEON_REG_DEFS_H__
+
+#include  "cn3xxx_regs.h"
+#include  "cn56xx_regs.h"
+#include  "cn63xx_regs.h"
+
+/** OCTEON III models */
+#include  "cn70xx_regs.h"
+
+#endif /* __OCTEON_REG_DEFS_H__ */
+/* $Id: octeon_reg_defs.h 141410 2016-06-30 14:37:41Z mchalla $ */
