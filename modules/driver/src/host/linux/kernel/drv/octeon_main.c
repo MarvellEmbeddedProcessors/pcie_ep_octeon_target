@@ -289,6 +289,11 @@ int octeon_map_pci_barx(octeon_device_t * oct, int baridx, int max_map_len)
 		     oct->octeon_id, baridx, oct->mmio[baridx].start,
 		     mapped_len, oct->mmio[baridx].len);
 
+	/* VSR: delete below print; only for dev debug */
+	printk("OCTEON[%d]: BAR%d start: 0x%lx mapped %lu of %lu bytes; hw_addr=0x%llx\n",
+	       oct->octeon_id, baridx, oct->mmio[baridx].start,
+	       mapped_len, oct->mmio[baridx].len, (unsigned long long)oct->mmio[baridx].hw_addr);
+
 	if (!oct->mmio[baridx].hw_addr) {
 		cavium_error("OCTEON[%d]: error ioremap for bar %d\n",
 			     oct->octeon_id, baridx);
@@ -393,7 +398,8 @@ int octeon_tx_enable_msix_interrupts(octeon_device_t * oct)
 		oct->msix_entries[i].entry = srn + i;
 	}
 
-	ret = pci_enable_msix(oct->pci_dev, oct->msix_entries, oct->num_irqs);
+	ret = pci_enable_msix_range(oct->pci_dev, oct->msix_entries,
+				    oct->num_irqs, oct->num_irqs);
 	if(ret) {
 		cavium_error("Unable to Allocate MSI-X interrupts. returned err: %d \n", ret);
 		cavium_free_virt(oct->msix_entries);

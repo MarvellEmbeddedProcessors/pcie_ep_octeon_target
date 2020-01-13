@@ -534,7 +534,7 @@ static struct net_device_ops octnetdevops = {
 #endif
 	.ndo_set_rx_mode = octnet_set_mcast_list,
 	.ndo_tx_timeout = octnet_tx_timeout,
-	.ndo_change_mtu_rh74 = octnet_change_mtu,
+	.ndo_change_mtu = octnet_change_mtu,
 };
 #endif
 

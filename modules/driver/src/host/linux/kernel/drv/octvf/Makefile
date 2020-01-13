@@ -156,7 +156,7 @@ check:
 
 
 clean: check_cnnic
-	@rm -rf $(BINDIR)/$(OBJNAME).ko *.ko .*.cmd *.mod.* *.o *~ .tmp_versions
+	@rm -rf $(BINDIR)/$(OBJNAME).ko *.ko .*.cmd *.mod.* *.o *~ .tmp_versions .cache.mk .*.o.d
 	@rm -f modules.order Module.symvers *.ko.unsigned
 	@rm -f ../../drv/.*.cmd ../../drv/*.o  ../../*~
 	@rm -f ../../../../osi/.*.cmd ../../../../osi/*.o  ../../../../osi/*~

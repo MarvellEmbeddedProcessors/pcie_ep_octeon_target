@@ -85,7 +85,7 @@ mmap:	NULL
 };
 
 #ifndef  DEFINE_PCI_DEVICE_TABLE
-#define  DEFINE_PCI_DEVICE_TABLE(octeon_pci_table) struct pci_device_id octeon_pci_tbl[] __devinitdata
+#define  DEFINE_PCI_DEVICE_TABLE(octeon_pci_table) struct pci_device_id octeon_pci_tbl[]
 #endif
 
 static DEFINE_PCI_DEVICE_TABLE(octeon_pci_tbl) = {

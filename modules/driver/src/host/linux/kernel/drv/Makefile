@@ -142,7 +142,7 @@ all: check_cnnic
 
 
 clean: check_cnnic
-	@rm -rf $(BINDIR)/octeon_drv.ko *.ko .*.cmd *.mod.* *.o *~ .tmp_versions
+	@rm -rf $(BINDIR)/octeon_drv.ko *.ko .*.cmd *.mod.* *.o *~ .tmp_versions .*.o.d
 	@rm -f modules.order Module.symvers *.ko.unsigned
 	@rm -f ../../../osi/.*.cmd ../../../osi/*.o  ../../../osi/*~
 	@rm -f ../test/.*.cmd ../test/*.o ../test/*~ *.ko 
