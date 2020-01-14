@@ -1,9 +1,10 @@
 MODULE_MAME = mgmt_net
-PCIE_HOST ?= ../pcie_host/src
+PCIE_HOST ?= $(src)/../pcie_host/src
+KERNEL_DIR ?= /lib/modules/$(shell uname -r)/build
  
 SRCS = host_ethdev.c 
  
-INCLUDE_DIR = -I$(src) -I$(src)/$(PCIE_HOST)
+INCLUDE_DIR = -I$(src) -I$(PCIE_HOST)
  
 ccflags-y := $(INCLUDE_DIR)
  
@@ -14,7 +15,7 @@ $(MODULE_MAME)-y = $(OBJS)
  
  
 all:
-	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules
+	make -C $(KERNEL_DIR) M=`pwd` modules
  
 clean:
-	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) clean
+	make -C $(KERNEL_DIR) M=`pwd` clean
