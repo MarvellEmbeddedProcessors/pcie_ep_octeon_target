@@ -14,7 +14,9 @@
 #include <linux/timer.h>
 #include <linux/workqueue.h>
 #include <linux/circ_buf.h>
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,11,0)
 #include <linux/sched/signal.h>
+#endif
 
 #include <facility.h>
 
