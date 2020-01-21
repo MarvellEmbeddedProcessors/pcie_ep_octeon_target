@@ -77,7 +77,9 @@
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,18)
 #include <linux/kthread.h>
 #endif
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,11,0)
 #include <linux/sched/signal.h>
+#endif
 
 #include "cvm_linux_types.h"
 
@@ -562,7 +564,11 @@ cnnic_pci_dma_sync_single_for_device(cavium_pci_device_t * pci_dev,
 static inline uint8_t cav_net_get_skb_users(void *buffer)
 {
 	struct sk_buff *skb = buffer;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,11,0)
+	return (uint8_t) atomic_read(&skb->users);
+#else
 	return (uint8_t) refcount_read(&skb->users);
+#endif
 }
 
 /* Function used to get skb data reference count */

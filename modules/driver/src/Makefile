@@ -29,25 +29,24 @@
 #
 
 
+DRIVER_ROOT = $(shell pwd)
+CNNIC_ROOT = $(DRIVER_ROOT)/../../..
+export CNNIC_ROOT
 
-DRIVER_ROOT = $(PWD)
-
-all: check_cnnic host_drv host_api utils host_nic
+all: check_cnnic host_drv host_nic
 
 check_cnnic:
-ifndef CNNIC_ROOT
 	@echo "####################################################"
-	@echo "              CNNIC_ROOT not defined"     
-	@echo " Run the nic-env-setup.sh script in the CNNIC root directory"
+	@echo "            Setting the build environment"
+	@echo " CNNIC_ROOT = $(CNNIC_ROOT)"
 	@echo "####################################################"
-	@exit 2
-endif
+	mkdir -p $(CNNIC_ROOT)/modules/driver/bin
+	cd $(CNNIC_ROOT); sh sym-link.sh
 
 .NOTPARALLEL: host_drv
 host_drv: 
 	@$(MAKE) check_cnnic;
 	cd $(DRIVER_ROOT)/host/linux/kernel/drv; $(MAKE) all;
-	cd $(DRIVER_ROOT)/host/linux/kernel/drv/octvf; $(MAKE) all;
 
 .NOTPARALLEL: host_api
 host_api: 
@@ -70,17 +69,14 @@ tests:
 	cd $(DRIVER_ROOT)/host/linux/kernel/droq_test; $(MAKE) all;
 	
 clean:
-	@$(MAKE) check_cnnic;
 	cd $(DRIVER_ROOT)/host/linux/kernel/drv; $(MAKE) clean; 
-	cd $(DRIVER_ROOT)/host/linux/kernel/drv/octvf; $(MAKE) clean; 
 	cd $(DRIVER_ROOT)/host/linux/user/api; $(MAKE) clean; 
 	cd $(DRIVER_ROOT)/host/linux/user/utils; $(MAKE) clean
 
-user_drv_clean: check_cnnic
+user_drv_clean:check_cnnic
 	cd $(DRIVER_ROOT)/host/linux/user/drv; $(MAKE) clean; 
 
 tests_clean:
-	@$(MAKE) check_cnnic;
 	cd $(DRIVER_ROOT)/host/linux/user/test; $(MAKE) clean;
 	cd $(DRIVER_ROOT)/host/linux/kernel/req_resp; $(MAKE) clean;
 	cd $(DRIVER_ROOT)/host/linux/kernel/droq_test; $(MAKE) clean;
@@ -97,12 +93,12 @@ host_nic: check_cnnic host_drv
 
 
 host_clean:
-	@$(MAKE) check_cnnic;
 	@if [ -d $(DRIVER_ROOT)/host/linux/kernel/drv/octnic ]; then cd $(DRIVER_ROOT)/host/linux/kernel/drv/octnic; $(MAKE) clean; fi;
 	
 all_clean:
 	$(MAKE) clean;
 	$(MAKE) host_clean;
 	$(MAKE) tests_clean;
+	@cd $(CNNIC_ROOT); sh sym-link.sh undo
 
 # $Id: Makefile 170855 2018-03-30 12:30:15Z asasidharan $

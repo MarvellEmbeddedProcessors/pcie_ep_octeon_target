@@ -180,7 +180,11 @@ typedef struct tasklet cavium_tasklet_t;
 typedef struct tasklet_struct cavium_tasklet_struct_t;	/* added for OS transparency */
 typedef atomic_t cavium_atomic_t;
 typedef wait_queue_head_t cavium_wait_channel;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,13,0)
+typedef wait_queue_t cavium_wait_entry;
+#else
 typedef wait_queue_entry_t cavium_wait_entry;
+#endif
 typedef struct sk_buff cavium_netbuf_t;
 typedef struct pci_dev cavium_pci_device_t;
 typedef struct msix_entry cavium_msix_entry_t;

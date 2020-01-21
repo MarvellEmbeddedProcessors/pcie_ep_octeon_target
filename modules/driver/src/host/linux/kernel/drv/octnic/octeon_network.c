@@ -50,12 +50,6 @@ static struct {
 #define OCTNIC_NCMD_AUTONEG_ON  0x1
 #define OCTNIC_NCMD_PHY_ON      0x2
 
-//#if ((LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0)) && (KERNEL_PATCH_VERSION >= 693))
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
-#define OCTNIC_USE_TRANS_START_API
-#endif
-
-
 void oct_net_setup_if(octeon_recv_info_t * recv_info, void *buf);
 void octeon_network_free_tx_buf(octeon_req_status_t status, void *arg);
 
@@ -739,7 +733,8 @@ int octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 		OCTNET_IFSTATE_RESET(priv, OCT_NIC_IFSTATE_TXENABLED);
 	}
 
-#ifdef OCTNIC_USE_TRANS_START_API
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,7,0)
+	/* TODO: shouldn't it be updated to queue, instead of device ? */
        netif_trans_update(pndev);
 #else
        pndev->trans_start = jiffies;
@@ -921,7 +916,8 @@ void octnet_tx_timeout(struct net_device *pndev)
 	priv = GET_NETDEV_PRIV(pndev);
 
 	cavium_error("OCTNIC: tx timeout for %s\n", octnet_get_devname(pndev));
-#ifdef OCTNIC_USE_TRANS_START_API
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,7,0)
+	/* TODO: shouldn't it be updated to queue, instead of device ? */
        netif_trans_update(pndev);
 #else
        pndev->trans_start = jiffies;
