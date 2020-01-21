@@ -14,6 +14,7 @@
 #include <linux/timer.h>
 #include <linux/workqueue.h>
 #include <linux/circ_buf.h>
+#include <linux/sched/signal.h>
 
 #include <facility.h>
 
