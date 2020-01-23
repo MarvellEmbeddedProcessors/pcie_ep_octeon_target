@@ -182,6 +182,7 @@ void octnet_link_ctrl_cmd_completion(void *nctrl_ptr)
 	case OCTNET_CMD_CHANGE_MACADDR:
 		/* If command is successful, change the MACADDR for net device. */
 		{
+#if 0
 			octeon_device_t *oct =
 			    (octeon_device_t *) priv->oct_dev;
 			/* For 83XX, only lower 3 bytes of mac address is configurable */
@@ -191,8 +192,9 @@ void octnet_link_ctrl_cmd_completion(void *nctrl_ptr)
 					      ((uint8_t *) & nctrl->udd[0]) + 5,
 					      ETH_ALEN - 3);
 			else
+#endif
 				cavium_memcpy(pndev->dev_addr,
-					      ((uint8_t *) & nctrl->udd[0]) + 2,
+					      (uint8_t *) & nctrl->udd[0] + 2,
 					      ETH_ALEN);
 
 			cavium_print_msg
@@ -736,7 +738,7 @@ int octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,7,0)
 	/* TODO: shouldn't it be updated to queue, instead of device ? */
        netif_trans_update(pndev);
-#else
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(3,10,0)
        pndev->trans_start = jiffies;
 #endif
 
@@ -919,7 +921,7 @@ void octnet_tx_timeout(struct net_device *pndev)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,7,0)
 	/* TODO: shouldn't it be updated to queue, instead of device ? */
        netif_trans_update(pndev);
-#else
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(3,10,0)
        pndev->trans_start = jiffies;
 #endif
 

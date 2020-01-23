@@ -176,6 +176,7 @@ int octnet_get_inittime_link_status(void *oct, void *props_ptr)
 	oct_link_status_resp_t *ls;
 	octeon_instr_status_t retval;
 	oct_stats_dma_info_t *dma_info;
+	int q_no;
 
 	octeon_device_t *oct_dev = (octeon_device_t *) oct;
 	props = (struct octdev_props_t *)props_ptr;
@@ -238,6 +239,26 @@ int octnet_get_inittime_link_status(void *oct, void *props_ptr)
 	   response arrived or timed-out. */
 	cavium_sleep_timeout_cond(&ls->s.wc, (int *)&ls->s.cond, 1000);
 
+        /* Currently DPI is not accessible from the DPDK based nic firmware,
+	 *  So firmware cannot communicate the link status info to host driver,
+	 *  hence hardcoding link_info details here in the host driver itself. */
+        ls->status = 0;
+        ls->link_count = 1;
+        ls->link_info[0].ifidx = 0;
+        ls->link_info[0].gmxport = 2048;
+        ls->link_info[0].hw_addr = 0x20f000b9849;
+//        ls->link_info[0].hw_addr = 0x000FB71188BC;
+        ls->link_info[0].num_rxpciq = 8;
+        ls->link_info[0].num_txpciq = 8;
+        ls->link_info[0].link.s.mtu = 9000;
+        ls->link_info[0].link.s.status = 1;
+        ls->link_info[0].link.s.speed = 10000;
+        ls->link_info[0].link.s.duplex = 1;
+
+        for(q_no = 0 ; q_no < 8 ; q_no++) {
+                ls->link_info[0].txpciq[q_no] = q_no;
+                ls->link_info[0].rxpciq[q_no] = q_no;
+        }
 	return (ls->status);
 }
 

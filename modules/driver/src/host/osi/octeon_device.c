@@ -1640,6 +1640,10 @@ octeon_wait_for_npu_base(void *octptr, unsigned long arg UNUSED)
 	return OCT_POLL_FN_FINISHED;
 }
 
+#define SDP_HOST_LOADED                 0xDEADBEEFULL
+#define SDP_GET_HOST_INFO               0xBEEFDEEDULL 
+#define SDP_HOST_INFO_RECEIVED          0xDEADDEULL
+#define SDP_HANDSHAKE_COMPLETED         0xDEEDDEEDULL
 
 oct_poll_fn_status_t 
 octeon_get_app_mode(void *octptr, unsigned long arg UNUSED)
@@ -1649,27 +1653,25 @@ octeon_get_app_mode(void *octptr, unsigned long arg UNUSED)
     uint16_t core_clk, coproc_clk;
     static octeon_config_t *default_oct_conf = NULL;
  
-    if (npu_handshake_done == false)
-        return OCT_POLL_FN_CONTINUE;
+    reg_val = octeon_read_csr64(octeon_dev, CN83XX_SLI_EPF_SCRATCH(0));
+    if (reg_val == SDP_HOST_LOADED)
+	return OCT_POLL_FN_CONTINUE;
 
-    /** 
-     * Along with the app mode firmware sends core clock(in MHz),
-     * co-processor clock(in MHz) and pkind value.
-     * Bits: 00-15  Application Mode
-     * Bits: 16-31  Core clock in MHz's
-     * Bits: 32-47  Coprocessor clock in MHz's
-     * Bits: 48-64  Pkind value
-     **/
-    reg_val = octeon_read_csr64(octeon_dev, CN83XX_SDP_SCRATCH(0));
-    if(((reg_val & 0xffff) != CVM_DRV_BASE_APP) && 
-        ((reg_val & 0xffff) != CVM_DRV_NIC_APP)) {
-	    return OCT_POLL_FN_CONTINUE;
+    if (reg_val == SDP_GET_HOST_INFO) {
+	reg_val = 0;
+	reg_val = (0x8 << 24);
+	octeon_write_csr64(octeon_dev, CN83XX_SLI_EPF_SCRATCH(0), reg_val);	
     }
 
-    octeon_dev->app_mode = reg_val & 0xffff;
-    core_clk = (reg_val >> 16) & 0xffff;
-    coproc_clk = (reg_val >> 32) & 0xffff;
-    octeon_dev->pkind = (reg_val >> 48) & 0xffff;
+    while (octeon_read_csr64(octeon_dev, CN83XX_SLI_EPF_SCRATCH(0)) == reg_val);
+
+    reg_val = octeon_read_csr64(octeon_dev, CN83XX_SLI_EPF_SCRATCH(0));
+    octeon_write_csr64(octeon_dev, CN83XX_SLI_EPF_SCRATCH(0), SDP_HANDSHAKE_COMPLETED);
+
+    octeon_dev->app_mode = CVM_DRV_NIC_APP;
+    core_clk = 1200;
+    coproc_clk = (reg_val >> 16) & 0xffff;
+    octeon_dev->pkind = 40;
 
     cavium_print_msg("OCTEON running with Core clock:%d Copro clock:%d\n",
             core_clk, coproc_clk);
@@ -1682,20 +1684,13 @@ octeon_get_app_mode(void *octptr, unsigned long arg UNUSED)
     CFG_GET_DPI_PKIND(default_oct_conf) = octeon_dev->pkind;
     cavium_atomic_set(&octeon_dev->status, OCT_DEV_CORE_OK);
 
-    if(octeon_dev->app_mode == CVM_DRV_BASE_APP) {
-        /* Number of interfaces are 0 */
-        CFG_GET_NUM_INTF(default_oct_conf) = 0;
-        cavium_print_msg("Octeon is running base application\n");
-		octeon_register_base_handler();
-    }
-    else if(octeon_dev->app_mode == CVM_DRV_NIC_APP) {
+    if(octeon_dev->app_mode == CVM_DRV_NIC_APP) {
         /* Number of interfaces are 1 */
         CFG_GET_NUM_INTF(default_oct_conf) = 1;
         cavium_print_msg("Octeon is running nic application\n");
     }
     return OCT_POLL_FN_FINISHED;
 }
-
 
 /* scratch register address for CN73XX */
 #define CN73XX_SLI_SCRATCH1     0x283C0
