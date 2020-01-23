@@ -379,7 +379,7 @@ int octeon_tx_enable_msix_interrupts(octeon_device_t * oct)
 
 	num_ioq_vectors = oct->num_oqs;
 
-	oct-> num_irqs = num_ioq_vectors + CN83XX_NUM_NON_IOQ_INTR;
+	oct->num_irqs = num_ioq_vectors + CN83XX_NUM_NON_IOQ_INTR;
 	oct->msix_entries =
 	    cavium_alloc_virt(oct->num_irqs * sizeof(cavium_msix_entry_t));
 
@@ -400,7 +400,7 @@ int octeon_tx_enable_msix_interrupts(octeon_device_t * oct)
 
 	ret = pci_enable_msix_range(oct->pci_dev, oct->msix_entries,
 				    oct->num_irqs, oct->num_irqs);
-	if(ret) {
+	if(ret < 0) {
 		cavium_error("Unable to Allocate MSI-X interrupts. returned err: %d \n", ret);
 		cavium_free_virt(oct->msix_entries);
 		return 1;
