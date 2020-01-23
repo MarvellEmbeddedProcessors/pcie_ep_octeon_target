@@ -264,22 +264,20 @@ octnet_get_runtime_link_status(void            *oct,
 	}
 
 	cavium_print_msg("Go the link status update\n");
-    /* Store the status and read it back. 
-     * If there is a change in the status take the recent status */
-    ls->status = COMPLETION_WORD_INIT;
-    cavium_memcpy(&tmp_status, ls, sizeof(oct_link_status_resp_t));
-    if(ls->status == COMPLETION_WORD_INIT)
-       cavium_memcpy(ls, &tmp_status, sizeof(oct_link_status_resp_t));
-    else
-        ls->status = COMPLETION_WORD_INIT;
-
+	/* Store the status and read it back. 
+	 * If there is a change in the status take the recent status */
+	ls->status = COMPLETION_WORD_INIT;
+	cavium_memcpy(&tmp_status, ls, sizeof(oct_link_status_resp_t));
+	if(ls->status == COMPLETION_WORD_INIT)
+   		cavium_memcpy(ls, &tmp_status, sizeof(oct_link_status_resp_t));
+	else
+        	ls->status = COMPLETION_WORD_INIT;
 	/* The link count should be swapped on little endian systems. */
 	//octeon_swap_8B_data(&(ls->link_count), 1);
-
 	if(ls->link_count > MAX_OCTEON_LINKS) {
 		cavium_error("%s: Link count (%llu) exceeds max (%d)\n", __FUNCTION__,
 		             ls->link_count, MAX_OCTEON_LINKS);
-	    return OCT_POLL_FN_CONTINUE;
+		return OCT_POLL_FN_CONTINUE;
 	}
 
 	//for(ifidx = 0; ifidx < ls->link_count; ifidx++)

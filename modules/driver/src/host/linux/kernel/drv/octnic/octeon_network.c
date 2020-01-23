@@ -1123,7 +1123,7 @@ static int oct_set_settings(struct net_device *netdev, struct ethtool_cmd *ecmd)
 
 static int oct_nway_reset(struct net_device *netdev)
 {
-	if (netif_running(netdev)) ;
+	if (netif_running(netdev))
 	{
 		struct ethtool_cmd ecmd;
 		memset(&ecmd, 0, sizeof(struct ethtool_cmd));

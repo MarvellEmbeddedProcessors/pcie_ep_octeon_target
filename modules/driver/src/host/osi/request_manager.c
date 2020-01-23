@@ -590,44 +590,43 @@ __do_instruction_processing(octeon_device_t * oct,
 		if (ihx.gather) {
 			ihx.gsz = si->ih.dlengsz;
         	ihx.tlen = si->gather_bytes+ ihx.fsz;
-        }
-        else
+        } else {
         	ihx.tlen = si->ih.dlengsz + ihx.fsz;
+	}
+	/* Fill up PKI IH3 */
+	pki_ih3.w = 1;
+	pki_ih3.raw = si->ih.raw;
+	pki_ih3.utag = 1;
+	pki_ih3.uqpg = 1;
+	pki_ih3.utt = 1;
 
-		/* Fill up PKI IH3 */
-		pki_ih3.w = 1;
-		pki_ih3.raw = si->ih.raw;
-		pki_ih3.utag = 1;
-		pki_ih3.uqpg = 1;
-		pki_ih3.utt = 1;
+	pki_ih3.tag = si->ih.tag;
+	pki_ih3.tagtype = si->ih.tagtype;
 
-		pki_ih3.tag = si->ih.tag;
-		pki_ih3.tagtype = si->ih.tagtype;
+	/** 
+	 * QPG entry is allocated by the pkipf driver in the octeontx
+	 * Currently it is allocated statically with each pkind having 32 qpg entries
+	 */
+	pki_ih3.qpg = oct->pkind * 32;
+	pki_ih3.pm = 0x7;
+	pki_ih3.sl = 8;
 
-		/** 
-		 * QPG entry is allocated by the pkipf driver in the octeontx
-		 * Currently it is allocated statically with each pkind having 32 qpg entries
-		 */
-		pki_ih3.qpg = oct->pkind * 32;
-		pki_ih3.pm = 0x7;
-		pki_ih3.sl = 8;
+	/* Now fill up the CN78xx 64B command */
+	/* copy dptr */
+	o3_cmd.dptr = cmd->dptr;
 
-		/* Now fill up the CN78xx 64B command */
-		/* copy dptr */
-		o3_cmd.dptr = cmd->dptr;
+	/* copy ih3 */
+	o3_cmd.ih3 = *((uint64_t *) & ihx);
 
-		/* copy ih3 */
-		o3_cmd.ih3 = *((uint64_t *) & ihx);
-
-		/* copy pki_ih3 */
-		o3_cmd.pki_ih3 = *((uint64_t *) & pki_ih3);
+	/* copy pki_ih3 */
+	o3_cmd.pki_ih3 = *((uint64_t *) & pki_ih3);
 
 #ifndef IOQ_PERF_MODE_O3
-		/* copy rptr */
-		o3_cmd.rptr = cmd->rptr;
+	/* copy rptr */
+	o3_cmd.rptr = cmd->rptr;
 #endif
-		/* copy irh */
-		o3_cmd.irh = *irh;
+	/* copy irh */
+	o3_cmd.irh = *irh;
 
 #if 0
         printk("Before swapping\n");

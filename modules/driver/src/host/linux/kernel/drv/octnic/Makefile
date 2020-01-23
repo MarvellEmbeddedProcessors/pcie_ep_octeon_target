@@ -76,7 +76,7 @@ endif
 WARNINGS = -Wall -Werror -Wuninitialized -Wunused-function
 
 #Disable warnings realted to __DATE__  and __TIME__, if the gcc version greather than 4.8
-GCC_VER := $(shell echo `gcc -dumpversion | cut -f1-2 -d.` \>= 4.9 | sed -e 's/\./*100+/g' | bc )
+GCC_VER := $(shell echo `gcc -dumpversion | cut -f1-2 -d.` \>= 4.9 | bc )
 ifeq ($(GCC_VER),1)
 WARNINGS += -Wno-error=date-time -Wno-date-time
 endif
