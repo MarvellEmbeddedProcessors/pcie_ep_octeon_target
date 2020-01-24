@@ -11,8 +11,8 @@
 #include <linux/highmem.h>
 
 /* #include <mmio_api_arm.h> */
-#include <mmio_api.h>
-#include <dma_api.h>
+#include "mmio_api.h"
+#include "dma_api.h"
 
 MODULE_DESCRIPTION("A dma driver");
 MODULE_LICENSE("GPL");
@@ -108,7 +108,8 @@ void host_writel(host_dma_addr_t host_addr, uint32_t val)
 }
 EXPORT_SYMBOL(host_writel);
 
-void do_dma_sync(void *virt_addr, host_dma_addr_t host_addr, int len,
+#ifdef CORE_WRITE_TRANSFER
+int do_dma_sync(void *virt_addr, host_dma_addr_t host_addr, int len,
 		host_dma_dir_t dir)
 {
 	void  __iomem *raddrp = NULL;
@@ -145,8 +146,11 @@ void do_dma_sync(void *virt_addr, host_dma_addr_t host_addr, int len,
 	if (dir == DMA_FROM_HOST)
 		mmio_memread(laddr, raddr, len);
 	iounmap(raddrp);
+
+	return 0;
 }
 EXPORT_SYMBOL(do_dma_sync);
+#endif
 
 static int __init dma_api_init_module(void)
 {
@@ -163,10 +167,13 @@ static int __init dma_api_init_module(void)
 	iounmap(reg);
 
 	setup_s2m_regx_acc();
+	dpi_vf_init();
 	return 0;
 }
+
 static void dma_api_exit_module(void)
 {
+	dpi_vf_cleanup();
 	return;
 }
 
