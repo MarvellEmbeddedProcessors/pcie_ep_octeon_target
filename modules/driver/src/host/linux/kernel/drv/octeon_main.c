@@ -935,6 +935,8 @@ int octeon_device_init(octeon_device_t * octeon_dev)
 #endif
 
     if(octeon_dev->chip_id == OCTEON_CN83XX_PF) {
+#define SDP_HOST_LOADED                 0xDEADBEEFULL
+	octeon_write_csr64(octeon_dev, CN83XX_SLI_EPF_SCRATCH(0), SDP_HOST_LOADED);
     	/* Register a Host - Firmware (OCTEON) handshake poll function */
 	    poll_ops.fn = octeon_get_app_mode;
     	poll_ops.fn_arg = 0UL;
