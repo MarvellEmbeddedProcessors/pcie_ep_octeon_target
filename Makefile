@@ -4,7 +4,6 @@ SRCS = dma_api.c
 SRCS += dpi_vf_main.c
 INCLUDE_DIR = -I$(KDIR)/drivers/net/ethernet/cavium/octeontx-83xx/
 ccflags-y := $(INCLUDE_DIR)
-ccflags-y += -DDMA_TRANSFER
  
 OBJS =  $(SRCS:.c=.o)
  

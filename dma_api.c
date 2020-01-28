@@ -108,9 +108,8 @@ void host_writel(host_dma_addr_t host_addr, uint32_t val)
 }
 EXPORT_SYMBOL(host_writel);
 
-#ifdef CORE_WRITE_TRANSFER
-int do_dma_sync(void *virt_addr, host_dma_addr_t host_addr, int len,
-		host_dma_dir_t dir)
+int do_dma_sync_sli(host_dma_addr_t local_addr, host_dma_addr_t host_addr,
+		    void *virt_addr, int len, host_dma_dir_t dir)
 {
 	void  __iomem *raddrp = NULL;
 	void  __iomem *raddr = NULL;
@@ -123,11 +122,11 @@ int do_dma_sync(void *virt_addr, host_dma_addr_t host_addr, int len,
 	index = host_addr >> 32;
 	if (index > 255) {
 		printk(KERN_DEBUG "phys addr too big 0x%llx\n", host_addr);
-		return;
+		return -1;
 	}
 	if (len > PAGE_SIZE) {
 		printk(KERN_DEBUG "len too big %d\n", len);
-		return;
+		return -1;
 	}
 	s2m_op.u64 = 0;
 	s2m_op.s.region = index;
@@ -138,7 +137,7 @@ int do_dma_sync(void *virt_addr, host_dma_addr_t host_addr, int len,
 	raddrp = ioremap((s2m_op.u64 & (~(PAGE_SIZE - 1))), PAGE_SIZE);
 	if (raddrp == NULL) {
 		printk(KERN_DEBUG "ioremap failed\n");
-		return;
+		return -1;
 	}
 	raddr = (uint8_t *)raddrp + (s2m_op.u64 & (PAGE_SIZE - 1));
 	if (dir == DMA_TO_HOST)
@@ -149,8 +148,7 @@ int do_dma_sync(void *virt_addr, host_dma_addr_t host_addr, int len,
 
 	return 0;
 }
-EXPORT_SYMBOL(do_dma_sync);
-#endif
+EXPORT_SYMBOL(do_dma_sync_sli);
 
 static int __init dma_api_init_module(void)
 {

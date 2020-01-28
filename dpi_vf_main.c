@@ -266,9 +266,42 @@ static int dpi_dma_queue_write(struct dpivf_t *dpi_vf, u16 qid, u16 cmd_count,
 	return 0;
 }
 
-#ifdef DMA_TRANSFER
-int do_dma_sync(void *local_ptr, host_dma_addr_t host_addr, int len,
-		host_dma_dir_t dir)
+/*
+ * do_dma_sync() - API to transfer data between host and target
+ *
+ *  @local_dma_addr: DMA address allocated by target
+ *  @host_dma_addr: DMA address allocated by host
+ *  @local_virt_addr: Virtual address allocated by target
+ *  @len: Size of bytes to be transferred
+ *  @dir: Direction of the transfer
+ */
+int do_dma_sync(host_dma_addr_t local_dma_addr, host_dma_addr_t host_dma_addr,
+		void *local_virt_addr, int len,	host_dma_dir_t dir)
+{
+
+	/*printk("dma_sync virt_addr %p host_addr 0x%llx\n len %d dir %d\n",
+		  virt_addr, host_addr, len, dir);*/
+
+	/* Use DMA if the length is 64 bytes or more */
+	if (len >= 64)
+		do_dma_sync_dpi(local_dma_addr, host_dma_addr, local_virt_addr,
+				len, dir);
+	else
+		do_dma_sync_sli(local_dma_addr, host_dma_addr, local_virt_addr,
+				len, dir);
+
+	return 0;
+}
+EXPORT_SYMBOL(do_dma_sync);
+
+struct device *get_dpi_dma_dev(void)
+{
+	return &dpi_vf->pdev->dev;
+}
+EXPORT_SYMBOL(get_dpi_dma_dev);
+
+int do_dma_sync_dpi(host_dma_addr_t local_dma_addr, host_dma_addr_t host_addr,
+		    void *local_ptr, int len, host_dma_dir_t dir)
 {
 	struct device *dev = &dpi_vf->pdev->dev;
 	void *buf, *bufp[1];
@@ -288,7 +321,11 @@ int do_dma_sync(void *local_ptr, host_dma_addr_t host_addr, int len,
 
 	comp_data = devm_kzalloc(dev, len, GFP_DMA);
 	memset(comp_data, 0, len);
-	iova = dma_map_single(dev, local_ptr, len, DMA_BIDIRECTIONAL);
+
+	if (local_ptr)
+		iova = dma_map_single(dev, local_ptr, len, DMA_BIDIRECTIONAL);
+	else
+		iova = local_dma_addr;
 
 	lptr.s.ptr = iova;
 	lptr.s.length = len;
@@ -385,15 +422,16 @@ int do_dma_sync(void *local_ptr, host_dma_addr_t host_addr, int len,
 		return -1;
 	}
 
-	dma_unmap_single(dev, iova, len, DMA_BIDIRECTIONAL);
+	if (local_ptr)
+		dma_unmap_single(dev, iova, len, DMA_BIDIRECTIONAL);
+
 	dma_unmap_single(dev, comp_iova, 1024, DMA_BIDIRECTIONAL);
 
 	devm_kfree(dev, comp_data);
 
 	return 0;
 }
-EXPORT_SYMBOL(do_dma_sync);
-#endif
+EXPORT_SYMBOL(do_dma_sync_dpi);
 
 int dpi_vf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 {
@@ -520,16 +558,22 @@ static void dpivf_pre_setup_undo(struct dpivf_t *dpi_vf)
 
 	/* TODO: Need to check the response */
 	fpavf->free(fpa, DPI_AURA, dpi_vf->qctx[0].dpi_buf, 0);
-	err = dpipf->destroy_domain(dpi_vf->vf_id, dpi_vf->domain, NULL);
-	if (err)
-		dev_err(dev, "DPI PF destroy domain failed\n");
 	err = fpavf->teardown(fpa);
 	if (err)
 		dev_err(dev, "FPA teardown failed\n");
 
-	err = fpapf->destroy_domain(dpi_vf->vf_id, dpi_vf->domain, NULL);
+	fpavf->put(fpa);
+	err = fpapf->destroy_domain(dpi_vf->vf_id, dpi_vf->domain, dpi_vf->kobj);
 	if (err)
 		dev_err(dev, "FPA PF destroy domain failed\n");
+
+	err = dpipf->destroy_domain(dpi_vf->vf_id, dpi_vf->domain, dpi_vf->kobj);
+	if (err)
+		dev_err(dev, "DPI PF destroy domain failed\n");
+
+	if (dpi_vf->kobj)
+		kobject_del(dpi_vf->kobj);
+
 	symbol_put(fpavf_com);
 	symbol_put(fpapf_com);
 	symbol_put(dpipf_com);
