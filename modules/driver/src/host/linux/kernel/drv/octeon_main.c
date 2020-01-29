@@ -837,11 +837,9 @@ int octeon_device_init(octeon_device_t * octeon_dev)
 
 	cavium_spin_lock_init(&octeon_dev->oct_lock);
 
-#if 0 //VSR: disabled for testing
 	/* Do a soft reset of the Octeon device. */
 	if (octeon_dev->fn_list.soft_reset(octeon_dev))
 		return 1;
-#endif
 
     cavium_print_msg(" Soft reset completed\n");
 
