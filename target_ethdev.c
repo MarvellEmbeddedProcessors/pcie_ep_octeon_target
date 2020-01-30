@@ -391,7 +391,7 @@ static int  mgmt_tx_bh(struct otxmn_dev *mdev, int q_idx)
 		*/
 		host_addr = ptr->ptr;
 		/* pkt_hex_dump(skb); */
-		do_dma_sync(skb->data, host_addr, skb->len, DMA_TO_HOST);
+		do_dma_sync(0, host_addr, skb->data, skb->len, DMA_TO_HOST);
 		tq->skb_list[cons_idx] = NULL;
 		tq->pkts++;
 		tq->bytes += skb->len;
@@ -546,7 +546,7 @@ static int handle_rxq(struct otxmn_dev *mdev, int q_idx)
 		}
 		skb->dev = mdev->ndev;
 		host_addr =  ptr->ptr;
-		do_dma_sync(skb->data, host_addr, len, DMA_FROM_HOST);
+		do_dma_sync(0, host_addr, skb->data, len, DMA_FROM_HOST);
 		skb_put(skb, len);
 		/* pkt_hex_dump(skb); */
 		skb->protocol = eth_type_trans(skb, mdev->ndev);
