@@ -159,18 +159,18 @@ octnet_prepare_pci_cmd(octeon_device_t * oct,
 		}
 		/* Fill up O3 PKI_IH3 */
 		pki_ih3.w = 1;
-		pki_ih3.raw = 1;
-		pki_ih3.utag = 1;
+		//pki_ih3.raw = 1;
+		//pki_ih3.utag = 1;
 		pki_ih3.utt = 1;
-		pki_ih3.uqpg = 1;	/* leave it to PKI to use default QPG */
+		//pki_ih3.uqpg = 1;	/* leave it to PKI to use default QPG */
 
-		pki_ih3.tag = 0x11111111 + setup->s.ifidx;
+		//pki_ih3.tag = 0x11111111 + setup->s.ifidx;
 		pki_ih3.tagtype = ORDERED_TAG;
 		/** 
 		 * QPG entry is allocated by the pkipf driver in the octeontx
 		 * Currently it is allocated statically with each pkind having 32 qpg entries
 		 */
-		pki_ih3.qpg = oct->pkind * 32;	/* PKI will use the defualt sttings */
+		//pki_ih3.qpg = oct->pkind * 32;	/* PKI will use the defualt sttings */
 
 		pki_ih3.pm = 0x0;	/* 0x0 - meant for Parse starting at LA (L2) */
 		pki_ih3.sl = 32;	/* sl will be sizeof(pki_ih3) */

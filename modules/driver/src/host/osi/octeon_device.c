@@ -1652,14 +1652,25 @@ octeon_get_app_mode(void *octptr, unsigned long arg UNUSED)
     volatile uint64_t reg_val = 0;
     uint16_t core_clk, coproc_clk;
     static octeon_config_t *default_oct_conf = NULL;
+    uint64_t epf_rinfo;
+    uint16_t vf_srn;
  
     reg_val = octeon_read_csr64(octeon_dev, CN83XX_SLI_EPF_SCRATCH(0));
     if (reg_val == SDP_HOST_LOADED)
 	return OCT_POLL_FN_CONTINUE;
 
+    epf_rinfo = octeon_read_csr64(octeon_dev, CN83XX_SDP_EPF_RINFO(octeon_dev->epf_num));
+    /* vf_srn is just the starting ring number */
+    vf_srn = epf_rinfo & 0x3f;
     if (reg_val == SDP_GET_HOST_INFO) {
 	reg_val = 0;
-	reg_val = (0x8 << 24);
+	reg_val = ((uint64_t)CVM_DRV_NIC_APP << 40 | 
+		   (uint64_t) octeon_dev->sriov_info.pf_srn << 32 | 
+		   (uint64_t) octeon_dev->sriov_info.rings_per_pf << 24 | 
+		   (uint64_t) octeon_dev->sriov_info.num_vfs << 16 | 
+		   (uint64_t) vf_srn << 8 | 
+		   (uint64_t) octeon_dev->sriov_info.rings_per_vf);
+	
 	octeon_write_csr64(octeon_dev, CN83XX_SLI_EPF_SCRATCH(0), reg_val);	
     }
 

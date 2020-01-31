@@ -596,18 +596,18 @@ __do_instruction_processing(octeon_device_t * oct,
 	/* Fill up PKI IH3 */
 	pki_ih3.w = 1;
 	pki_ih3.raw = si->ih.raw;
-	pki_ih3.utag = 1;
-	pki_ih3.uqpg = 1;
+	//pki_ih3.utag = 1;
+	//pki_ih3.uqpg = 1;
 	pki_ih3.utt = 1;
 
-	pki_ih3.tag = si->ih.tag;
+	//pki_ih3.tag = si->ih.tag;
 	pki_ih3.tagtype = si->ih.tagtype;
 
 	/** 
 	 * QPG entry is allocated by the pkipf driver in the octeontx
 	 * Currently it is allocated statically with each pkind having 32 qpg entries
 	 */
-	pki_ih3.qpg = oct->pkind * 32;
+	//pki_ih3.qpg = oct->pkind * 32;
 	pki_ih3.pm = 0x7;
 	pki_ih3.sl = 8;
 
