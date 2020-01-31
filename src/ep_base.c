@@ -22,6 +22,8 @@
 //#define FIREWALL_NW_AGENT_FDT_NAME     "firewall-network-agent-intr"
 //#define FIREWALL_RPC_FDT_NAME          "firewall-rpc-intr"
 
+#define MAX_INTERRUPTS	10
+
 #define PEMX_REG_BASE(pem)  (0x87E0C0000000ULL | (pem << 24))
 #define NPU_HANDSHAKE_SIGNATURE 0xABCDABCD
 void *pem_io_base;
@@ -33,6 +35,10 @@ void *npu_barmap_mem;
 
 /* NPU BAR map structure */
 struct npu_bar_map bar_map;
+int irq_list[MAX_INTERRUPTS];
+
+/* platform device */
+struct device	*plat_dev;
 
 static irqreturn_t npu_base_interrupt(int irq, void *dev_id)
 {
@@ -199,10 +205,12 @@ static void npu_handshake_ready(struct npu_bar_map *bar_map)
 extern void mv_facility_conf_init(struct device *dev,
 				  void *mapaddr,
 				  struct npu_bar_map *barmap);
+extern int npu_device_access_init(void);
+
 static int npu_base_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
-	int irq, first_irq, irq_count;
+	int i, irq, first_irq, irq_count;
 	char *dev_id = NPU_BASE_DEVICE_ID;
 
 	irq = platform_get_irq(pdev, 0);
@@ -221,14 +229,19 @@ static int npu_base_probe(struct platform_device *pdev)
 				&irq_count, &first_irq))
 		return -1;
 
+	for (i = 0; i < irq_count; i++)
+		irq_list[i] = platform_get_irq(pdev, i);
+
 	if (npu_bar_map_init(&bar_map, first_irq, irq_count))
 		return -1;
 
 	if (npu_base_setup(&bar_map))
 		return -1;
 
+	plat_dev = dev;
 	npu_handshake_ready(&bar_map);
 	mv_facility_conf_init(dev, npu_barmap_mem, &bar_map);
+	npu_device_access_init();
 	return 0;
 }
 
