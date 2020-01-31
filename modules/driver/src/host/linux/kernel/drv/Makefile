@@ -148,5 +148,6 @@ clean: check_cnnic
 	@rm -f ../../../osi/.*.cmd ../../../osi/*.o  ../../../osi/*~
 	@rm -f ../test/.*.cmd ../test/*.o ../test/*~ *.ko 
 	@rm -f redefine_symbols.mk
+	@rm -f *.ur-safe ../../../osi/*.ur-safe
 
 # $Id: Makefile 170599 2018-03-20 13:42:25Z vvelumuri $

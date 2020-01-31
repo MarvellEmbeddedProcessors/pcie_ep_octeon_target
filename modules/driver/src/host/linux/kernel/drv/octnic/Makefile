@@ -174,7 +174,7 @@ all: check_cnnic
 
 clean: check_cnnic
 	rm -rf $(OBJS) $(BINDIR)/$(OBJNAME).ko *.ko .*.cmd *.mod.* *.o *~ .tmp_versions .cache.mk .*.o.d
-	rm -f modules.order Module.symvers *.ko.unsigned
+	rm -f modules.order Module.symvers *.ko.unsigned *.ur-safe
 
 
 
