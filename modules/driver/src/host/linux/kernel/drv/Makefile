@@ -92,6 +92,7 @@ OBJS += octeon_linux.o            	\
 	octeon_ioctl.o            		\
 	cavium_proc.o             		\
 	facility.o             		\
+	device_access.o			\
 	../../../osi/request_manager.o  \
 	../../../osi/octeon_iq.o  	\
 	../../../osi/response_manager.o \

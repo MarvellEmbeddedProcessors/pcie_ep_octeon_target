@@ -1605,6 +1605,7 @@ static void npu_bar_map_save(void *src)
 #define NPU_BASE_READY_MAGIC 0xABCDABCD
 bool npu_handshake_done=false;
 extern void mv_facility_conf_init(octeon_device_t *oct);
+extern int host_device_access_init(void);
 oct_poll_fn_status_t 
 octeon_wait_for_npu_base(void *octptr, unsigned long arg UNUSED)
 {
@@ -1631,6 +1632,10 @@ octeon_wait_for_npu_base(void *octptr, unsigned long arg UNUSED)
 	//npu_handshake_done = true;
 	//return OCT_POLL_FN_FINISHED;
 		mv_facility_conf_init(octeon_dev);
+
+		/* setup the Host device access for RPC */
+		if (host_device_access_init() < 0)
+			pr_err("host_device_access_init failed\n");
 	} else {
 		printk("%s: Chip id 0x%x is not supported\n",
 		       __func__, octeon_dev->chip_id);

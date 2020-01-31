@@ -6,6 +6,8 @@
 #include "facility.h"
 #include "octeon_device.h"
 
+extern octeon_device_t *octeon_device[MAX_OCTEON_DEVICES];
+
 /* TODO: should make it use dynamic alloc memory ?? */
 extern struct npu_bar_map npu_memmap_info;
 
@@ -132,6 +134,23 @@ EXPORT_SYMBOL_GPL(mv_facility_unregister_event_callback);
 
 int mv_send_facility_dbell(int type, int dbell)
 {
+	struct facility_bar_map *facility_map;
+	int irq;
+
+	facility_map = &npu_memmap_info.facility_map[type];
+
+	printk("type=%d, dbell=%d, start=%d\n",type,dbell, facility_map->h2t_dbell_start);
+	irq = dbell + facility_map->h2t_dbell_start;
+
+	/* check if dbell falls in range */
+	if (irq >= facility_map->h2t_dbell_start &&
+	    irq < (facility_map->h2t_dbell_start +
+		     facility_map->h2t_dbell_count))
+		*(volatile uint32_t *)(octeon_device[0]->mmio[1].hw_addr +
+			 npu_memmap_info.gicd_offset) = irq;
+	else
+		return -EINVAL;
+
 	printk("%s: invoked for type-%d, dbell-%d\n", __func__, type, dbell);
 	return 0;
 }
