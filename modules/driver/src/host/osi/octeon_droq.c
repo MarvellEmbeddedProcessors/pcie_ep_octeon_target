@@ -56,7 +56,11 @@ int octeon_droq_check_hw_for_pkts(octeon_device_t * oct, octeon_droq_t * droq)
 {
 	uint32_t pkt_count = 0;
 
+#ifdef OCT_TX2_ISM_INT
+	pkt_count = *(uint64_t *)(droq->ism.pkt_cnt_addr);
+#else	
 	pkt_count = OCTEON_READ32(droq->pkts_sent_reg);
+#endif
 	//printk("%s: pkt_count(sent_reg):%d pkts_pending:%d\n",__func__,pkt_count,cavium_atomic_read(&droq->pkts_pending));
 	if (pkt_count) {
 		cavium_atomic_add(pkt_count, &droq->pkts_pending);
@@ -275,6 +279,15 @@ int octeon_delete_droq(octeon_device_t * oct, uint32_t q_no)
 				       droq->info_alloc_size, droq->app_ctx);
 #endif
 
+#ifdef OCT_TX2_ISM_INT
+	if (oct->chip_id == OCTEON_CN93XX_PF) {
+		if (droq->ism.pkt_cnt_addr)
+			octeon_pci_free_consistent(oct->pci_dev, 8,
+						   droq->ism.pkt_cnt_addr, droq->ism.pkt_cnt_dma,
+						   droq->app_ctx);
+	}
+#endif
+
 	if (droq->desc_ring)
 		octeon_pci_free_consistent(oct->pci_dev,
 					   (droq->max_count *
@@ -325,6 +338,12 @@ int octeon_init_droq(octeon_device_t * oct, uint32_t q_no, void *app_ctx)
 		c_buf_size = CFG_GET_OQ_BUF_SIZE(conf83);
 		c_pkts_per_intr = CFG_GET_OQ_PKTS_PER_INTR(conf83);
 		c_refill_threshold = CFG_GET_OQ_REFILL_THRESHOLD(conf83);
+	} else if (oct->chip_id == OCTEON_CN93XX_PF) {
+		cn93xx_pf_config_t *conf93 = CHIP_FIELD(oct, cn93xx_pf, conf);
+		c_num_descs = CFG_GET_OQ_NUM_DESC(conf93);
+		c_buf_size = CFG_GET_OQ_BUF_SIZE(conf93);
+		c_pkts_per_intr = CFG_GET_OQ_PKTS_PER_INTR(conf93);
+		c_refill_threshold = CFG_GET_OQ_REFILL_THRESHOLD(conf93);
 	}
 
 	droq->max_count = c_num_descs;
@@ -345,6 +364,23 @@ int octeon_init_droq(octeon_device_t * oct, uint32_t q_no, void *app_ctx)
 		     q_no, droq->desc_ring, droq->desc_ring_dma);
 	cavium_print(PRINT_REGS, "droq[%d]: num_desc: %d",
 		     q_no, droq->max_count);
+
+#ifdef OCT_TX2_ISM_INT	
+	if (oct->chip_id == OCTEON_CN93XX_PF) {
+		droq->ism.pkt_cnt_addr =
+		    octeon_pci_alloc_consistent(oct->pci_dev, 8,
+						&droq->ism.pkt_cnt_dma, droq->app_ctx);
+
+		if (cavium_unlikely(!droq->ism.pkt_cnt_addr)) {
+			cavium_error("OCTEON: Output queue %d ism memory alloc failed\n",
+				     q_no);
+			return 1;
+		}
+	
+		cavium_print(PRINT_REGS, "droq[%d]: ism addr: virt: 0x%p, dma: %lx",
+			     q_no, droq->ism.pkt_cnt_addr, droq->ism.pkt_cnt_dma);
+	}
+#endif		
 
 #ifndef BUFPTR_ONLY_MODE
 	droq->info_list =
@@ -705,7 +741,7 @@ static inline octeon_recv_info_t *octeon_create_recv_info(octeon_device_t *
 
 		/* Done for IOMMU: Don't unmap buffer from the device, since we are reusing it */
 // *INDENT-OFF* 
-#ifndef OCT_BASE_REUSE_BUFS
+#ifndef DROQ_TEST_REUSE_BUFS
       octeon_pci_unmap_single(octeon_dev->pci_dev, (unsigned long)droq->desc_ring[idx].buffer_ptr, droq->buffer_size, CAVIUM_PCI_DMA_FROMDEVICE);
 #endif
 // *INDENT-ON* 
@@ -735,7 +771,7 @@ static inline octeon_recv_info_t *octeon_create_recv_info(octeon_device_t *
 		recv_pkt->buffer_ptr[i] = droq->recv_buf_list[idx].buffer;
 
 		/* Done for IOMMU: To avoid refilling the buffer index */
-#ifndef OCT_BASE_REUSE_BUFS
+#ifndef DROQ_TEST_REUSE_BUFS
 		droq->recv_buf_list[idx].buffer = 0;
 #endif
 
@@ -1128,7 +1164,7 @@ octeon_droq_fast_process_packets(octeon_device_t * oct,
 		octeon_swap_8B_data((uint64_t *)&info->length, 1);
 #else
 		/* Swap length field on 83xx*/
-		if (oct->chip_id == OCTEON_CN83XX_PF)
+		if (oct->chip_id == OCTEON_CN83XX_PF || oct->chip_id == OCTEON_CN93XX_PF)
 			octeon_swap_8B_data((uint64_t *) &(info->length), 1);
 #endif
 
@@ -1488,7 +1524,7 @@ octeon_droq_slow_process_packets(octeon_device_t * oct,
 		resp_hdr = (octeon_resp_hdr_t *) & info->resp_hdr;
         
 		/* Swap length field on 83xx*/
-		if (oct->chip_id == OCTEON_CN83XX_PF)
+		if (oct->chip_id == OCTEON_CN83XX_PF || oct->chip_id == OCTEON_CN93XX_PF)
 			octeon_swap_8B_data((uint64_t *) &(info->length), 1);
 		
 #if 0
@@ -1564,7 +1600,7 @@ octeon_droq_process_packets(octeon_device_t * oct, octeon_droq_t * droq)
 		     *) (droq->recv_buf_list[droq->host_read_index].data);
 #endif
 		/* Swap length field on 83xx*/
-		if (oct->chip_id == OCTEON_CN83XX_PF)
+		if (oct->chip_id == OCTEON_CN83XX_PF || oct->chip_id == OCTEON_CN93XX_PF)
 			octeon_swap_8B_data((uint64_t *) &(info->length), 1);
 
 		buf_cnt = 0;
@@ -1618,7 +1654,7 @@ octeon_droq_process_packets(octeon_device_t * oct, octeon_droq_t * droq)
 	cavium_print(PRINT_DEBUG,
 		     "\n droq_process_packets called for:%d, fastpath: %d\n",
 		     droq->q_no, droq->fastpath_on);
-	if (droq->fastpath_on)
+	if (droq->fastpath_on) {
 #ifdef OCT_REUSE_RX_BUFS
 		pkts_processed =
 		    octeon_droq_fast_process_packets_reuse_bufs(oct, droq,
@@ -1627,7 +1663,8 @@ octeon_droq_process_packets(octeon_device_t * oct, octeon_droq_t * droq)
 		pkts_processed =
 		    octeon_droq_fast_process_packets(oct, droq, pkt_count);
 #endif
-	else {
+
+	} else {
 #if defined(ETHERPCI)
 		octeon_droq_drop_packets(droq, pkt_count);
 		droq->stats.dropped_toomany += pkt_count;

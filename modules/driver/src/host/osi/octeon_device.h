@@ -52,6 +52,11 @@ typedef struct _OCTEON_DEVICE octeon_device_t;
 #include "cn83xx_pf_device.h"
 #include "cn83xx_vf_device.h"
 
+/* OCTEON TX2 models */
+#include "cn93xx_pf_device.h"
+#include "cn93xx_vf_device.h"
+
+
 #define PCI_DMA_64BIT                  0xffffffffffffffffULL
 
 #define CAVIUM_PCI_CACHE_LINE_SIZE     2
@@ -59,6 +64,10 @@ typedef struct _OCTEON_DEVICE octeon_device_t;
 /** OCTEON TX Models */
 #define  OCTEON_CN83XX_PCIID_PF       0xA300177d
 #define  OCTEON_CN83XX_PCIID_VF       0xA303177d
+
+/** OCTEON TX2 Models */
+#define  OCTEON_CN93XX_PCIID_PF       0xB200177d   //96XX
+#define  OCTEON_CN93XX_PCIID_VF       0xB203177d   //TODO:96XX VF
 
 /** Driver identifies chips by these Ids, created by clubbing together
     DeviceId+RevisionId; Where Revision Id is not used to distinguish
@@ -68,6 +77,10 @@ typedef struct _OCTEON_DEVICE octeon_device_t;
 /** OCTEON TX MODELS */
 #define  OCTEON_CN83XX_PF             0xA300
 #define  OCTEON_CN83XX_VF             0xA303
+
+/** OCTEON TX2 MODELS */
+#define  OCTEON_CN93XX_PF             0xB200   //96XX
+#define  OCTEON_CN93XX_VF             0xB203   //TODO:96XX VF
 
 /** Endian-swap modes supported by Octeon. */
 enum octeon_pci_swap_mode {
@@ -119,6 +132,9 @@ enum {
 	OCTEON_RESET_MODULE = 2,
 	OCTEON_STOP_MODULE
 };
+
+#define  OCT_DRV_ONLINE 1
+#define  OCT_DRV_OFFLINE 2
 
 /*---------------------------DISPATCH LIST-------------------------------*/
 
@@ -267,6 +283,18 @@ struct octeon_fn_list {
 	void (*disable_output_queue) (struct _OCTEON_DEVICE *, int);
 	void (*force_io_queues_off) (struct _OCTEON_DEVICE *);
 	void (*dump_registers) (struct _OCTEON_DEVICE *);
+};
+
+/* wrappers around work structs */
+struct cavium_wk {
+	struct delayed_work work;
+	void *ctxptr;
+	u64 ctxul;
+};  
+
+struct cavium_wq {
+	struct workqueue_struct *wq;
+	struct cavium_wk wk;
 };
 
 #define MAX_MSIX_VECTORS	64
@@ -471,6 +499,17 @@ struct _OCTEON_DEVICE {
 
 	/*pkind value for DPI */
 	uint8_t pkind;
+
+#ifdef OCT_NIC_IQ_USE_NAPI
+	struct cavium_wq req_comp_wq;
+		
+	/** Lock for req response list */
+	spinlock_t cmd_resp_wqlock;
+	
+	uint32_t cmd_resp_state;
+
+	struct cavium_wq check_db_wq[64];
+#endif
 
 	/* mbox related */
 	uint32_t mbox_wait_cond;

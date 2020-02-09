@@ -89,10 +89,9 @@ mmap:	NULL
 #endif
 
 static DEFINE_PCI_DEVICE_TABLE(octeon_pci_tbl) = {
-	{
-	OCTEON_VENDOR_ID, 0xA300, PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0},	//83xx PF
-	{
-	0, 0, 0, 0, 0, 0, 0}
+	{OCTEON_VENDOR_ID, 0xA300, PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0},	//83xx PF
+	{OCTEON_VENDOR_ID, 0xB200, PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0},	//96xx PF
+	{0, 0, 0, 0, 0, 0, 0}
 };
 
 static struct pci_driver octeon_pci_driver = {

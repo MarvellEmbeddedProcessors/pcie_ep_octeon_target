@@ -32,7 +32,12 @@ typedef struct {
 	int index;
 } iq_post_status_t;
 
+#ifdef OCT_NIC_IQ_USE_NAPI
+void __check_db_timeout(octeon_device_t *oct, u64 iq_no);
+void check_db_timeout(struct work_struct *work);
+#else
 oct_poll_fn_status_t check_db_timeout(void *octptr, unsigned long iq_no);
+#endif
 
 extern void cn83xx_dump_regs(octeon_device_t *, int iq_no);
 static inline int IQ_INSTR_MODE_64B(octeon_device_t * oct, int iq_no)
@@ -116,7 +121,11 @@ int wait_for_iq_instr_fetch(octeon_device_t * oct, int q_no)
 
 		pending = cavium_atomic_read(&instr_queue->instr_pending);
 		if (pending)
+#ifdef OCT_NIC_IQ_USE_NAPI
+			__check_db_timeout(oct, q_no);
+#else			
 			check_db_timeout(oct, q_no);
+#endif			
 		instr_cnt += pending;
 
 		if (instr_cnt == 0)
@@ -142,7 +151,11 @@ int wait_for_instr_fetch(octeon_device_t * oct)
 			pending = cavium_atomic_read(&oct->instr_queue[i]->instr_pending);
 // *INDENT-ON*
 			if (pending)
+#ifdef OCT_NIC_IQ_USE_NAPI
+				__check_db_timeout(oct, i);
+#else			
 				check_db_timeout(oct, i);
+#endif				
 			instr_cnt += pending;
 		}
 
@@ -398,6 +411,50 @@ flush_instr_queue(octeon_device_t * oct, octeon_instr_queue_t * iq)
 	process_noresponse_list(oct, iq);
 }
 
+#ifdef OCT_NIC_IQ_USE_NAPI
+/* Process instruction queue after timeout.
+ *  * This routine gets called from a workqueue or when removing the module.
+ *   */
+void __check_db_timeout(octeon_device_t *oct, u64 iq_no)
+{
+	octeon_instr_queue_t *iq;
+	u64 next_time;
+
+	if (!oct)
+		return;
+
+	iq = oct->instr_queue[iq_no];
+	if (!iq)
+		return;
+
+	/* return immediately, if no work pending */
+	if (!atomic_read(&iq->instr_pending))
+		return;
+	/* If jiffies - last_db_time < db_timeout do nothing  */
+	next_time = iq->last_db_time + iq->db_timeout;
+	if (!time_after(jiffies, (unsigned long)next_time))
+		return;
+	iq->last_db_time = jiffies;
+
+	/* Flush the instruction queue */
+	octeon_flush_iq(oct, iq, 0);
+
+	//lio_enable_irq(NULL, iq); //TODO
+}
+
+void check_db_timeout(struct work_struct *work)
+{
+	struct cavium_wk *wk = (struct cavium_wk *)work;
+	octeon_device_t *oct = (octeon_device_t *)wk->ctxptr;
+	u64 iq_no = wk->ctxul;
+	struct cavium_wq *db_wq = &oct->check_db_wq[iq_no];
+	u32 delay = 10;
+
+	__check_db_timeout(oct, iq_no);
+	queue_delayed_work(db_wq->wq, &db_wq->wk.work, msecs_to_jiffies(delay));
+}
+
+#else
 /* Called by the Poll thread at regular intervals to check the instruction
  * queue for commands to be posted and for commands that were fetched by Octeon.
  */
@@ -429,9 +486,12 @@ oct_poll_fn_status_t check_db_timeout(void *octptr, unsigned long iq_no)
 
 	return OCT_POLL_FN_CONTINUE;
 }
+#endif
 
 extern void
 delete_soft_instr_buffers(octeon_device_t *, octeon_soft_instruction_t *);
+
+void cn93xx_dump_regs(octeon_device_t * oct, int qno);
 
 static octeon_instr_status_t
 __do_instruction_processing(octeon_device_t * oct,
@@ -461,6 +521,11 @@ __do_instruction_processing(octeon_device_t * oct,
 	print_soft_instr(oct, si);
 #endif
 
+	if((si->alloc_flags & OCTEON_DIRECT_GATHER) &&
+		(oct->chip_id == OCTEON_CN93XX_PF || oct->chip_id == OCTEON_CN93XX_VF)) {
+		cavium_error("OCTEONTX2 dont support direct gather mode\n");
+		return retval;
+	}
 	/* Add the PCIe port to be used for sending responses back. */
 	if (SOFT_INSTR_RESP_ORDER(si) != OCTEON_RESP_NORESPONSE)
 		si->irh.pcie_port = oct->pcie_port;
@@ -474,31 +539,11 @@ __do_instruction_processing(octeon_device_t * oct,
 
 	iq = oct->instr_queue[iq_no];
 
-#if 0
-	/* Check if it is applicable for 83 also */
-	/* In 73XX & 78XX gather list with 1 gather entry is invalid */
-	if (oct->chip_id == OCTEON_CN73XX_PF || oct->chip_id == OCTEON_CN73XX_VF
-	    || oct->chip_id == OCTEON_CN78XX_PF
-	    || oct->chip_id == OCTEON_CN78XX_VF) {
-		if ((dma_mode == OCTEON_DMA_SCATTER_GATHER)
-		    || (dma_mode == OCTEON_DMA_GATHER)) {
-			if (sr->inbuf.cnt < 2) {
-				cavium_error
-				    ("OCTEON[%d]: For Scatter-Gather / Gather the min buffers should be 2 for CN78XX & CN73XX \n",
-				     oct->octeon_id);
-#ifndef OCTEON_USE_OLD_REQ_STATUS
-				retval.s.status = OCTEON_REQUEST_INVALID_BUFCNT;
-#endif
-				return retval;
-			}
-		}
-	}
-#endif	
-
 	/* The first 32 bytes are always used by the driver. The last 32 bytes
 	   may contain direct gather information in CN63XX. */
 	if ( (oct->chip_id == OCTEON_CN83XX_PF) ||
-	   (oct->chip_id == OCTEON_CN83XX_VF)) {
+	   (oct->chip_id == OCTEON_CN83XX_VF) ||
+		(oct->chip_id == OCTEON_CN93XX_PF) || (oct->chip_id == OCTEON_CN93XX_VF)) {
 		memset(&ihx, 0, sizeof(octeon_instr_ihx_t));
 		memset(&pki_ih3, 0, sizeof(octeon_instr_pki_ih3_t));
 		memset(&o3_cmd, 0, sizeof(octeon_instr3_64B_t));
@@ -579,7 +624,9 @@ __do_instruction_processing(octeon_device_t * oct,
 
 	/* There is are changs for 83XX, cann't fit with O3 case */
 	if ((oct->chip_id == OCTEON_CN83XX_PF) ||
-	 (oct->chip_id == OCTEON_CN83XX_VF)) {
+		(oct->chip_id == OCTEON_CN83XX_VF) ||
+		(oct->chip_id == OCTEON_CN93XX_PF) ||
+		(oct->chip_id == OCTEON_CN93XX_VF)) {
 		/* Fill up SDD IHX */
 		ihx.pkind = oct->pkind;
 
@@ -593,24 +640,25 @@ __do_instruction_processing(octeon_device_t * oct,
         } else {
         	ihx.tlen = si->ih.dlengsz + ihx.fsz;
 	}
-	/* Fill up PKI IH3 */
-	pki_ih3.w = 1;
-	pki_ih3.raw = si->ih.raw;
-	//pki_ih3.utag = 1;
-	//pki_ih3.uqpg = 1;
-	pki_ih3.utt = 1;
+	if((oct->chip_id == OCTEON_CN83XX_PF) || (oct->chip_id == OCTEON_CN83XX_VF)) {
+		/* Fill up PKI IH3 */
+		pki_ih3.w = 1;
+		pki_ih3.raw = si->ih.raw;
+		//pki_ih3.utag = 1;
+		//pki_ih3.uqpg = 1;
+		pki_ih3.utt = 1;
 
-	//pki_ih3.tag = si->ih.tag;
-	pki_ih3.tagtype = si->ih.tagtype;
+		//pki_ih3.tag = si->ih.tag;
+		pki_ih3.tagtype = si->ih.tagtype;
 
-	/** 
-	 * QPG entry is allocated by the pkipf driver in the octeontx
-	 * Currently it is allocated statically with each pkind having 32 qpg entries
-	 */
-	//pki_ih3.qpg = oct->pkind * 32;
-	pki_ih3.pm = 0x7;
-	pki_ih3.sl = 8;
-
+		/** 
+		 * QPG entry is allocated by the pkipf driver in the octeontx
+		 * Currently it is allocated statically with each pkind having 32 qpg entries
+		 */
+		//pki_ih3.qpg = oct->pkind * 32;
+		pki_ih3.pm = 0x7;
+		pki_ih3.sl = 8;
+	}
 	/* Now fill up the CN78xx 64B command */
 	/* copy dptr */
 	o3_cmd.dptr = cmd->dptr;
@@ -618,9 +666,10 @@ __do_instruction_processing(octeon_device_t * oct,
 	/* copy ih3 */
 	o3_cmd.ih3 = *((uint64_t *) & ihx);
 
-	/* copy pki_ih3 */
-	o3_cmd.pki_ih3 = *((uint64_t *) & pki_ih3);
-
+	if((oct->chip_id == OCTEON_CN83XX_PF) || (oct->chip_id == OCTEON_CN83XX_VF)) {
+		/* copy pki_ih3 */
+		o3_cmd.pki_ih3 = *((uint64_t *) & pki_ih3);
+	}
 #ifndef IOQ_PERF_MODE_O3
 	/* copy rptr */
 	o3_cmd.rptr = cmd->rptr;
@@ -733,9 +782,11 @@ __do_instruction_processing(octeon_device_t * oct,
 
 	}
 
+#ifndef OCT_NIC_IQ_USE_NAPI
 	if (iq->do_auto_flush) {
 		octeon_flush_iq(oct, iq, (iq->max_count / 2));
 	}
+#endif
 
 	return retval;
 }
@@ -1489,8 +1540,10 @@ octeon_send_noresponse_command(octeon_device_t * oct,
 
 	cavium_spin_unlock_softirqrestore(&iq->lock);
 
+#ifndef OCT_NIC_IQ_USE_NAPI
 	if (iq->do_auto_flush)
 		octeon_flush_iq(oct, iq, 8);
+#endif		
 
 	return st.status;
 }
@@ -1581,6 +1634,156 @@ octeon_iq_post_command(octeon_device_t * oct,
 /** API exported so that modules like octeon NIC module can flush the input
   * queue to which they had posted a command before.
   */
+
+#if 0 //def 0 //OCT_NIC_IQ_USE_NAPI
+/* Can only run in process context */
+int
+lio_process_iq_request_list(octeon_device_t *oct,
+	octeon_instr_queue_t *iq, u32 napi_budget)
+{
+	int reqtype;
+	void *buf;
+	u32 old = iq->flush_index;
+	u32 inst_count = 0;
+	unsigned int pkts_compl = 0, bytes_compl = 0;
+	struct octeon_soft_command *sc;
+	struct octeon_instr_irh *irh;
+	unsigned long flags;
+
+    while (old != iq->octeon_read_index) {
+		reqtype = iq->nrlist[old].reqtype;
+		buf     = iq->nrlist[old].buf;
+
+		if (reqtype == REQTYPE_NONE)
+			goto skip_this;
+
+		octeon_update_tx_completion_counters(buf, reqtype, &pkts_compl,
+				&bytes_compl);
+
+		switch (reqtype) {
+			case REQTYPE_NORESP_NET:
+			case REQTYPE_NORESP_NET_SG:
+			case REQTYPE_RESP_NET_SG:
+				reqtype_free_fn[oct->octeon_id][reqtype](buf);
+				break;
+	        case REQTYPE_RESP_NET:
+	        case REQTYPE_SOFT_COMMAND:
+	            sc = buf;
+
+            if (OCTEON_CN23XX_PF(oct) || OCTEON_CN23XX_VF(oct))
+				irh = (struct octeon_instr_irh *)
+				                  &sc->cmd.cmd3.irh;
+			else
+			    irh = (struct octeon_instr_irh *)
+			                    &sc->cmd.cmd2.irh;
+			if (irh->rflag) {
+				/* We're expecting a response from Octeon.
+				 * It's up to lio_process_ordered_list() to
+				 * process  sc. Add sc to the ordered soft
+				 * command response list because we expect
+				 * a response from Octeon.
+			     */
+               spin_lock_irqsave
+                   (&oct->response_list
+	                     [OCTEON_ORDERED_SC_LIST].lock,
+	                      flags);
+	           atomic_inc(&oct->response_list
+	                   [OCTEON_ORDERED_SC_LIST].
+	                    pending_req_count);
+	           list_add_tail(&sc->node, &oct->response_list
+	                   [OCTEON_ORDERED_SC_LIST].head);
+	           spin_unlock_irqrestore
+	                   (&oct->response_list
+	                     [OCTEON_ORDERED_SC_LIST].lock,
+	                     flags);
+
+            } else {
+                if (sc->callback) {
+                   /* This callback must not sleep */
+                   sc->callback(oct, OCTEON_REQUEST_DONE,
+                            sc->callback_arg);
+                }
+            }
+            break;
+		        default:
+	            dev_err(&oct->pci_dev->dev,
+	                "%s Unknown reqtype: %d buf: %p at idx %d\n",
+	                __func__, reqtype, buf, old);
+        }
+
+        iq->request_list[old].buf = NULL;
+        iq->request_list[old].reqtype = 0;
+
+ skip_this:
+		inst_count++;
+		old = incr_index(old, 1, iq->max_count);
+				 
+		if ((napi_budget) && (inst_count >= napi_budget))
+			break;
+	 }
+	 if (bytes_compl)
+	      octeon_report_tx_completion_to_bql(iq->app_ctx, pkts_compl,
+	                           bytes_compl);
+	 iq->flush_index = old;
+																 
+	 return inst_count;
+}
+#endif
+
+
+#ifdef OCT_NIC_IQ_USE_NAPI
+/* Can only be called from process context */
+int
+octeon_flush_iq(octeon_device_t *oct, octeon_instr_queue_t *iq,
+        uint32_t napi_budget)
+{
+    uint32_t inst_processed = 0;
+    uint32_t tot_inst_processed = 0;
+    int tx_done = 1;
+
+    if (!spin_trylock(&iq->iq_flush_running_lock))
+		return tx_done;
+
+	spin_lock_bh(&iq->lock);
+									    
+	iq->octeon_read_index = oct->fn_list.update_iq_read_idx(iq);
+
+    do {
+		/* Process any outstanding IQ packets. */
+		if (iq->flush_index == iq->octeon_read_index)
+			break;
+
+		if (napi_budget)
+			inst_processed =
+				lio_process_iq_request_list(oct, iq,
+										napi_budget -
+										tot_inst_processed);
+		else
+			inst_processed =
+				lio_process_iq_request_list(oct, iq, 0);
+
+		if (inst_processed) {
+			atomic_sub(inst_processed, &iq->instr_pending);
+			iq->stats.instr_processed += inst_processed;
+		}
+
+		tot_inst_processed += inst_processed;
+		inst_processed = 0;
+
+	} while (tot_inst_processed < napi_budget);
+
+	if (napi_budget && (tot_inst_processed >= napi_budget))
+		tx_done = 0;
+
+	iq->last_db_time = jiffies;
+
+	spin_unlock_bh(&iq->lock);
+
+	spin_unlock(&iq->iq_flush_running_lock);
+
+	return tx_done;
+}
+#else
 void
 octeon_flush_iq(octeon_device_t * oct, octeon_instr_queue_t * iq,
 		uint32_t pending_thresh)
@@ -1590,6 +1793,7 @@ octeon_flush_iq(octeon_device_t * oct, octeon_instr_queue_t * iq,
 		flush_instr_queue(oct, iq);
 	}
 }
+#endif
 
 void octeon_perf_flush_iq(octeon_device_t * oct, octeon_instr_queue_t * iq)
 {

@@ -35,7 +35,11 @@ void (*noresp_buf_free_fn[MAX_OCTEON_DEVICES][NORESP_TYPES + 1]) (void *);
 int octeon_setup_response_list(octeon_device_t * oct)
 {
 	int i, ret = 0;
+#ifdef OCT_NIC_IQ_USE_NAPI
+	struct cavium_wq *cwq;
+#else	
 	octeon_poll_ops_t poll_ops;
+#endif	
 
 	for (i = 0; i < MAX_RESPONSE_LISTS; i++) {
 		CAVIUM_INIT_LIST_HEAD(&oct->response_list[i].head);
@@ -46,6 +50,23 @@ int octeon_setup_response_list(octeon_device_t * oct)
 		noresp_buf_free_fn[oct->octeon_id][i] = NULL;
 	}
 
+#ifdef OCT_NIC_IQ_USE_NAPI
+
+	spin_lock_init(&oct->cmd_resp_wqlock);
+
+	oct->req_comp_wq.wq = alloc_workqueue("req-comp", WQ_MEM_RECLAIM, 0);
+	if (!oct->req_comp_wq.wq) {
+		dev_err(&oct->pci_dev->dev, "failed to create wq thread\n");
+		return -ENOMEM;
+	}
+
+	cwq = &oct->req_comp_wq;
+	INIT_DELAYED_WORK(&cwq->wk.work, oct_poll_req_completion);
+	cwq->wk.ctxptr = oct;
+	oct->cmd_resp_state = OCT_DRV_ONLINE;
+	queue_delayed_work(cwq->wq, &cwq->wk.work, msecs_to_jiffies(50));
+
+#else
 	cavium_memset(&poll_ops, 0, sizeof(octeon_poll_ops_t));
 
 	poll_ops.fn = oct_poll_req_completion;
@@ -53,6 +74,7 @@ int octeon_setup_response_list(octeon_device_t * oct)
 	poll_ops.ticks = 1;
 	poll_ops.rsvd = 0xff;
 	ret = octeon_register_poll_fn(oct->octeon_id, &poll_ops);
+#endif
 
 /*	poll_ops.fn     = oct_poll_check_unordered_list;
 	poll_ops.ticks  = CAVIUM_TICKS_PER_SEC/10;
@@ -63,8 +85,13 @@ int octeon_setup_response_list(octeon_device_t * oct)
 
 void octeon_delete_response_list(octeon_device_t * oct)
 {
+#ifdef OCT_NIC_IQ_USE_NAPI
+	cancel_delayed_work_sync(&oct->req_comp_wq.wk.work);
+	destroy_workqueue(oct->req_comp_wq.wq);
+#else	
 	octeon_unregister_poll_fn(oct->octeon_id, oct_poll_req_completion, 0);
 //      octeon_unregister_poll_fn(oct->octeon_id, oct_poll_check_unordered_list, 0);
+#endif
 }
 
 /*
@@ -640,6 +667,21 @@ oct_poll_check_unordered_list(void *octptr, unsigned long arg UNUSED)
 	return OCT_POLL_FN_CONTINUE;
 }
 
+#ifdef OCT_NIC_IQ_USE_NAPI
+void oct_poll_req_completion(struct work_struct *work)
+{
+	struct cavium_wk *wk = (struct cavium_wk *)work;
+	octeon_device_t *oct = (octeon_device_t *)wk->ctxptr;
+	struct cavium_wq *cwq = &oct->req_comp_wq;
+
+	process_ordered_list(oct, 0);
+
+	check_unordered_blocking_list(oct);
+
+	queue_delayed_work(cwq->wq, &cwq->wk.work, msecs_to_jiffies(50));
+}
+
+#else
 oct_poll_fn_status_t
 oct_poll_req_completion(void *octptr, unsigned long arg UNUSED)
 {
@@ -650,6 +692,7 @@ oct_poll_req_completion(void *octptr, unsigned long arg UNUSED)
 	check_unordered_blocking_list(oct);
 	return OCT_POLL_FN_CONTINUE;
 }
+#endif
 
 int
 octeon_register_noresp_buf_free_fn(int oct_id, int buftype, void (*fn) (void *))

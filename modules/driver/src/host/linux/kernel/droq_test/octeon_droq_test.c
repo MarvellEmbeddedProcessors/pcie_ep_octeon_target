@@ -67,7 +67,7 @@ int droq_test_ok_to_run, droq_test_exit = 0;
 int droq_test_dispatch(octeon_recv_info_t * recv_info, void *arg)
 {
 
-#ifndef OCT_BASE_REUSE_BUFS
+#ifndef DROQ_TEST_REUSE_BUFS
 	int cnt;
 #endif
 
@@ -124,7 +124,6 @@ int droq_test_dispatch(octeon_recv_info_t * recv_info, void *arg)
 			if(!i)
 				data += recv_pkt->offset;
 #endif
-			size = recv_pkt->buffer_size[i];
 			for(j = 0; j < size; j++) {
 				if( pkt_val !=  *(data + j)) 
 				{
@@ -170,7 +169,7 @@ PKT_DUMP:
 
 end_dispatch:
 /* Done for IOMMU: the buffers are re-used, so don't free them */
-#ifndef OCT_BASE_REUSE_BUFS
+#ifndef DROQ_TEST_REUSE_BUFS
 	for (cnt = 0; cnt < recv_pkt->buffer_count; cnt++) {
 		free_recv_buffer(recv_pkt->buffer_ptr[cnt]);
 	}

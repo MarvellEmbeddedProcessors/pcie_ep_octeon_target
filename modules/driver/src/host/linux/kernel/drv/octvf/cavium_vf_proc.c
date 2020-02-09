@@ -574,6 +574,20 @@ write_csr(struct file *file, const char __user * buffer, size_t count,
 	return count;
 }
 
+extern void start_base_handler(void);
+static ssize_t
+start_base_write(struct file *file, const char __user * buffer, size_t count,
+	  loff_t * offp)
+{
+	CVM_MOD_INC_USE_COUNT;
+	(void) buffer;
+	(void) file;
+	(void) offp;
+	start_base_handler();
+	CVM_MOD_DEC_USE_COUNT;
+
+	return count;
+}
 #ifdef GENERATE_PCIE_AER_MSG
 static ssize_t
 proc_write_aer_gen_err(struct file *file, const char __user * buffer,
@@ -759,10 +773,31 @@ static struct seq_operations read_csr_seq_ops = {
 	.stop = proc_seq_stop,
 	.show = read_csr_show
 };
+static struct seq_operations start_base_seq_ops = {
+	.start = proc_seq_start,
+	.next = proc_seq_next,
+	.stop = proc_seq_stop,
+};
 
 static int read_csr_open(struct inode *inode, struct file *file)
 {
 	int ret = seq_open(file, &read_csr_seq_ops);
+	if (!ret) {
+		struct seq_file *seq = file->private_data;
+#if  LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,0)
+		seq->private = PDE_DATA(file_inode(file));
+#else
+		struct proc_dir_entry *proc = PDE(inode);
+		seq->private = proc->data;
+#endif
+	}
+	return ret;
+
+}
+
+static int start_base_open(struct inode *inode, struct file *file)
+{
+	int ret = seq_open(file, &start_base_seq_ops);
 	if (!ret) {
 		struct seq_file *seq = file->private_data;
 #if  LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,0)
@@ -961,6 +996,11 @@ read:	seq_read,
 write:	write_csr
 };
 
+struct file_operations start_base_fops = {
+open:	start_base_open,
+write:	start_base_write
+};
+
 int octeon_add_proc_entry(int oct_id, octeon_proc_entry_t * entry)
 {
 	octeon_device_t *octeon_dev = get_octeon_device(oct_id);
@@ -1117,6 +1157,16 @@ int cavium_init_proc(octeon_device_t * octeon_dev)
 	node->data = octeon_dev;
 #endif
 
+	node =
+	    cavium_proc_create_data("start_base", 0444, root, &start_base_fops,
+				    octeon_dev);
+	if (node == NULL)
+		goto proc_fail;
+	SET_PROC_OWNER(node);
+#if LINUX_VERSION_CODE < KERNEL_VERSION(2,6,26)
+	node->proc_fops = &start_base_fops;
+	node->data = octeon_dev;
+#endif
 	return 0;
 
 proc_fail:
@@ -1132,6 +1182,7 @@ void cavium_delete_proc(octeon_device_t * oct)
 	if (!root)
 		return;
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3,10,0)
+	remove_proc_entry("start_base", root);
 	remove_proc_entry("status", root);
 
 	remove_proc_entry("iq_perf", root);

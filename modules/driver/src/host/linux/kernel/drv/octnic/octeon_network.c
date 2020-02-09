@@ -847,6 +847,34 @@ int octnet_napi_poll_fn(struct napi_struct *napi, int budget)
 						 POLL_EVENT_PROCESS_PKTS,
 						 budget);
 	//printk("work_done:%d budget:%d\n", work_done, budget);
+#ifdef OCT_NIC_IQ_USE_NAPI
+	iq = droq->oct_dev->instr_queue[iq_no];
+	if (iq) {
+		if (atomic_read(&iq->instr_pending))
+		/* Process iq buffers with in the budget limits */
+			tx_done = octeon_flush_iq(oct, iq, budget);
+		else
+			tx_done = 1;
+		/* Update iq read-index rather than waiting for next interrupt.
+		 * Return back if tx_done is false.
+		 */
+		update_txq_status(oct, iq_no);
+	} else {
+		dev_err(&oct->pci_dev->dev, "%s:  iq (%d) num invalid\n",
+				__func__, iq_no);
+	}
+	/* force enable interrupt if reg cnts are high to avoid wraparound */
+	if ((work_done < budget && tx_done) ||
+		(iq && iq->pkt_in_done >= MAX_REG_CNT) ||
+		(droq->pkt_count >= MAX_REG_CNT)) {
+		tx_done = 1;
+		napi_complete_done(napi, work_done);
+		octeon_process_droq_poll_cmd(oct_id, droq->q_no,
+						POLL_EVENT_ENABLE_INTR, 0);
+			return 0;
+	}
+	return (!tx_done) ? (budget) : (work_done);
+#else	
 	if (work_done < budget) {
 		napi_complete(napi);
 		octeon_process_droq_poll_cmd(oct_id, droq->q_no,
@@ -858,6 +886,7 @@ int octnet_napi_poll_fn(struct napi_struct *napi, int budget)
 		cavium_error("work_done(%d) > budget(%d)\n", work_done, budget);
 	}
 	return work_done;
+#endif	
 }
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,24)

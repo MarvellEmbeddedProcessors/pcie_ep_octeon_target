@@ -43,6 +43,8 @@ int octeon_init_instr_queue(octeon_device_t * oct, int iq_no)
 
 	if (oct->chip_id == OCTEON_CN83XX_VF)
 		conf = &(CFG_GET_IQ_CFG(CHIP_FIELD(oct, cn83xx_vf, conf)));
+	if (oct->chip_id == OCTEON_CN93XX_VF)
+		conf = &(CFG_GET_IQ_CFG(CHIP_FIELD(oct, cn93xx_vf, conf)));
 
 	if (!conf) {
 		cavium_error("OCTEON: Unsupported Chip %x\n", oct->chip_id);
@@ -138,6 +140,9 @@ int octeon_delete_instr_queue(octeon_device_t * oct, int iq_no)
 	if (oct->chip_id == OCTEON_CN83XX_VF)
 		desc_size =
 		    CFG_GET_IQ_INSTR_TYPE(CHIP_FIELD(oct, cn83xx_vf, conf));
+	if (oct->chip_id == OCTEON_CN93XX_VF)
+		desc_size =
+		    CFG_GET_IQ_INSTR_TYPE(CHIP_FIELD(oct, cn93xx_vf, conf));
 
 	if (iq->plist)
 		octeon_delete_iq_pending_list(oct, iq->plist);

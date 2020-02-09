@@ -42,4 +42,8 @@
 #include "cn83xx_pf_config_data.h"
 #include "cn83xx_vf_config_data.h"
 
+/* OCTEON TX2 Models */
+#include "cn93xx_pf_config_data.h"
+#include "cn93xx_vf_config_data.h"
+
 #endif

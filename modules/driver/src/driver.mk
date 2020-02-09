@@ -112,17 +112,32 @@ if($(KERNEL_REVISION) >= $(3)) {print 1} else { print 0 } \
 OCTDRVFLAGS += -DKERNEL_PATCH_VERSION=$(KERNEL_PATCH_REVISION)
 
 #Enable this when IOMMU is ON in host machine, for DROQ functional tests. 
-OCTDRVFLAGS  += -DOCT_BASE_REUSE_BUFS
+OCTDRVFLAGS  += -DDROQ_TEST_REUSE_BUFS
 
 OCTDRVFLAGS += -DBUFPTR_ONLY_MODE
 
+#New flag for OCTEON-III models. Code specific to OCTEON-III will be kept under this. 
+#Disable the other models, if OCTEON-III is enabled. 
+#ifneq ($(or $(findstring OCTEON_CN73XX, $(OCTEON_MODEL)), \
+            $(findstring OCTEON_CN78XX, $(OCTEON_MODEL)), \
+            $(findstring OCTEON_CN23XX, $(OCTEON_MODEL))), )
+OCTDRVFLAGS += -DENABLE_OCTEON_III=1
 #Enable this flag to use NAPI for only NIC mode operation.
-OCTDRVFLAGS += -DOCT_NIC_USE_NAPI
+#OCTDRVFLAGS += -DOCT_NIC_USE_NAPI
+#OCTDRVFLAGS += -DOCT_NIC_IQ_USE_NAPI
+#OCTDRVFLAGS += -DOCT_TX2_ISM_INT 
 
 #This feature is meant for kernel versions above 3.4.110
 ifeq ($(call kernel_compare, 3, 4, 110), 1)
 #Enable this flag to reuse Rx DMA buffers for only NIC mode operation.
-OCTDRVFLAGS += -DOCT_REUSE_RX_BUFS
+#OCTDRVFLAGS += -DOCT_REUSE_RX_BUFS
 endif
+
+#Enable this flag for using host driver with only one PF
+OCTDRVFLAGS += -DUSE_SINGLE_PF
+
+#Enable this flag for using host driver with emulator
+#OCTDRVFLAGS += -DBUILD_FOR_EMULATOR
+#endif
 
 # $Id$ 

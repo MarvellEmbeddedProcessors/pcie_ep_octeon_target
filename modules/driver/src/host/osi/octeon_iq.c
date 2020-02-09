@@ -29,7 +29,12 @@
 
 extern int octeon_init_nr_free_list(octeon_instr_queue_t * iq, int count);
 
+
+#ifdef OCT_NIC_IQ_USE_NAPI
+extern void check_db_timeout(struct work_struct *work);
+#else
 extern oct_poll_fn_status_t check_db_timeout(void *octptr, unsigned long iq_no);
+#endif
 
 /* Return 0 on success, 1 on failure */
 int octeon_init_instr_queue(octeon_device_t * oct, int iq_no)
@@ -37,12 +42,18 @@ int octeon_init_instr_queue(octeon_device_t * oct, int iq_no)
 	octeon_instr_queue_t *iq;
 	octeon_iq_config_t *conf = NULL;
 	uint32_t q_size;
+#ifdef OCT_NIC_IQ_USE_NAPI
+	struct cavium_wq *db_wq;
+#else	
 #ifndef APP_CMD_POST
 	octeon_poll_ops_t poll_ops;
 #endif
+#endif	
 
 	if (oct->chip_id == OCTEON_CN83XX_PF)
 		conf = &(CFG_GET_IQ_CFG(CHIP_FIELD(oct, cn83xx_pf, conf)));
+	else if (oct->chip_id == OCTEON_CN93XX_PF)
+		conf = &(CFG_GET_IQ_CFG(CHIP_FIELD(oct, cn93xx_pf, conf)));
 
 	if (!conf) {
 		cavium_error("OCTEON: Unsupported Chip %x\n", oct->chip_id);
@@ -62,6 +73,23 @@ int octeon_init_instr_queue(octeon_device_t * oct, int iq_no)
 		     iq_no);
 		return 1;
 	}
+
+#ifdef OCT_TX2_ISM_INT	
+	if (oct->chip_id == OCTEON_CN93XX_PF) {
+		iq->ism.pkt_cnt_addr =
+		    octeon_pci_alloc_consistent(oct->pci_dev, 8,
+						&iq->ism.pkt_cnt_dma, iq->app_ctx);
+
+		if (cavium_unlikely(!iq->ism.pkt_cnt_addr)) {
+			cavium_error("OCTEON: Output queue %d ism memory alloc failed\n",
+				     iq_no);
+			return 1;
+		}
+	
+		cavium_print(PRINT_REGS, "iq[%d]: ism addr: virt: 0x%p, dma: %lx",
+			     q_no, iq->ism.pkt_cnt_addr, iq->ism.pkt_cnt_dma);
+	}
+#endif		
 
 	if (conf->num_descs & (conf->num_descs - 1)) {
 		cavium_error
@@ -115,6 +143,26 @@ int octeon_init_instr_queue(octeon_device_t * oct, int iq_no)
 
 	oct->fn_list.setup_iq_regs(oct, iq_no);
 
+
+#ifdef OCT_NIC_IQ_USE_NAPI
+	oct->check_db_wq[iq_no].wq = alloc_workqueue("check_iq_db",
+	                             WQ_MEM_RECLAIM, 0);
+	if (!oct->check_db_wq[iq_no].wq) {
+		octeon_pci_free_consistent(oct->pci_dev, q_size, iq->base_addr,
+					   iq->base_addr_dma, iq->app_ctx);
+		cavium_error
+		    ("OCTEON: Cannot create db wq for queue %d\n",
+		     iq_no);
+		return 1;
+    }
+	db_wq = &oct->check_db_wq[iq_no];
+
+	INIT_DELAYED_WORK(&db_wq->wk.work, check_db_timeout);
+	db_wq->wk.ctxptr = oct;
+	db_wq->wk.ctxul = iq_no;
+	queue_delayed_work(db_wq->wq, &db_wq->wk.work, msecs_to_jiffies(1));
+
+#else
 #ifndef APP_CMD_POST
 	poll_ops.fn = check_db_timeout;
 	poll_ops.fn_arg = (unsigned long)iq_no;
@@ -124,6 +172,7 @@ int octeon_init_instr_queue(octeon_device_t * oct, int iq_no)
 	poll_ops.rsvd = 0xff;
 	octeon_register_poll_fn(oct->octeon_id, &poll_ops);
 #endif
+#endif	
 
 	return 0;
 }
@@ -133,11 +182,28 @@ int octeon_delete_instr_queue(octeon_device_t * oct, int iq_no)
 	uint64_t desc_size = 0, q_size;
 	octeon_instr_queue_t *iq = oct->instr_queue[iq_no];
 
+#ifdef OCT_NIC_IQ_USE_NAPI
+	cancel_delayed_work_sync(&oct->check_db_wq[iq_no].wk.work);
+	destroy_workqueue(oct->check_db_wq[iq_no].wq);
+#else	
 	octeon_unregister_poll_fn(oct->octeon_id, check_db_timeout, iq_no);
+#endif	
 
 	if (oct->chip_id == OCTEON_CN83XX_PF)
 		desc_size =
 		    CFG_GET_IQ_INSTR_TYPE(CHIP_FIELD(oct, cn83xx_pf, conf));
+	else if (oct->chip_id == OCTEON_CN93XX_PF)
+		desc_size =
+		    CFG_GET_IQ_INSTR_TYPE(CHIP_FIELD(oct, cn93xx_pf, conf));
+
+#ifdef OCT_TX2_ISM_INT
+	if (oct->chip_id == OCTEON_CN93XX_PF) {
+		if (iq->ism.pkt_cnt_addr)
+			octeon_pci_free_consistent(oct->pci_dev, 8,
+						   iq->ism.pkt_cnt_addr, iq->ism.pkt_cnt_dma,
+						   iq->app_ctx);
+	}
+#endif
 
 	if (iq->plist)
 		octeon_delete_iq_pending_list(oct, iq->plist);

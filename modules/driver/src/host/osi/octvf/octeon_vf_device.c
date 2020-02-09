@@ -208,9 +208,10 @@ static void *__retrieve_octeon_config_info(octeon_device_t * oct)
 
 	if (oct_conf_info[oct_id].conf_type != OCTEON_CONFIG_TYPE_DEFAULT) {
 
-		if ((oct->chip_id == OCTEON_CN83XX_VF)
+		if (((oct->chip_id == OCTEON_CN83XX_VF) ||
+		     (oct->chip_id == OCTEON_CN93XX_VF))
 		    && (oct_conf_info[oct_id].conf_type ==
-			OCTEON_CONFIG_TYPE_CN83XX_CUSTOM))
+			OCTEON_CONFIG_TYPE_CUSTOM))
 			return oct_conf_info[oct_id].custom;
 
 		cavium_error
@@ -221,6 +222,8 @@ static void *__retrieve_octeon_config_info(octeon_device_t * oct)
 
 	if (oct->chip_id == OCTEON_CN83XX_VF)
 		return (void *)&default_cn83xx_vf_conf;
+	else if (oct->chip_id == OCTEON_CN93XX_VF)
+		return (void *)&default_cn93xx_vf_conf;
 
 	return NULL;
 }
@@ -231,8 +234,11 @@ static int __verify_octeon_config_info(octeon_device_t * oct, void *conf)
 
 	case OCTEON_CN83XX_VF:
 		return validate_cn83xx_vf_config_info(conf);
-
+	case OCTEON_CN93XX_VF:
+		return validate_cn93xx_vf_config_info(conf);
 	default:
+		cavium_error("Chip config verification failed. Invalid chipid:%d\n",
+				oct->chip_id);
 		break;
 	}
 	return 1;
@@ -303,6 +309,10 @@ octeon_device_t *octeon_allocate_device_mem(int pci_id)
 
 	case OCTEON_CN83XX_VF:
 		configsize = sizeof(octeon_cn83xx_vf_t);
+		break;
+
+	case OCTEON_CN93XX_VF:
+		configsize = sizeof(octeon_cn93xx_vf_t);
 		break;
 
 	default:
@@ -509,7 +519,7 @@ int octeon_setup_instr_queues(octeon_device_t * oct)
 {
 	int i, num_iqs = 0, retval = 0;
 
-	if (oct->chip_id == OCTEON_CN83XX_VF)
+	if (oct->chip_id == OCTEON_CN83XX_VF || oct->chip_id == OCTEON_CN93XX_VF)
 		num_iqs = oct->rings_per_vf;
 
 	oct->num_iqs = 0;
@@ -532,7 +542,7 @@ int octeon_setup_output_queues(octeon_device_t * oct)
 {
 	int i, num_oqs = 0, retval = 0;
 
-	if (oct->chip_id == OCTEON_CN83XX_VF)
+	if (oct->chip_id == OCTEON_CN83XX_VF || oct->chip_id == OCTEON_CN93XX_VF)
 		num_oqs = oct->rings_per_vf;
 
 	oct->num_oqs = 0;
@@ -689,6 +699,7 @@ void octeon_reset_ioq(octeon_device_t * octeon_dev, int ioq)
 void octeon_set_droq_pkt_op(octeon_device_t * oct, int q_no, int enable)
 {
 
+#if 0
 	uint64_t reg = 0, reg_val = 0ULL;
 	/* Disable the i/p and o/p queues for this Octeon. */
 	if (oct->chip_id == OCTEON_CN83XX_VF) {
@@ -716,6 +727,7 @@ void octeon_set_droq_pkt_op(octeon_device_t * oct, int q_no, int enable)
 		     "set_droq_pkt_op: writing val: %016llx to register.\n",
 		     reg_val);
 	octeon_write_csr(oct, reg, reg_val);
+#endif
 }
 
 int octeon_hot_reset(octeon_device_t * oct)
@@ -1175,11 +1187,20 @@ int octeon_get_rx_qsize(int octeon_id, int q_no)
 	return -1;
 }
 
+static int start_base = 0;
+void start_base_handler(void)
+{
+	start_base = 1;
+}
+
+extern int octeon_register_base_handler(void);
+
 oct_poll_fn_status_t
 oct_poll_module_starter(void *octptr, unsigned long arg UNUSED)
 {
 	octeon_device_t *oct = (octeon_device_t *) octptr;
 
+#if 0
 	if (cavium_atomic_read(&oct->status) == OCT_DEV_RUNNING) {
 		return OCT_POLL_FN_FINISHED;
 	}
@@ -1190,7 +1211,15 @@ oct_poll_module_starter(void *octptr, unsigned long arg UNUSED)
 	   state. */
 	if (cavium_atomic_read(&oct->status) != OCT_DEV_CORE_OK)
 		return OCT_POLL_FN_CONTINUE;
-
+#endif
+	if(start_base) {
+		oct->app_mode = CVM_DRV_BASE_APP;
+		cavium_atomic_set(&oct->status, OCT_DEV_CORE_OK);
+		octeon_register_base_handler();
+		return OCT_POLL_FN_FINISHED;
+	} else {
+		return OCT_POLL_FN_CONTINUE;
+	}
 	//cavium_atomic_set(&oct->status,OCT_DEV_RUNNING);
 
 	/* For NIC mode, start_module is called from nic_module_handler */
@@ -1452,8 +1481,8 @@ int octeon_register_module_handler(octeon_module_handler_t * handler)
 		     "OCTEON: Registered handler for app_type: %s\n",
 		     get_oct_app_string(handler->app_type));
 
-	if (handler->app_type == CVM_DRV_BASE_APP)
-		return retval;
+	//if (handler->app_type == CVM_DRV_BASE_APP)
+	//	return retval;
 
 	/* Call the start method for all existing octeon devices. */
 	for (octidx = 0; octidx < MAX_OCTEON_DEVICES; octidx++) {
@@ -1744,6 +1773,11 @@ int oct_init_base_module(int octeon_id, void *octeon_dev)
 	/* Enable the input and output queues for this Octeon device */
 	oct->fn_list.enable_io_queues(oct);
 
+        /* dbell needs to be programmed after enabling OQ. */
+	for (j = 0; j < oct->num_oqs; j++) {
+		OCTEON_WRITE32(oct->droq[j]->pkts_credit_reg,
+			oct->droq[j]->max_count);
+	}
 	cavium_atomic_set(&oct->status, OCT_DEV_RUNNING);
 
 	if (octeon_send_short_command

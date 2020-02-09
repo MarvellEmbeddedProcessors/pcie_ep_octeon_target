@@ -317,6 +317,13 @@ int octeon_init_droq(octeon_device_t * oct, uint32_t q_no, void *app_ctx)
 		c_pkts_per_intr = CFG_GET_OQ_PKTS_PER_INTR(conf83);
 		c_refill_threshold = CFG_GET_OQ_REFILL_THRESHOLD(conf83);
 	}
+	if (oct->chip_id == OCTEON_CN93XX_VF) {
+		cn93xx_vf_config_t *conf93 = CHIP_FIELD(oct, cn93xx_vf, conf);
+		c_num_descs = CFG_GET_OQ_NUM_DESC(conf93);
+		c_buf_size = CFG_GET_OQ_BUF_SIZE(conf93);
+		c_pkts_per_intr = CFG_GET_OQ_PKTS_PER_INTR(conf93);
+		c_refill_threshold = CFG_GET_OQ_REFILL_THRESHOLD(conf93);
+	}
 
 	droq->max_count = c_num_descs;
 	droq->buffer_size = c_buf_size;
@@ -474,6 +481,13 @@ int octeon_shutdown_output_queue(octeon_device_t * oct, int q_no)
 		octeon_write_csr64(oct,
 				   CN83XX_VF_SDP_EPF_R_OUT_ENABLE(oct->epf_num,
 								  q_no),
+				   reg_val);
+	}
+	if (oct->chip_id == OCTEON_CN93XX_VF) {
+		uint64_t reg_val = 0ULL;
+
+		octeon_write_csr64(oct,
+				   CN93XX_VF_SDP_R_OUT_ENABLE(q_no),
 				   reg_val);
 	}
 
@@ -697,7 +711,7 @@ static inline octeon_recv_info_t *octeon_create_recv_info(octeon_device_t *
 
 		/* Done for IOMMU: Don't unmap buffer from the device, since we are reusing it */
 // *INDENT-OFF*
-#ifndef OCT_BASE_REUSE_BUFS
+#ifndef DROQ_TEST_REUSE_BUFS
       octeon_pci_unmap_single(octeon_dev->pci_dev, (unsigned long)droq->desc_ring[idx].buffer_ptr, droq->buffer_size, CAVIUM_PCI_DMA_FROMDEVICE);
 #endif
 // *INDENT-ON*
@@ -724,7 +738,7 @@ static inline octeon_recv_info_t *octeon_create_recv_info(octeon_device_t *
 		recv_pkt->buffer_ptr[i] = droq->recv_buf_list[idx].buffer;
 
 		/* Done for IOMMU: To avoid refilling the buffer index */
-#ifndef OCT_BASE_REUSE_BUFS
+#ifndef DROQ_TEST_REUSE_BUFS
 		droq->recv_buf_list[idx].buffer = 0;
 #endif
 
@@ -1120,7 +1134,7 @@ octeon_droq_fast_process_packets(octeon_device_t * oct,
 			      8, (char *)info, 8);
 #else
 		/* Swap length field on 83xx*/
-		if (oct->chip_id == OCTEON_CN83XX_VF)
+		if (oct->chip_id == OCTEON_CN83XX_VF || oct->chip_id == OCTEON_CN93XX_VF)
 			octeon_swap_8B_data((uint64_t *) &(info->length), 1);
 #endif
 
@@ -1483,7 +1497,7 @@ octeon_droq_slow_process_packets(octeon_device_t * oct,
 		resp_hdr = (octeon_resp_hdr_t *) & info->resp_hdr;
 
 		/* Swap length field on 83xx*/
-		if (oct->chip_id == OCTEON_CN83XX_VF)
+		if (oct->chip_id == OCTEON_CN83XX_VF || oct->chip_id == OCTEON_CN93XX_VF)
 			octeon_swap_8B_data((uint64_t *) &(info->length), 1);
 
 		if (cavium_unlikely(!info->length)) {

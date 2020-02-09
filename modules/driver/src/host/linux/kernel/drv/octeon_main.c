@@ -153,7 +153,6 @@ void octeon_stop_io(octeon_device_t * oct)
 		cavium_print_msg
 		    (" Before unloading octeon_drv.ko, ensure that VMs attached to the VFs are shut down.\n");
 
-	//cn63xx_cleanup_aer_uncorrect_error_status(oct->pci_dev);
 	/* making it a common function for all OCTEON models */
 	octeon_cleanup_aer_uncorrect_error_status(oct->pci_dev);
 }
@@ -189,15 +188,6 @@ octeon_pcie_error_detected(struct pci_dev *pdev, pci_channel_state_t state)
 	/* Always return a DISCONNECT. There is no support for recovery but only
 	   for a clean shutdown. */
 	return PCI_ERS_RESULT_DISCONNECT;
-
-#if 0
-	if (state == pci_channel_io_perm_failure) {
-		return PCI_ERS_RESULT_DISCONNECT;
-	}
-
-	/* Request a slot reset. */
-	return PCI_ERS_RESULT_NEED_RESET;
-#endif
 }
 
 pci_ers_result_t octeon_pcie_mmio_enabled(struct pci_dev * pdev)
@@ -339,18 +329,26 @@ octeon_msix_intr_handler(int irq UNUSED, void *dev)
 void octeon_disable_msix_interrupts(octeon_device_t * oct_dev)
 {
 	int i = 0;
+	int non_ioq_intrs = 0;
+
+	if(oct_dev->chip_id == OCTEON_CN83XX_PF)
+		non_ioq_intrs = OCTEON_NUM_NON_IOQ_INTR;
+	else if(oct_dev->chip_id == OCTEON_CN93XX_PF)
+		non_ioq_intrs = OCTEONTX2_NUM_NON_IOQ_INTR;
 
 	if (oct_dev->num_irqs) {
-	    if (oct_dev->chip_id == OCTEON_CN83XX_PF) {
-            for (i = 0; i < CN83XX_NUM_NON_IOQ_INTR; i++) {
+	    if (oct_dev->chip_id == OCTEON_CN83XX_PF ||
+		oct_dev->chip_id == OCTEON_CN93XX_PF) {
+
+            for (i = 0; i < non_ioq_intrs; i++) {
 	    		/* Free non ioq MSI-X vector */
 		    	free_irq(oct_dev->msix_entries[i].vector,
 			    	 oct_dev);
              }
 
 	    	/* Free ioq MSI-X vector */
-            for (i = 0; i < oct_dev->num_irqs-CN83XX_NUM_NON_IOQ_INTR; i++) {
-		    	free_irq(oct_dev->msix_entries[i+CN83XX_NUM_NON_IOQ_INTR].vector,
+            for (i = 0; i < oct_dev->num_irqs-non_ioq_intrs; i++) {
+		    	free_irq(oct_dev->msix_entries[i+non_ioq_intrs].vector,
 			    	 oct_dev->ioq_vector[i]);
 		    }
         }
@@ -376,10 +374,16 @@ int octeon_tx_enable_msix_interrupts(octeon_device_t * oct)
 {
 	int irqret, num_ioq_vectors, i = 0, srn = 0, ret = 0;
 	int failed_non_irq_index = 0, failed_irq_index = 0;
+	int non_ioq_intrs = 0;
 
 	num_ioq_vectors = oct->num_oqs;
 
-	oct->num_irqs = num_ioq_vectors + CN83XX_NUM_NON_IOQ_INTR;
+	if(oct->chip_id == OCTEON_CN83XX_PF)
+		non_ioq_intrs = OCTEON_NUM_NON_IOQ_INTR;
+	else if(oct->chip_id == OCTEON_CN93XX_PF)
+		non_ioq_intrs = OCTEONTX2_NUM_NON_IOQ_INTR;
+
+	oct->num_irqs = num_ioq_vectors + non_ioq_intrs;
 	oct->msix_entries =
 	    cavium_alloc_virt(oct->num_irqs * sizeof(cavium_msix_entry_t));
 
@@ -390,11 +394,11 @@ int octeon_tx_enable_msix_interrupts(octeon_device_t * oct)
 
 	srn = oct->sriov_info.pf_srn;
 
-	for (i = 0; i < CN83XX_NUM_NON_IOQ_INTR; i++) {
+	for (i = 0; i < non_ioq_intrs; i++) {
 		oct->msix_entries[i].entry = i;
 	}
 
-	for (i = CN83XX_NUM_NON_IOQ_INTR; i < oct->num_irqs; i++) {
+	for (i = non_ioq_intrs; i < oct->num_irqs; i++) {
 		oct->msix_entries[i].entry = srn + i;
 	}
 
@@ -408,8 +412,8 @@ int octeon_tx_enable_msix_interrupts(octeon_device_t * oct)
 	cavium_print_msg
 	    ("OCTEON: %d MSI-X interrupts are allocated.\n", oct->num_irqs);
 
-	/** For 83XX, there is CN83XX_NUM_NON_IOQ_INTR non-ioq interrupts */
-	for (i = 0; i < CN83XX_NUM_NON_IOQ_INTR; i++) {
+	/** For 83XX/93XX, there is OCTEON_NUM_NON_IOQ_INTR non-ioq interrupts */
+	for (i = 0; i < non_ioq_intrs; i++) {
 		irqret = request_irq(oct->msix_entries[i].vector,
 				     octeon_intr_handler, 0, "octeon", oct);
 		if (irqret) {
@@ -421,10 +425,10 @@ int octeon_tx_enable_msix_interrupts(octeon_device_t * oct)
 			goto free_non_irq_entries;
 		}
 	}
-	failed_non_irq_index = CN83XX_NUM_NON_IOQ_INTR;
+	failed_non_irq_index = non_ioq_intrs;
 
 	for (i = 0; i < num_ioq_vectors; i++) {
-		irqret = request_irq(oct->msix_entries[i + CN83XX_NUM_NON_IOQ_INTR].vector,
+		irqret = request_irq(oct->msix_entries[i + non_ioq_intrs].vector,
 				     octeon_msix_intr_handler, 0,
 				     "octeon", oct->ioq_vector[i]);
 		if (irqret) {
@@ -435,7 +439,7 @@ int octeon_tx_enable_msix_interrupts(octeon_device_t * oct)
 
 			goto free_irq_entries;
 		}
-        oct->droq[i]->irq_num = oct->msix_entries[i + CN83XX_NUM_NON_IOQ_INTR].vector;
+        oct->droq[i]->irq_num = oct->msix_entries[i + non_ioq_intrs].vector;
 	}
 
 	oct->msix_on = 1;
@@ -598,14 +602,11 @@ void octeon_destroy_resources(octeon_device_t * oct_dev)
 		/* Disable the device */
 		pci_disable_device(oct_dev->pci_dev);
 
-#if 1
 		if (oct_dev->drv_flags & OCTEON_MBOX_CAPABLE) {
 			octeon_delete_mbox(oct_dev);
 			cavium_print_msg("OCTEON[%d]: MBOX deleted.\n",
 					 oct_dev->octeon_id);
 		}
-#endif
-
 #ifdef USE_BUFFER_POOL
 	case OCT_DEV_BUF_POOL_INIT_DONE:
 		octeon_delete_buffer_pool(oct_dev);
@@ -688,14 +689,6 @@ int octeon_release(struct inode *inode UNUSED, struct file *file UNUSED)
 			    OCT_DEV_RUNNING) {
 				cavium_print(PRINT_DEBUG, " %s : fd pid = %d\n",
 					     __FUNCTION__, current->pid);
-				//Disabled for 73xx bringup. 
-#if 0
-				if (octeon_send_short_command
-				    (octeon_device[i], FD_CLOSE_INDICATION, 0,
-				     NULL, current->pid /*0 */ ))
-					cavium_error
-					    ("Failed to Send FD_CLOSE_INDICATION Instruction to OCTEON.\n");
-#endif
 			} else {
 				cavium_error
 				    ("OCTEON[%d] Device is Not in Running State  \n",
@@ -722,24 +715,42 @@ static int octeon_chip_specific_setup(octeon_device_t * oct)
 
 	switch (dev_id) {
 
-	case OCTEON_CN83XX_PCIID_PF:
-		cavium_print_msg("OCTEON[%d]: CN83XX PASS%d.%d\n",
-				 oct->octeon_id, OCTEON_MAJOR_REV(oct),
-				 OCTEON_MINOR_REV(oct));
+		case OCTEON_CN83XX_PCIID_PF:
+			cavium_print_msg("OCTEON[%d]: CN83XX PASS%d.%d\n",
+					 oct->octeon_id, OCTEON_MAJOR_REV(oct),
+					 OCTEON_MINOR_REV(oct));
 
-		/* Enable it to stop loading the driver for PF1 */
+			/* Enable it to stop loading the driver for PF1 */
 #ifdef ETHERPCI
-		if (oct->pf_num) {
-			cavium_print_msg
-			    ("EtherPCI is only supported on PF0, so discarding PF1 device. \n");
-			return -1;
-		}
+			if (oct->pf_num) {
+				cavium_print_msg
+				    ("EtherPCI is only supported on PF0, so discarding PF1 device. \n");
+				return -1;
+			}
 #endif
-		oct->sriov_info.num_vfs = num_vfs;
-		oct->chip_id = OCTEON_CN83XX_PF;
+			oct->sriov_info.num_vfs = num_vfs;
+			oct->chip_id = OCTEON_CN83XX_PF;
 
-		return setup_cn83xx_octeon_pf_device(oct);
-	
+			return setup_cn83xx_octeon_pf_device(oct);
+		
+		case OCTEON_CN93XX_PCIID_PF:
+			cavium_print_msg("OCTEON[%d]: CN93XX PASS%d.%d\n",
+					 oct->octeon_id, OCTEON_MAJOR_REV(oct),
+					 OCTEON_MINOR_REV(oct));
+
+			oct->pf_num = oct->octeon_id;
+			/* Enable it to stop loading the driver for PF1 */
+#ifdef ETHERPCI
+			if (oct->pf_num) {
+				cavium_print_msg
+					("EtherPCI is only supported on PF0, so discarding PF1 device. \n");
+				return -1;
+			}
+#endif
+			oct->sriov_info.num_vfs = num_vfs;
+			oct->chip_id = OCTEON_CN93XX_PF;
+			return setup_cn93xx_octeon_pf_device(oct);
+
 	default:
 		cavium_error("OCTEON: Unknown device found (dev_id: %x)\n",
 			     dev_id);
@@ -889,7 +900,7 @@ int octeon_device_init(octeon_device_t * octeon_dev)
 	octeon_set_io_queues_off(octeon_dev);
 
 	ret = octeon_dev->fn_list.setup_device_regs(octeon_dev);
-    cavium_print_msg(" Setup device regs completed\n");
+	cavium_print_msg(" Setup device regs completed\n");
 	if (ret) {
 		cavium_error("OCTEON: Failed to configure device registers\n");
 		return ret;
@@ -924,17 +935,24 @@ int octeon_device_init(octeon_device_t * octeon_dev)
 	cavium_atomic_set(&octeon_dev->hostfw_hs_state, HOSTFW_HS_NUM_INTF);
 #else
 	cavium_atomic_set(&octeon_dev->hostfw_hs_state, HOSTFW_HS_INIT);
-#if 0	
-	if ((octeon_dev->pf_num == OCTEON_CN73XX_PF1)
-	    || (octeon_dev->pf_num == OCTEON_CN78XX_PF1))
-		cavium_atomic_set(&octeon_dev->hostfw_hs_state,
-				  HOSTPF1_HS_INIT);
-#endif		
 #endif
 
-    if(octeon_dev->chip_id == OCTEON_CN83XX_PF) {
+#ifdef BUILD_FOR_EMULATOR
+	if(octeon_dev->chip_id == OCTEON_CN93XX_PF) {
+		/* init_ioqs proc entry is used for starting base module in
+		 * case of emulator. Driver can sucessfully return from here. */
+		return 0;
+	}
+#else
+	/* Don't start poll thread if vfs are enabled for 96xx */
+	if((octeon_dev->chip_id == OCTEON_CN93XX_PF) && num_vfs)
+		return 0;
+
+	if(octeon_dev->chip_id == OCTEON_CN83XX_PF ||
+	   octeon_dev->chip_id == OCTEON_CN93XX_PF) {
 #define SDP_HOST_LOADED                 0xDEADBEEFULL
-	octeon_write_csr64(octeon_dev, CN83XX_SLI_EPF_SCRATCH(0), SDP_HOST_LOADED);
+		octeon_write_csr64(octeon_dev, CN83XX_SLI_EPF_SCRATCH(0),
+						   SDP_HOST_LOADED);
     	/* Register a Host - Firmware (OCTEON) handshake poll function */
 	    poll_ops.fn = octeon_get_app_mode;
     	poll_ops.fn_arg = 0UL;
@@ -942,7 +960,7 @@ int octeon_device_init(octeon_device_t * octeon_dev)
     	strcpy(poll_ops.name, "Host Firmware Handshake Thread");
         octeon_register_poll_fn(octeon_dev->octeon_id, &poll_ops);
 
-	/* Register a Host eth_mux - NPU base driver handshake poll function */
+		/* Register a Host eth_mux - NPU base driver handshake poll function */
 	poll_ops.fn = octeon_wait_for_npu_base;
     	poll_ops.fn_arg = 0UL;
 	poll_ops.ticks = CAVIUM_TICKS_PER_SEC;
@@ -956,6 +974,7 @@ int octeon_device_init(octeon_device_t * octeon_dev)
     	strcpy(poll_ops.name, "Host Firmware Handshake Thread");
         octeon_register_poll_fn(octeon_dev->octeon_id, &poll_ops);
     }
+#endif
 	return 0;
 }
 

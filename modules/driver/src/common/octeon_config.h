@@ -54,13 +54,15 @@
 #define   OCTEON_DMA_INTR_PKT			64
 #define   OCTEON_DMA_INTR_TIME			1000
 
-#define   OCTEON_CONFIG_TYPE_DEFAULT          1
-/** OCTEON TX Models */
-#define   OCTEON_CONFIG_TYPE_CN83XX_CUSTOM    2
+#define   OCTEON_CONFIG_TYPE_DEFAULT	1
+/** OCTEON TX and TX2(83xx and 93xx) Models */
+#define   OCTEON_CONFIG_TYPE_CUSTOM	2
+#define   OCTEON_NUM_NON_IOQ_INTR	16
+/* Using 0 for timebeing */
+#define   OCTEONTX2_NUM_NON_IOQ_INTR	16
 
 /*-------------- Macros for OCTEON TX Models ----------------*/
-#define   CN83XX_MAX_INPUT_QUEUES       64
-#define   CN83XX_NUM_NON_IOQ_INTR       16
+#define   CN83XX_MAX_INPUT_QUEUES	64
 
 #ifndef IOQ_PERF_MODE_O3
 #define   CN83XX_MAX_IQ_DESCRIPTORS     2048
@@ -73,17 +75,7 @@
 #define   CN83XX_INTR_THRESHOLD		    0xFFFFFFFF
 
 /* CN83xx OQ configuration macros */
-#define   CN83XX_MAX_OUTPUT_QUEUES     64
-
-#if 0
-/* Limiting number of OQ descriptors for 32 bit OS */
-#if BITS_PER_LONG == 32
-#define   CN83XX_MAX_OQ_DESCRIPTORS     2048
-#else
-/* NIC mode performance tuning: increased from 2048 to 4096 */
-#define   CN83XX_MAX_OQ_DESCRIPTORS     4096
-#endif
-#endif
+#define   CN83XX_MAX_OUTPUT_QUEUES	64
 
 #define   CN83XX_MAX_OQ_DESCRIPTORS     4096
 #define   CN83XX_OQ_BUF_SIZE            1536
@@ -115,6 +107,55 @@
 #define   CN83XX_VF_CFG_IO_QUEUES       8
 #define   OCTEON_MAX_83XX_VF_BASE_IOQ   1
 
+
+/*-------------- Macros for OCTEON TX2 Models ----------------*/
+/* A single 93xx PF can up to 128 VFs mapped up into 128 rings */
+#define   CN93XX_MAX_INPUT_QUEUES	128
+#define   CN93XX_NUM_NON_IOQ_INTR	16
+
+#ifndef IOQ_PERF_MODE_O3
+#define   CN93XX_MAX_IQ_DESCRIPTORS	2048
+#else
+#define   CN93XX_MAX_IQ_DESCRIPTORS	512
+#endif
+
+#define   CN93XX_DB_MIN 		1
+#define   CN93XX_DB_TIMEOUT		1
+#define   CN93XX_INTR_THRESHOLD 	0xFFFFFFFF
+
+/* CN93xx OQ configuration macros */
+#define   CN93XX_MAX_OUTPUT_QUEUES	128
+
+#define   CN93XX_MAX_OQ_DESCRIPTORS	4096
+#define   CN93XX_OQ_BUF_SIZE		1536
+#define   CN93XX_OQ_PKTSPER_INTR	128
+/* NIC mode performance tuning: increased from 128 to 1024 */
+#define   CN93XX_OQ_REFIL_THRESHOLD	1024
+
+#define   CN93XX_OQ_INTR_PKT		1
+#define   CN93XX_OQ_INTR_TIME		10
+
+#define   CN93XX_CFG_IO_QUEUES		128
+#define   CN93XX_MAX_MACS		4 /* PEMs count */
+
+/* CN93xx SR-IOV configuration macros */
+#define   CN93XX_MIN_RINGS_PER_VF	1
+#define   CN93XX_MAX_RINGS_PER_VF	8
+
+#define   CN93XX_EPF_START_RING_NUM	0
+
+#define   CN93XX_EPF_MAX_RINGS		64
+
+/* TODO: Number of PF's exposed by the device. 8 or 16 ? */
+#define   CN93XX_NUM_PFS		16
+#define   CN93XX_EPF_NUM_VFS		0
+
+#define   CN93XX_EPF_RINGS_PER_VF	CN93XX_MIN_RINGS_PER_VF
+
+#define   OCTEON_MAX_93XX_BASE_IOQ	OCTEON_MAX_BASE_IOQ
+
+#define   CN93XX_VF_CFG_IO_QUEUES	8
+#define   OCTEON_MAX_93XX_VF_BASE_IOQ	1
 
 /* ----------------- Host Firmware Handshake Details ----------------- */
 
@@ -203,7 +244,7 @@
 #define MAX_OCTEON_NICIF		16
 
 /* For multi function support in 73xx*/
-#define MAX_PF_FUNCTIONS	2
+#define MAX_PF_FUNCTIONS		16
 
 /* Represents invalid Link IOQ number */
 #define INVALID_IOQ_NO			0xff
@@ -662,6 +703,12 @@ typedef struct {
 	octeon_misc_config_t misc;
 
 } octeon_config_t;
+
+/** Structure to define the configuration for CN93XX PF domain Octeon processors. */
+typedef octeon_config_t cn93xx_pf_config_t;
+
+/** Structure to define the configuration for CN93XX VF domain Octeon processors. */
+typedef octeon_config_t cn93xx_vf_config_t;
 
 /** Structure to define the configuration for CN83XX PF domain Octeon processors. */
 typedef octeon_config_t cn83xx_pf_config_t;

@@ -127,6 +127,11 @@ typedef struct {
 	void *skbptr;
 #endif
 } octeon_recv_buffer_t;
+	
+typedef struct octeon_droq_ism {
+	void *pkt_cnt_addr;
+	unsigned long pkt_cnt_dma;
+} octeon_droq_ism_t;
 
 #define OCT_DROQ_RECVBUF_SIZE    (sizeof(octeon_recv_buffer_t))
 
@@ -229,6 +234,8 @@ typedef struct {
 	void *app_ctx;
 
 	struct napi_struct napi;
+
+	octeon_droq_ism_t ism;
 
 } octeon_droq_t;
 

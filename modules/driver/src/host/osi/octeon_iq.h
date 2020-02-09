@@ -74,6 +74,11 @@ struct oct_noresp_free_list {
 	cavium_atomic_t count;
 };
 
+typedef struct octeon_in_cnt_ism {
+	void *pkt_cnt_addr;
+	unsigned long pkt_cnt_dma;
+} octeon_in_cnt_ism_t;
+
 /* \endcond */
 
 /** The instruction (input) queue. 
@@ -153,6 +158,15 @@ typedef struct {
 
   /** DMA mapped base address of the input descriptor ring. */
 	unsigned long base_addr_dma;
+	
+  /** Host memory address. HW updates these address with the number of pkts that
+      are read by Octeon. */	
+	octeon_in_cnt_ism_t ism;
+
+#ifdef OCT_NIC_IQ_USE_NAPI
+    /** A spinlock to protect access to the input ring.*/
+    spinlock_t iq_flush_running_lock;
+#endif	
 
   /** Application context */
 	void *app_ctx;
@@ -296,9 +310,15 @@ octeon_send_noresponse_command(octeon_device_t * oct,
   * @param iq  - pointer to the octeon device input queue that will be flushed
   * @param pending_thresh - flush instruction queue iq when iq->instr_pending >= pending_thresh
   */
+#ifdef OCT_NIC_IQ_USE_NAPI
+int
+octeon_flush_iq(octeon_device_t * oct, octeon_instr_queue_t * iq,
+		uint32_t pending_thresh);
+#else
 void
 octeon_flush_iq(octeon_device_t * oct, octeon_instr_queue_t * iq,
 		uint32_t pending_thresh);
+#endif
 
 void octeon_perf_flush_iq(octeon_device_t * oct, octeon_instr_queue_t * iq);
 
