@@ -630,7 +630,10 @@ __do_instruction_processing(octeon_device_t * oct,
 		/* Fill up SDD IHX */
 		ihx.pkind = oct->pkind;
 
-		ihx.fsz = si->ih.fsz + 16;	/* extra 16B: 8B for PKI IH, 8 bytes for EXHDR */
+		if ((oct->chip_id == OCTEON_CN83XX_PF) ||
+		    (oct->chip_id == OCTEON_CN83XX_VF))
+			ihx.fsz = si->ih.fsz + 8;	/* extra 8B for PKI IH */
+		ihx.fsz = si->ih.fsz + 8;	/* extra 8 bytes for EXHDR */
 
 		ihx.gather = si->ih.gather;
 

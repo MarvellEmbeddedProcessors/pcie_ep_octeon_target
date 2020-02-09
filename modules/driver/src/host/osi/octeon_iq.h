@@ -252,6 +252,28 @@ typedef struct {
 
 } octeon_instr3_64B_t;
 
+typedef struct {
+
+  /** Pointer where the input data is available. */
+	uint64_t dptr;
+
+  /** DPI Instruction Header. */
+	uint64_t ih3;
+
+#ifndef IOQ_PERF_MODE_O3
+  /** Pointer where the response for a RAW mode packet will be written
+      by Octeon. */
+	uint64_t rptr;
+#endif
+
+  /** Input Request Header. */
+	uint64_t irh;
+
+  /** Additional headers available in a 64-byte instruction. */
+	uint64_t exhdr[4];
+
+} octeontx2_instr3_64B_t;
+
 /**
  *  octeon_init_instr_queue()
  *  @param octeon_dev      - pointer to the octeon device structure.

@@ -138,18 +138,25 @@ octnet_prepare_pci_cmd(octeon_device_t * oct,
 
 	volatile octeon_instr_pki_ih3_t pki_ih3 = { 0 };
 	octeon_instr3_64B_t o3_cmd = { 0 };
+	octeontx2_instr3_64B_t o3tx_cmd = { 0 };
 	octeon_instr_ihx_t ihx = { 0 };
 
 	cmd->ih = 0ULL;
 
     if(oct->chip_id == OCTEON_CN83XX_PF
-        || oct->chip_id == OCTEON_CN83XX_VF) {
+        || oct->chip_id == OCTEON_CN83XX_VF
+	|| oct->chip_id == OCTEON_CN93XX_PF) {
+
+		ihx.fsz = 16;
 #if defined(ETHERPCI)
 		ihx.pkind = oct->pkind + q_no;
-		ihx.fsz = 16 + 8;	/* extra: 8B for PKI_IH3 */
+		ihx.fsz += 8;	/* extra: 8B for PKI_IH3 */
 #else
 		ihx.pkind = oct->pkind;	/* The SDK decided PKIND value */
-		ihx.fsz = 16 + 16;	/* extra: 8B for PKI_IH3 + 8B for Extra Hdr(TSO) */
+		if ((oct->chip_id == OCTEON_CN83XX_PF) ||
+		    (oct->chip_id == OCTEON_CN83XX_VF))
+			ihx.fsz += 8;	/* extra: 8B for PKI_IH3 */
+		ihx.fsz += 8;	/* extra: 8B for Extra Hdr(TSO) */
 #endif
 		if (!setup->s.gather) {
 			ihx.tlen = setup->s.u.datasize + ihx.fsz;
@@ -158,30 +165,38 @@ octnet_prepare_pci_cmd(octeon_device_t * oct,
 			ihx.tlen = setup->s.rsvd + ihx.fsz;
 		}
 		/* Fill up O3 PKI_IH3 */
-		pki_ih3.w = 1;
-		//pki_ih3.raw = 1;
-		//pki_ih3.utag = 1;
-		pki_ih3.utt = 1;
-		//pki_ih3.uqpg = 1;	/* leave it to PKI to use default QPG */
+		if((oct->chip_id == OCTEON_CN83XX_PF) || (oct->chip_id == OCTEON_CN83XX_VF)) {
+			pki_ih3.w = 1;
+			//pki_ih3.raw = 1;
+			//pki_ih3.utag = 1;
+			pki_ih3.utt = 1;
+			//pki_ih3.uqpg = 1;	/* leave it to PKI to use default QPG */
 
-		//pki_ih3.tag = 0x11111111 + setup->s.ifidx;
-		pki_ih3.tagtype = ORDERED_TAG;
-		/** 
-		 * QPG entry is allocated by the pkipf driver in the octeontx
-		 * Currently it is allocated statically with each pkind having 32 qpg entries
-		 */
-		//pki_ih3.qpg = oct->pkind * 32;	/* PKI will use the defualt sttings */
+			//pki_ih3.tag = 0x11111111 + setup->s.ifidx;
+			pki_ih3.tagtype = ORDERED_TAG;
+			/** 
+			 * QPG entry is allocated by the pkipf driver in the octeontx
+			 * Currently it is allocated statically with each pkind having 32 qpg entries
+			 */
+			//pki_ih3.qpg = oct->pkind * 32;	/* PKI will use the defualt sttings */
 
-		pki_ih3.pm = 0x0;	/* 0x0 - meant for Parse starting at LA (L2) */
-		pki_ih3.sl = 32;	/* sl will be sizeof(pki_ih3) */
-
+			pki_ih3.pm = 0x0;	/* 0x0 - meant for Parse starting at LA (L2) */
+			pki_ih3.sl = 32;	/* sl will be sizeof(pki_ih3) */
+		}
 		o3_cmd.ih3 = *((uint64_t *) & ihx);
-		o3_cmd.pki_ih3 = *((uint64_t *) & pki_ih3);
+		o3tx_cmd.ih3 = *((uint64_t *) & ihx);
+		if((oct->chip_id == OCTEON_CN83XX_PF) || (oct->chip_id == OCTEON_CN83XX_VF))
+			o3_cmd.pki_ih3 = *((uint64_t *) & pki_ih3);
 		o3_cmd.rptr = 0ull;
+		o3tx_cmd.rptr = 0ull;
 		o3_cmd.irh = 0ull;
+		o3tx_cmd.irh = 0ull;
 
 		irh = (octeon_instr_irh_t *) & o3_cmd.irh;
-
+		if((oct->chip_id == OCTEON_CN83XX_PF) || (oct->chip_id == OCTEON_CN83XX_VF))
+			irh = (octeon_instr_irh_t *) & o3_cmd.irh;
+		if(oct->chip_id == OCTEON_CN93XX_PF)
+			irh = (octeon_instr_irh_t *) & o3tx_cmd.irh;
 		if (setup->s.cksum_offset)
 			irh->rlenssz = setup->s.cksum_offset;
 
@@ -191,9 +206,15 @@ octnet_prepare_pci_cmd(octeon_device_t * oct,
         /* Swap the FSZ in here, to avoid swapping on Octeon side */
         octeon_swap_8B_data(&o3_cmd.rptr, 1);
         octeon_swap_8B_data(&o3_cmd.irh, 1);
+        octeon_swap_8B_data(&o3tx_cmd.rptr, 1);
+        octeon_swap_8B_data(&o3tx_cmd.irh, 1);
+
 
 		/* copy the 64B CN78xx cmd to actual 64B command */
-		memcpy(cmd, (const void *)&o3_cmd, 64);
+		if((oct->chip_id == OCTEON_CN83XX_PF) || (oct->chip_id == OCTEON_CN83XX_VF))
+			memcpy(cmd, (const void *)&o3_cmd, 64);
+		if(oct->chip_id == OCTEON_CN93XX_PF)
+			memcpy(cmd, (const void *)&o3tx_cmd, 64);
 
 	}
 

@@ -172,23 +172,27 @@ void octnet_inittime_ls_callback(octeon_req_status_t status, void *buf)
 int octnet_get_inittime_link_status(void *oct, void *props_ptr)
 {
 	struct octdev_props_t *props;
-	octeon_soft_instruction_t *si;
+	//octeon_soft_instruction_t *si;
 	oct_link_status_resp_t *ls;
-	octeon_instr_status_t retval;
-	oct_stats_dma_info_t *dma_info;
+///	octeon_instr_status_t retval;
+//	oct_stats_dma_info_t *dma_info;
 	int q_no;
+	int num_q = 0;
 
 	octeon_device_t *oct_dev = (octeon_device_t *) oct;
 	props = (struct octdev_props_t *)props_ptr;
 
+#if 0 //Pradeep
 	/* Use the link status soft instruction pre-allocated
 	   for this octeon device. */
 	si = props->si_link_status;
+#endif
 
 	/* Reset the link status buffer in props for this octeon device. */
 	ls = props->ls;
 	cavium_memset(ls, 0, OCT_LINK_STATUS_RESP_SIZE);
 
+#if 0 //Pradeep
 	cavium_init_wait_channel(&ls->s.wc);
 	si->rptr = &(ls->resp_hdr);
 	si->irh.rlenssz = (OCT_LINK_STATUS_RESP_SIZE - sizeof(ls->s));
@@ -213,6 +217,7 @@ int octnet_get_inittime_link_status(void *oct, void *props_ptr)
 						CAVIUM_PCI_DMA_FROMDEVICE);
 	dma_info->stats_len = 0xadcd;
 	dma_info->stats_addr = 0x123456789abcdeULL;
+#endif
 
 #if 0
 	{
@@ -222,6 +227,7 @@ int octnet_get_inittime_link_status(void *oct, void *props_ptr)
 			printk("dma[%d]: 0x%016llx\n", i, *(tmp + i));
 	}
 #endif
+#if 0 //Pradeep
 
 	si->dptr = dma_info;
 	si->ih.dlengsz = sizeof(oct_stats_dma_info_t);
@@ -238,24 +244,30 @@ int octnet_get_inittime_link_status(void *oct, void *props_ptr)
 	/* Sleep on a wait queue till the cond flag indicates that the
 	   response arrived or timed-out. */
 	cavium_sleep_timeout_cond(&ls->s.wc, (int *)&ls->s.cond, 1000);
-
+#endif
         /* Currently DPI is not accessible from the DPDK based nic firmware,
 	 *  So firmware cannot communicate the link status info to host driver,
 	 *  hence hardcoding link_info details here in the host driver itself. */
+	if ((oct_dev->chip_id == OCTEON_CN83XX_PF)
+	    || (oct_dev->chip_id == OCTEON_CN83XX_VF))
+		num_q = 8;
+	else if (oct_dev->chip_id == OCTEON_CN93XX_PF)
+		num_q = 1;
+
         ls->status = 0;
         ls->link_count = 1;
         ls->link_info[0].ifidx = 0;
         ls->link_info[0].gmxport = 2048;
         ls->link_info[0].hw_addr = 0x20f000b9849;
 //        ls->link_info[0].hw_addr = 0x000FB71188BC;
-        ls->link_info[0].num_rxpciq = 8;
-        ls->link_info[0].num_txpciq = 8;
+        ls->link_info[0].num_rxpciq = num_q;
+        ls->link_info[0].num_txpciq = num_q;
         ls->link_info[0].link.s.mtu = 9000;
         ls->link_info[0].link.s.status = 1;
         ls->link_info[0].link.s.speed = 10000;
         ls->link_info[0].link.s.duplex = 1;
 
-        for(q_no = 0 ; q_no < 8 ; q_no++) {
+        for(q_no = 0 ; q_no < num_q; q_no++) {
                 ls->link_info[0].txpciq[q_no] = q_no;
                 ls->link_info[0].rxpciq[q_no] = q_no;
         }
@@ -749,6 +761,8 @@ octeon_config_t *octeon_dev_conf(octeon_device_t * oct)
 
 	case OCTEON_CN83XX_VF:
 		return ((octeon_cn83xx_vf_t *) (oct->chip))->conf;
+	case OCTEON_CN93XX_PF: 
+		return ((octeon_cn93xx_pf_t *) (oct->chip))->conf;
 
 	default:
 		cavium_error("OCTEON: Unknown device found (chip_id: %x)\n",
@@ -795,6 +809,10 @@ static inline uint32_t octnet_get_num_ioqs(octeon_device_t * octeon_dev)
 	} else if (octeon_dev->chip_id == OCTEON_CN83XX_VF) {
 
 		num_ioqs = octeon_dev->rings_per_vf;
+
+	} else if (octeon_dev->chip_id == OCTEON_CN93XX_PF) {
+
+		num_ioqs = 1;
 
 	} else {
 
@@ -943,7 +961,8 @@ octnet_setup_io_queues(octeon_device_t * octeon_dev,
 
 		for (index = 0; index < num_ioqs; index++) {
 			if ((octeon_dev->chip_id == OCTEON_CN83XX_PF)
-			    || (octeon_dev->chip_id == OCTEON_CN83XX_VF)) {
+			    || (octeon_dev->chip_id == OCTEON_CN83XX_VF)
+			    || (octeon_dev->chip_id == OCTEON_CN93XX_PF)) {
 				/* check and release ioq reset before setting up the ioqs */
 				octeon_reset_ioq(octeon_dev, (baseq + index));
 			}
@@ -1113,6 +1132,9 @@ int octnet_init_nic_module(int octeon_id, void *octeon_dev)
 		if (oct->chip_id == OCTEON_CN83XX_PF)
 			CFG_GET_OQ_MAX_BASE_Q(CHIP_FIELD(oct, cn83xx_pf, conf))
 			    = oct->sriov_info.rings_per_pf;
+		else if (oct->chip_id == OCTEON_CN93XX_PF)
+			CFG_GET_OQ_MAX_BASE_Q(CHIP_FIELD(oct, cn93xx_pf, conf))
+			    = oct->sriov_info.rings_per_pf;
 #endif
 
 		if (octeon_allocate_ioq_vector(oct)) {
@@ -1135,7 +1157,8 @@ int octnet_init_nic_module(int octeon_id, void *octeon_dev)
 	octnet_enable_io_queues(octeon_dev, ls);
 
     if ((oct->chip_id == OCTEON_CN83XX_PF) || 
-        (oct->chip_id == OCTEON_CN83XX_VF)) 
+        (oct->chip_id == OCTEON_CN83XX_VF) ||
+	(oct->chip_id == OCTEON_CN93XX_PF)) 
         /* dbell needs to be programmed after enabling OQ. */
         for (j = 0; j < oct->num_oqs; j++) {
             OCTEON_WRITE32(oct->droq[j]->pkts_credit_reg,
@@ -1266,7 +1289,8 @@ octnet_init_failure:
 	cavium_error("OCTNIC: Initialization Failed\n");
 
 	if ((oct->chip_id == OCTEON_CN83XX_PF)
-	    || (oct->chip_id == OCTEON_CN83XX_VF)) {
+	    || (oct->chip_id == OCTEON_CN83XX_VF)
+	    || (oct->chip_id == OCTEON_CN93XX_PF)) {
 		/* Send short command to firmware to free these interface's PCAM entry */
 		octeon_send_short_command(oct, HOST_NW_STOP_OP, 0, NULL, 0);
 	}
@@ -1422,7 +1446,8 @@ int octnet_stop_nic_module(int octeon_id, void *oct)
 	num_ioqs = octnet_get_num_ioqs(octeon_dev);
 
 	if ((octeon_dev->chip_id == OCTEON_CN83XX_PF)
-	    || (octeon_dev->chip_id == OCTEON_CN83XX_VF)) {
+	    || (octeon_dev->chip_id == OCTEON_CN83XX_VF)
+	    || (octeon_dev->chip_id == OCTEON_CN93XX_PF)) {
 		/* Send short command to firmware to free these interface's PCAM entry */
 		octeon_send_short_command(oct, HOST_NW_STOP_OP, 0, NULL, 0);
 	}

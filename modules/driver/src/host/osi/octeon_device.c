@@ -606,8 +606,18 @@ void octeon_reset_ioq(octeon_device_t * octeon_dev, int ioq)
 						    (octeon_dev->epf_num, ioq));
 		} while (!(reg_val & CN83XX_R_OUT_CTL_IDLE));
 
-    }
-
+	} else if (octeon_dev->chip_id == OCTEON_CN93XX_PF) {
+	    		/* wait for IDLE to set to 1 */
+	    	do {
+	    		reg_val = octeon_read_csr64(octeon_dev,
+	    					    CN93XX_SDP_R_IN_CONTROL(ioq));
+	    	} while (!(reg_val & CN93XX_R_IN_CTL_IDLE));
+	
+	    	do {
+	    		reg_val = octeon_read_csr64(octeon_dev,
+	    					    CN93XX_SDP_R_OUT_CONTROL(ioq));
+	    	} while (!(reg_val & CN93XX_R_OUT_CTL_IDLE));
+	}
 }
 
 void octeon_set_io_queues_off(octeon_device_t * oct)
@@ -1509,6 +1519,9 @@ octeon_config_t *octeon_get_conf(octeon_device_t * oct)
 	if (oct->chip_id == OCTEON_CN83XX_PF)
 		default_oct_conf =
 		    (octeon_config_t *) (CHIP_FIELD(oct, cn83xx_pf, conf));
+	else if (oct->chip_id == OCTEON_CN93XX_PF)
+		default_oct_conf =
+		    (octeon_config_t *) (CHIP_FIELD(oct, cn93xx_pf, conf));
 
 	return default_oct_conf;
 }
@@ -1669,7 +1682,7 @@ octeon_wait_for_npu_base(void *octptr, unsigned long arg UNUSED)
 		/* setup the Host device access for RPC */
 		if (host_device_access_init() < 0)
 			pr_err("host_device_access_init failed\n");
-	} else if(octeon_dev->chip_id == OCTEON_CN83XX_PF) {
+	} else if(octeon_dev->chip_id == OCTEON_CN93XX_PF) {
 		//TODO: add support for 93xx */
 		printk_once("##### Facility not implemented yet for 93xx\n");
 		return OCT_POLL_FN_FINISHED;
@@ -1698,15 +1711,16 @@ octeon_get_app_mode(void *octptr, unsigned long arg UNUSED)
     uint16_t vf_srn;
  
     if(octeon_dev->chip_id == OCTEON_CN93XX_PF) {
-	octeon_dev->app_mode = CVM_DRV_BASE_APP;
+	//octeon_dev->app_mode = CVM_DRV_BASE_APP;
 	reg_val = octeon_read_csr64(octeon_dev, CN93XX_SDP_EPF_SCRATCH);
-	if(reg_val != 0x1)
+        if(((reg_val & 0xffff) != CVM_DRV_BASE_APP) && 
+            ((reg_val & 0xffff) != CVM_DRV_NIC_APP)) {
 		return OCT_POLL_FN_CONTINUE;
-	octeon_dev->app_mode = reg_val & 0xffff;
-	core_clk = (reg_val >> 16) & 0xffff;
-	coproc_clk = (reg_val >> 32) & 0xffff;
-	octeon_dev->pkind = 0;
-	//TODO: get Pradeep's changes to fix here
+	}
+	octeon_dev->app_mode = CVM_DRV_NIC_APP;
+	core_clk = 1200;
+	coproc_clk = (reg_val >> 16) & 0xffff;
+	octeon_dev->pkind = 40;
     } else {
 	reg_val = octeon_read_csr64(octeon_dev, CN83XX_SLI_EPF_SCRATCH(0));
 	if (reg_val == SDP_HOST_LOADED)
@@ -1741,8 +1755,11 @@ octeon_get_app_mode(void *octptr, unsigned long arg UNUSED)
             core_clk, coproc_clk);
     cavium_print(PRINT_DEBUG,"Application mode:%d pkind:%d\n", 
             octeon_dev->app_mode, octeon_dev->pkind);
-
-    default_oct_conf = (octeon_config_t *) (CHIP_FIELD(octeon_dev, cn83xx_pf, conf));
+    if (octeon_dev->chip_id == OCTEON_CN83XX_PF)
+    	default_oct_conf = (octeon_config_t *) (CHIP_FIELD(octeon_dev, cn83xx_pf, conf));
+    else if (octeon_dev->chip_id == OCTEON_CN93XX_PF)
+		default_oct_conf = (octeon_config_t *) (CHIP_FIELD(octeon_dev, cn93xx_pf, conf));
+	
     CFG_GET_CORE_TICS_PER_US(default_oct_conf) = core_clk;
     CFG_GET_COPROC_TICS_PER_US(default_oct_conf) = coproc_clk;
     CFG_GET_DPI_PKIND(default_oct_conf) = octeon_dev->pkind;

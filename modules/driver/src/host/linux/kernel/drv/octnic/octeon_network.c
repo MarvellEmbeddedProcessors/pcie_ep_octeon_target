@@ -708,7 +708,8 @@ int octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 	{
 		octeon_device_t *oct = (octeon_device_t *) priv->oct_dev;
 		if ((oct->chip_id == OCTEON_CN83XX_PF)
-		    || (oct->chip_id == OCTEON_CN83XX_VF)) {
+		    || (oct->chip_id == OCTEON_CN83XX_VF)
+		    || (oct->chip_id == OCTEON_CN93XX_PF)) {
 
 			if (skb_shinfo(skb)->gso_size) {
 				tso_info_t *tx_info;

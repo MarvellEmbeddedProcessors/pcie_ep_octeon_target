@@ -1088,7 +1088,7 @@ static inline void octeon_droq_drop_packets(octeon_droq_t * droq, uint32_t cnt)
 		     *) (droq->recv_buf_list[droq->host_read_index].data);
 #endif
 		/* Swap length field on 83xx*/
-		if (oct->chip_id == OCTEON_CN83XX_PF)
+		if (oct->chip_id == OCTEON_CN83XX_PF || oct->chip_id == OCTEON_CN93XX_PF)
 			octeon_swap_8B_data((uint64_t *) &(info->length), 1);
 
 		if (info->length) {
@@ -1352,7 +1352,7 @@ octeon_droq_fast_process_packets_reuse_bufs(octeon_device_t * oct,
 #endif        
 
 		/* Swap length field on 83xx*/
-		if (oct->chip_id == OCTEON_CN83XX_PF)
+		if (oct->chip_id == OCTEON_CN83XX_PF || oct->chip_id == OCTEON_CN93XX_PF)
 			octeon_swap_8B_data((uint64_t *) &(info->length), 1);
 
 		if(cavium_unlikely(!info->length))  {
@@ -1880,7 +1880,8 @@ octeon_process_droq_poll_cmd(int oct_id, uint32_t q_no, int cmd, uint32_t arg)
 		/* Enable Pkt Interrupt */
 		switch (oct->chip_id) {
 
-		case OCTEON_CN83XX_PF:{
+		case OCTEON_CN83XX_PF:
+		case OCTEON_CN93XX_PF:{
 #if 0
 				octeon_cn83xx_pf_t *cn83xx =
 				    (octeon_cn83xx_pf_t *) oct->chip;
