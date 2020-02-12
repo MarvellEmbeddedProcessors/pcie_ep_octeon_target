@@ -26,6 +26,7 @@
 #include <mmio_api.h>
 #include <host_ethdev.h>
 
+
 #define TX_DESCQ_OFFSET(mdev)     (mdev->bar_map + OTXMN_TX_DESCQ_OFFSET)
 #define RX_DESCQ_OFFSET(mdev)     (mdev->bar_map + OTXMN_RX_DESCQ_OFFSET)
 
@@ -76,19 +77,20 @@ static void mbox_send_msg(struct otxmn_dev *mdev, union otxmn_mbox_msg *msg)
 	for (i = 1; i <= msg->s.hdr.sizew; i++)
 		writeq(msg->words[i], HOST_MBOX_MSG_REG(mdev, i));
 	/* write header at the end */
-	printk(KERN_DEBUG "send mbox msg id:%d opcode:%d sizew: %d\n",
-	       msg->s.hdr.id, msg->s.hdr.opcode, msg->s.hdr.sizew);
+	/* printk(KERN_DEBUG "send mbox msg id:%d opcode:%d sizew: %d\n",
+	       msg->s.hdr.id, msg->s.hdr.opcode, msg->s.hdr.sizew); */
 	writeq(msg->words[0], HOST_MBOX_MSG_REG(mdev, 0));
 	/* more than 1 word mbox messages need explicit ack */
 	if (msg->s.hdr.req_ack || msg->s.hdr.sizew) {
-		printk(KERN_DEBUG "mbox send wait for ack\n");
+		/* printk(KERN_DEBUG "mbox send wait for ack\n"); */
 		expire = jiffies + timeout;
 		while (get_target_mbox_ack(mdev) != id) {
 			schedule_timeout_interruptible(period);
-			if (signal_pending(current))
+			if ((signal_pending(current)) ||
+			    (time_after(jiffies, expire))) {
+				printk(KERN_ERR "mgmt_net:mbox ack wait failed\n");
 				break;
-			if (time_after(jiffies, expire))
-				break;
+			}
 		}
 	}
 	mutex_unlock(&mdev->mbox_lock);
@@ -103,8 +105,9 @@ static int mbox_check_msg_rcvd(struct otxmn_dev *mdev,
 	msg->words[0] = readq(TARGET_MBOX_MSG_REG(mdev, 0));
 	if (mdev->recv_mbox_id != msg->s.hdr.id) {
 		/* new msg */
-		printk(KERN_DEBUG "new mbox msg id:%d opcode:%d sizew: %d\n",
+		/*printk(KERN_DEBUG "new mbox msg id:%d opcode:%d sizew: %d\n",
 		       msg->s.hdr.id, msg->s.hdr.opcode, msg->s.hdr.sizew);
+		*/
 		mdev->recv_mbox_id = msg->s.hdr.id;
 		for (i = 1; i <= msg->s.hdr.sizew; i++)
 			msg->words[i] = readq(TARGET_MBOX_MSG_REG(mdev, i));
@@ -121,8 +124,9 @@ static void change_host_status(struct otxmn_dev *mdev, uint64_t status,
 {
 	union otxmn_mbox_msg msg;
 
-	printk(KERN_DEBUG "change host status from %lu to %llu \n",
+	/*printk(KERN_DEBUG "change host status from %lu to %llu \n",
 	       readq(HOST_STATUS_REG(mdev)), status);
+	*/
 	writeq(status, HOST_STATUS_REG(mdev));
 	memset(&msg, 0, sizeof(union otxmn_mbox_msg));
 	msg.s.hdr.opcode = OTXMN_MBOX_HOST_STATUS_CHANGE;
@@ -136,7 +140,7 @@ netdev_tx_t mgmt_tx(struct sk_buff *skb, struct net_device *dev)
 	struct otxmn_dev *mdev = (struct otxmn_dev *)netdev_priv(dev);
 	struct otxcn_hw_desc_ptr ptr;
 	struct otxmn_sw_descq  *tq;
-	uint32_t cur_cons_idx;
+	uint32_t cur_cons_idx, cur_prod_idx;
 	uint8_t *hw_desc_ptr;
 	dma_addr_t dma;
 	/* hard code */
@@ -156,7 +160,8 @@ netdev_tx_t mgmt_tx(struct sk_buff *skb, struct net_device *dev)
 		return NETDEV_TX_OK;
 	}
 	cur_cons_idx = READ_ONCE(*tq->cons_idx_shadow);
-	if (!otxmn_circq_space(tq->local_prod_idx, cur_cons_idx, tq->mask)) {
+	cur_prod_idx = READ_ONCE(tq->local_prod_idx);
+	if (!otxmn_circq_space(cur_prod_idx, cur_cons_idx, tq->mask)) {
 		tq->errors++;
 		return NETDEV_TX_BUSY;
 	}
@@ -167,12 +172,12 @@ netdev_tx_t mgmt_tx(struct sk_buff *skb, struct net_device *dev)
 	dma = dma_map_single(mdev->dev, skb->data, skb->len,
 			     DMA_TO_DEVICE);
 	if (dma_mapping_error(mdev->dev, dma)) {
-		printk(KERN_DEBUG "dma mapping err in xmit\n");
+		printk(KERN_ERR "dma mapping err in xmit\n");
 		goto err;
 	}
 	ptr.ptr = dma;
 	hw_desc_ptr = tq->hw_descq +
-		OTXCN_DESC_ARR_ENTRY_OFFSET(tq->local_prod_idx);
+		OTXCN_DESC_ARR_ENTRY_OFFSET(cur_prod_idx);
 	/*printk(KERN_DEBUG "is_frag:%d total_len:%d ptr_type:%d ptr_len:%d ptr:0x%llx\n",
 		 ptr.hdr.s_mgmt_net.is_frag,
 		 ptr.hdr.s_mgmt_net.total_len,
@@ -181,12 +186,14 @@ netdev_tx_t mgmt_tx(struct sk_buff *skb, struct net_device *dev)
 		 ptr.ptr);
 	*/
 	mmio_memwrite(hw_desc_ptr, &ptr, sizeof(struct otxcn_hw_desc_ptr));
-	tq->skb_list[tq->local_prod_idx] = skb;
-	tq->dma_list[tq->local_prod_idx] = dma;
+	tq->skb_list[cur_prod_idx] = skb;
+	tq->dma_list[cur_prod_idx] = dma;
 	/* lists need to be updated before going forward */
 	wmb();
-	tq->local_prod_idx = otxmn_circq_inc(tq->local_prod_idx, tq->mask);
+	cur_prod_idx = otxmn_circq_inc(cur_prod_idx, tq->mask);
+	WRITE_ONCE(tq->local_prod_idx, cur_prod_idx);
 	writel(tq->local_prod_idx, tq->hw_prod_idx);
+	wmb();
 	return NETDEV_TX_OK;
 err:
 	tq->errors++;
@@ -237,7 +244,7 @@ static const struct net_device_ops mgmt_netdev_ops = {
 	.ndo_get_stats64     = mgmt_get_stats64,
 };
 
-/* static void dump_hw_descq(struct otxcn_hw_descq *descq)
+static void dump_hw_descq(struct otxcn_hw_descq *descq)
 {
 	struct  otxcn_hw_desc_ptr *ptr;
 	int i;
@@ -257,7 +264,7 @@ static const struct net_device_ops mgmt_netdev_ops = {
 			ptr->hdr.s_mgmt_net.ptr_len,
 			ptr->ptr);
 	}
-} */
+}
 
 static int mdev_clean_tx_ring(struct otxmn_dev *mdev, int q_idx)
 {
@@ -318,7 +325,7 @@ static int mdev_setup_tx_ring(struct otxmn_dev *mdev, int q_idx)
 			      sizeof(struct otxcn_hw_desc_ptr));
 	descq = kzalloc(descq_tot_size, GFP_KERNEL);
 	if (!descq) {
-		printk(KERN_DEBUG "kmalloc failed\n");
+		printk(KERN_ERR "mgmt_net: tq descq alloc failed\n");
 		return -ENOMEM;
 	}
 	tq = &mdev->txq[q_idx];
@@ -338,18 +345,18 @@ static int mdev_setup_tx_ring(struct otxmn_dev *mdev, int q_idx)
 			       GFP_KERNEL);
 	if (!tq->skb_list) {
 		kfree(descq);
-		printk(KERN_DEBUG "kmalloc failed\n");
+		printk(KERN_ERR "mgmt_net: tq skb_list alloc  failed\n");
 		return -ENOMEM;
 	}
 	tq->dma_list = kzalloc(sizeof(dma_addr_t) * element_count, GFP_KERNEL);
 	if (!tq->dma_list) {
 		kfree(descq);
 		kfree(tq->skb_list);
-		printk(KERN_DEBUG "kmalloc failed\n");
+		printk(KERN_ERR "mgmt_net: tq dma_list malloc failed\n");
 		return -ENOMEM;
 	}
 	wmb();
-	printk(KERN_DEBUG "tx hw descq\n");
+	/* printk(KERN_DEBUG "tx hw descq\n"); */
 	/* dump_hw_descq(descq); */
 	tq->status = OTXMN_DESCQ_READY;
 	/* tq status needs to be updated before memwrite */
@@ -434,14 +441,12 @@ static int mdev_setup_rx_ring(struct otxmn_dev *mdev, int q_idx)
 	dma_addr_t  dma;
 
 
-	printk("sizeof hw_desc_ptr %lu sizeof hw_descq %lu\n",
-	       sizeof(struct otxcn_hw_desc_ptr), sizeof(struct otxcn_hw_descq));
 	rq = &mdev->rxq[q_idx];
 	descq_tot_size = sizeof(struct otxcn_hw_descq) + (element_count *
 			      sizeof(struct otxcn_hw_desc_ptr));
 	descq = kzalloc(descq_tot_size, GFP_KERNEL);
 	if (!descq) {
-		printk(KERN_DEBUG "kmalloc failed\n");
+		printk(KERN_ERR "mgmt_net: rq descq alloc failed\n");
 		return -ENOMEM;
 	}
 	rq->local_prod_idx = 0;
@@ -452,14 +457,14 @@ static int mdev_setup_rx_ring(struct otxmn_dev *mdev, int q_idx)
 			       GFP_KERNEL);
 	if (!rq->skb_list) {
 		kfree(descq);
-		printk(KERN_DEBUG "kmalloc failed\n");
+		printk(KERN_ERR "mgmt_net: rq skb_list  alloc failed\n");
 		return -ENOMEM;
 	}
 	rq->dma_list = kzalloc(sizeof(dma_addr_t) * element_count, GFP_KERNEL);
 	if (!rq->dma_list) {
 		kfree(descq);
 		kfree(rq->skb_list);
-		printk(KERN_DEBUG "kmalloc failed\n");
+		printk(KERN_ERR "mgmt_net: rq dma_list  alloc failed\n");
 		return -ENOMEM;
 	}
 	descq->num_entries = element_count;
@@ -469,11 +474,10 @@ static int mdev_setup_rx_ring(struct otxmn_dev *mdev, int q_idx)
 					(q_idx * sizeof(*rq->cons_idx_shadow));
 	count = otxmn_circq_space(rq->local_prod_idx, rq->local_cons_idx,
 				  rq->mask);
-	printk("queue space %d\n", count);
 	for (i = 0; i < count; i++) {
 		skb = alloc_skb(OTXMN_RX_BUF_SIZE, GFP_KERNEL);
 		if (!skb) {
-			printk(KERN_DEBUG "skb alloc failed\n");
+			printk(KERN_ERR "mgmt_net: skb alloc failed\n");
 			ret = -ENOMEM;
 			goto error;
 		}
@@ -481,7 +485,7 @@ static int mdev_setup_rx_ring(struct otxmn_dev *mdev, int q_idx)
 		dma = dma_map_single(mdev->dev, skb->data, OTXMN_RX_BUF_SIZE,
 				     DMA_FROM_DEVICE);
 		if (dma_mapping_error(mdev->dev, dma)) {
-			printk(KERN_DEBUG "dma mapping failed\n");
+			printk(KERN_ERR "mgmt_net: dma mapping failed\n");
 			dev_kfree_skb_any(skb);
 			ret = -ENOENT;
 			goto error;
@@ -500,12 +504,13 @@ static int mdev_setup_rx_ring(struct otxmn_dev *mdev, int q_idx)
 	rq->hw_prod_idx = (uint32_t *)(rq->hw_descq +
 				       offsetof(struct otxcn_hw_descq,
 						prod_idx));
-	printk(KERN_DEBUG "rx hw descq\n");
-	/* dump_hw_descq(descq); */
+	/* printk(KERN_DEBUG "rx hw descq\n");
+	dump_hw_descq(descq);
 	printk(KERN_DEBUG "dma list\n");
 	for (i = 0; i < count; i++)
 		printk(KERN_DEBUG "skb->data %p  dma 0x%llx\n",
 		       rq->skb_list[i]->data, rq->dma_list[i]);
+	*/
 	rq->status = OTXMN_DESCQ_READY;
 	/* rq needs to be updated before memwrite */
 	wmb();
@@ -571,12 +576,13 @@ static int handle_target_status(struct otxmn_dev *mdev)
 
 	cur_status = get_host_status(mdev);
 	target_status = get_target_status(mdev);
-	printk(KERN_DEBUG "host status %llu\n", cur_status);
+	/* printk(KERN_DEBUG "host status %llu\n", cur_status);
 	printk(KERN_DEBUG "target status %llu\n", target_status);
+	*/
 	switch (cur_status) {
 	case OTXMN_HOST_READY:
 		if (target_status == OTXMN_TARGET_RUNNING) {
-			printk(KERN_DEBUG "target running after host ready\n");
+			printk(KERN_DEBUG "mgmt_net: target running\n");
 			change_host_status(mdev, OTXMN_HOST_RUNNING, false);
 			netif_carrier_on(mdev->ndev);
 		}
@@ -584,7 +590,7 @@ static int handle_target_status(struct otxmn_dev *mdev)
 	case OTXMN_HOST_RUNNING:
 		target_status = get_target_status(mdev);
 		if (target_status != OTXMN_TARGET_RUNNING) {
-			printk(KERN_DEBUG "target not running after host running\n");
+			printk(KERN_DEBUG "mgmt_net: target stopped\n");
 			netif_carrier_off(mdev->ndev);
 			ret = mdev_reinit_rings(mdev);
 			if (ret) {
@@ -596,7 +602,7 @@ static int handle_target_status(struct otxmn_dev *mdev)
 		}
 		break;
 	default:
-		printk(KERN_DEBUG "unhandled state transition host_status:%llu target_status %llu\n",
+		printk(KERN_ERR "mgmt_net: unhandled state transition host_status:%llu target_status %llu\n",
 		       cur_status, target_status);
 		break;
 	}
@@ -635,25 +641,23 @@ static int handle_txq_completion(struct otxmn_dev *mdev, int q_idx)
 	return count;
 }
 
-static int rxq_refill(struct otxmn_dev *mdev, int q_idx)
+static int rxq_refill(struct otxmn_dev *mdev, int q_idx, int count)
 {
 	struct otxmn_sw_descq *rq = &mdev->rxq[q_idx];
-	int cur_prod_idx, cur_cons_idx, count, start;
+	int cur_prod_idx, start;
 	struct otxcn_hw_desc_ptr ptr;
 	uint8_t *hw_desc_ptr;
 	struct sk_buff *skb;
 	dma_addr_t dma;
 	int i;
 
-	cur_prod_idx = rq->local_prod_idx;
-	cur_cons_idx =  *rq->cons_idx_shadow;
-	count = otxmn_circq_space(cur_prod_idx,  cur_cons_idx, rq->mask);
+	cur_prod_idx = READ_ONCE(rq->local_prod_idx);
 	start = cur_prod_idx;
 	for (i = 0; i < count; i++) {
 		memset(&ptr, 0, sizeof(struct otxcn_hw_desc_ptr));
 		skb = alloc_skb(OTXMN_RX_BUF_SIZE, GFP_KERNEL);
 		if (!skb) {
-			printk(KERN_DEBUG "unable to refill\n");
+			printk(KERN_ERR "mgmt_net: skb alloc fail\n");
 			break;
 		}
 		skb->dev = mdev->ndev;
@@ -661,24 +665,31 @@ static int rxq_refill(struct otxmn_dev *mdev, int q_idx)
 				     DMA_FROM_DEVICE);
 		if (dma_mapping_error(mdev->dev, dma)) {
 			dev_kfree_skb_any(skb);
-			printk(KERN_DEBUG "unable to refill\n");
+			printk(KERN_ERR "mgmt_net: dma mapping fail\n");
 			break;
 		}
 		ptr.hdr.s_mgmt_net.ptr_type = OTXCN_DESC_PTR_DIRECT;
 		ptr.ptr = dma;
+		if (rq->skb_list[start] != NULL || rq->dma_list[start] != 0) {
+			dev_kfree_skb_any(skb);
+			printk(KERN_ERR "mgmt_net:refill err entry !empty\n");
+			break;
+		}
+
 		rq->skb_list[start] = skb;
 		rq->dma_list[start] = dma;
 		hw_desc_ptr = rq->hw_descq +
 				OTXCN_DESC_ARR_ENTRY_OFFSET(start);
 		mmio_memwrite(hw_desc_ptr, &ptr,
 			      sizeof(struct otxcn_hw_desc_ptr));
-		rq->local_prod_idx = otxmn_circq_inc(rq->local_prod_idx,
-						     rq->mask);
 		start = otxmn_circq_inc(start, rq->mask);
 	}
 	/* the lists need to be updated before updating hwprod idx */
 	wmb();
+	cur_prod_idx = otxmn_circq_add(cur_prod_idx, i, rq->mask);
+	WRITE_ONCE(rq->local_prod_idx, cur_prod_idx);
 	writel(rq->local_prod_idx, rq->hw_prod_idx);
+	wmb();
 	return i;
 }
 
@@ -712,20 +723,23 @@ static int rxq_refill(struct otxmn_dev *mdev, int q_idx)
 static int handle_rxq(struct otxmn_dev *mdev, int q_idx)
 {
 	struct otxmn_sw_descq *rq = &mdev->rxq[q_idx];
-	uint32_t prev_cons_idx, cur_cons_idx;
+	uint32_t cons_idx, prod_idx;
 	struct otxcn_hw_desc_ptr ptr;
 	uint8_t *hw_desc_ptr;
 	int count, start, i;
 	struct sk_buff *skb;
+	struct otxcn_hw_descq *tmp_descq;
+	int descq_tot_size;
 
 	if (!mdev->admin_up)
 		return 0;
 	if (get_host_status(mdev) != OTXMN_HOST_RUNNING)
 		return 0;
-	prev_cons_idx = rq->local_cons_idx;
-	cur_cons_idx =  *rq->cons_idx_shadow;
-	count = otxmn_circq_depth(cur_cons_idx,  prev_cons_idx, rq->mask);
-	start = prev_cons_idx;
+
+	cons_idx = READ_ONCE(rq->local_cons_idx);
+	prod_idx =  READ_ONCE(*rq->cons_idx_shadow);
+	count = otxmn_circq_depth(prod_idx,  cons_idx, rq->mask);
+	start = cons_idx;
 	for (i = 0; i < count; i++) {
 		skb = rq->skb_list[start];
 		dma_unmap_single(mdev->dev, rq->dma_list[start],
@@ -747,14 +761,27 @@ static int handle_rxq(struct otxmn_dev *mdev, int q_idx)
 		    ptr.hdr.s_mgmt_net.is_frag ||
 		    ptr.hdr.s_mgmt_net.ptr_len != ptr.hdr.s_mgmt_net.ptr_len)) {
 			/* dont handle frags now */
-			printk(KERN_DEBUG "bad rx pkt\n");
-			printk(KERN_DEBUG "is_frag:%d total_len:%d ptr_type:%d ptr_len:%d ptr:0x%llx\n",
+			printk(KERN_ERR "mgmt_net: bad rx pkt\n");
+			printk(KERN_ERR "is_frag:%d total_len:%d ptr_type:%d ptr_len:%d ptr:0x%llx\n",
 				ptr.hdr.s_mgmt_net.is_frag,
 				ptr.hdr.s_mgmt_net.total_len,
 				ptr.hdr.s_mgmt_net.ptr_type,
 				ptr.hdr.s_mgmt_net.ptr_len,
 				ptr.ptr);
 			rq->errors++;
+			descq_tot_size = sizeof(struct otxcn_hw_descq) +
+					 (rq->element_count *
+					  sizeof(struct otxcn_hw_desc_ptr));
+			printk(KERN_ERR "rq->element count %d\n, descq_tot_size %d\n", rq->element_count, descq_tot_size);
+			tmp_descq = kmalloc(descq_tot_size, GFP_KERNEL);
+			if (!tmp_descq) {
+				printk(KERN_ERR "rx error kmalloc\n");
+			} else {
+				mmio_memread(tmp_descq, rq->hw_descq,
+					     descq_tot_size);
+				dump_hw_descq(tmp_descq);
+				kfree(tmp_descq);
+			}
 			dev_kfree_skb_any(skb);
 		} else {
 			skb_put(skb, ptr.hdr.s_mgmt_net.total_len);
@@ -771,19 +798,22 @@ static int handle_rxq(struct otxmn_dev *mdev, int q_idx)
 	}
 	/* lists need to be updated before updating cons idx */
 	wmb();
-	rq->local_cons_idx = cur_cons_idx;
+	cons_idx = otxmn_circq_add(cons_idx, count, rq->mask);
+	WRITE_ONCE(rq->local_cons_idx, cons_idx);
+	wmb();
 	return count;
 }
 
 static void mdev_rxtx(struct otxmn_dev *mdev)
 {
-	int i;
+	int i, count;
 
 	for (i = 0; i < mdev->num_txq; i++)
 		handle_txq_completion(mdev, i);
 	for (i = 0; i < mdev->num_rxq; i++) {
-		if (handle_rxq(mdev, i))
-			rxq_refill(mdev, i);
+		count = handle_rxq(mdev, i);
+		if (count)
+			rxq_refill(mdev, i, count);
 	}
 }
 
@@ -824,15 +854,16 @@ static int __init mgmt_init(void)
 	struct otxmn_dev *mdev;
 
 	if (mv_get_facility_conf(MV_FACILITY_MGMT_NETDEV, &conf)) {
-		printk(KERN_DEBUG "get_facility_conf failed\n");
+		printk(KERN_ERR "mgmt_net:get_facility_conf failed\n");
 		return -ENODEV;
 	}
 	if (conf.memsize < OTXMN_BAR_SIZE) {
-		printk(KERN_DEBUG "bar size less %d\n", conf.memsize);
+		printk(KERN_ERR "mgmt_net:bar size less %d\n", conf.memsize);
 		return -ENODEV;
 	}
-	printk(KERN_DEBUG "conf.map_addr.bar_map %p\n", conf.memmap.host_addr);
-	printk(KERN_DEBUG "conf.map_size %d\n", conf.memsize);
+	printk(KERN_DEBUG "mgmt_net:conf.map_addr.bar_map %p\n",
+	       conf.memmap.host_addr);
+	printk(KERN_DEBUG "mgmt_net:conf.map_size %d\n", conf.memsize);
 	/* irrespective of resources, we support single queue only */
 	max_txq = num_txq = OTXMN_MAXQ;
 	max_rxq = num_rxq = OTXMN_MAXQ;
@@ -841,7 +872,7 @@ static int __init mgmt_init(void)
 						&tq_cons_shdw_dma,
 						GFP_KERNEL);
 	if (tq_cons_shdw_vaddr == NULL) {
-		printk(KERN_DEBUG "dma_alloc_coherent tq failed\n");
+		printk(KERN_ERR "mgmt_net: dma_alloc_coherent tq failed\n");
 		return  -ENOMEM;
 	}
 	rq_cons_shdw_vaddr = dma_alloc_coherent(conf.dma_dev.host_ep_dev,
@@ -850,14 +881,14 @@ static int __init mgmt_init(void)
 						GFP_KERNEL);
 	if (rq_cons_shdw_vaddr == NULL) {
 		ret = -ENOMEM;
-		printk(KERN_DEBUG "dma_alloc_coherent rq failed\n");
+		printk(KERN_ERR "mgmt_net: dma_alloc_coherent rq failed\n");
 		goto tq_dma_free;
 	}
 	/* we support only single queue at this time */
 	ndev = alloc_etherdev(sizeof(struct otxmn_dev));
 	if (!ndev) {
 		ret = -ENOMEM;
-		printk(KERN_DEBUG "alloc_etherdev failed\n");
+		printk(KERN_ERR "mgmt_net: alloc_etherdev failed\n");
 		goto rq_dma_free;
 	}
 	ndev->netdev_ops = &mgmt_netdev_ops;
@@ -882,26 +913,28 @@ static int __init mgmt_init(void)
 	mdev->tq_cons_shdw_dma   = tq_cons_shdw_dma;
 	mdev->rq_cons_shdw_vaddr = rq_cons_shdw_vaddr;
 	mdev->rq_cons_shdw_dma   = rq_cons_shdw_dma;
+	/*
 	printk(KERN_DEBUG "rq_cons_shdw_vaddr %p rq_cons_shdw_dma %llx phys: 0x%llx\n",
 	       mdev->rq_cons_shdw_vaddr, mdev->rq_cons_shdw_dma,
 	       virt_to_phys(mdev->rq_cons_shdw_vaddr));
 	printk(KERN_DEBUG "tq_cons_shdw_vaddr %p tq_cons_shdw_dma %llx phys: 0x%llx\n",
 	       mdev->tq_cons_shdw_vaddr, mdev->tq_cons_shdw_dma,
 	       virt_to_phys(mdev->tq_cons_shdw_vaddr));
+	*/
 	ret = mdev_setup_tx_rings(mdev);
 	if (ret) {
-		printk(KERN_DEBUG "setup tx rings failed\n");
+		printk(KERN_ERR "mgmt_net setup tx rings failed\n");
 		goto free_net;
 	}
 	ret = mdev_setup_rx_rings(mdev);
 	if (ret) {
-		printk(KERN_DEBUG "setup rx rings failed\n");
+		printk(KERN_ERR "mgmt_net: setup rx rings failed\n");
 		goto clean_tx_ring;
 	}
 	mdev->mgmt_wq = alloc_ordered_workqueue("mgmt_net", 0);
 	if (!mdev->mgmt_wq) {
 		ret = -ENOMEM;
-		printk(KERN_DEBUG "alloc_ordered_workqueue failed\n");
+		printk(KERN_ERR "mgmt_net: alloc_ordered_workqueue failed\n");
 		goto clean_rx_ring;
 	}
 	mdev->send_mbox_id = 0;
@@ -909,7 +942,7 @@ static int __init mgmt_init(void)
 	mutex_init(&mdev->mbox_lock);
 	ret = register_netdev(ndev);
 	if (ret) {
-		printk(KERN_DEBUG "register_netdev failed\n");
+		printk(KERN_ERR "i mgmt_net: register_netdev failed\n");
 		goto destroy_mutex;
 	}
 	change_host_status(mdev, OTXMN_HOST_READY, false);
