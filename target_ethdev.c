@@ -22,6 +22,8 @@
 #include <bar_space_mgmt_net.h>
 #include <target_ethdev.h>
 
+#define MGMT_IFACE_NAME "mgmt%d"
+
 #define TX_DESCQ_OFFSET(mdev)	  \
 	((uint8_t *)(mdev->bar_map + OTXMN_TX_DESCQ_OFFSET))
 #define RX_DESCQ_OFFSET(mdev)     \
@@ -498,11 +500,26 @@ static void mgmt_get_stats64(struct net_device *dev,
 	}
 }
 
+static int mgmt_set_mac(struct net_device *netdev, void *p)
+{
+	struct otxmn_dev *mdev = netdev_priv(netdev);
+        struct sockaddr *addr = (struct sockaddr *)p;
+
+        if (!is_valid_ether_addr(addr->sa_data))
+                return -EADDRNOTAVAIL;
+
+        memcpy(netdev->dev_addr, addr->sa_data, netdev->addr_len);
+        memcpy(mdev->hw_addr, addr->sa_data, ETH_ALEN);
+
+        return 0;
+}
+
 static const struct net_device_ops mgmt_netdev_ops = {
 	.ndo_open            = mgmt_open,
 	.ndo_stop            = mgmt_close,
 	.ndo_start_xmit      = mgmt_tx,
 	.ndo_get_stats64     = mgmt_get_stats64,
+	.ndo_set_mac_address = mgmt_set_mac,
 };
 
 static int handle_rxq(struct otxmn_dev *mdev, int q_idx)
@@ -634,9 +651,10 @@ static int __init mgmt_init(void)
 	max_txq = num_txq = OTXMN_MAXQ;
 	max_rxq = num_rxq = OTXMN_MAXQ;
 	/* we support only single queue at this time */
-	ndev = alloc_etherdev(sizeof(struct otxmn_dev));
+	ndev = alloc_netdev(sizeof(struct otxmn_dev), MGMT_IFACE_NAME,
+			    NET_NAME_UNKNOWN, ether_setup);
 	if (!ndev) {
-		printk(KERN_ERR "mgmt_net:alloc etherdev failed\n");
+		printk(KERN_ERR "mgmt_net:alloc netdev failed\n");
 		return -ENOMEM;
 	}
 	ndev->netdev_ops = &mgmt_netdev_ops;
