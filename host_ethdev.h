@@ -78,6 +78,7 @@ struct otxmn_dev {
 	struct mutex mbox_lock;
 	uint32_t send_mbox_id;
 	uint32_t recv_mbox_id;
+	uint8_t hw_addr[ETH_ALEN];
 };
 
 #endif /* _HOST_ETHDEV_H_ */

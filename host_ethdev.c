@@ -27,6 +27,8 @@
 #include <host_ethdev.h>
 
 
+#define MGMT_IFACE_NAME "mgmt%d"
+
 #define TX_DESCQ_OFFSET(mdev)     (mdev->bar_map + OTXMN_TX_DESCQ_OFFSET)
 #define RX_DESCQ_OFFSET(mdev)     (mdev->bar_map + OTXMN_RX_DESCQ_OFFSET)
 
@@ -237,11 +239,27 @@ static void mgmt_get_stats64(struct net_device *dev,
 	}
 }
 
+static int mgmt_set_mac(struct net_device *netdev, void *p)
+{
+	struct otxmn_dev *mdev = netdev_priv(netdev);
+        struct sockaddr *addr = (struct sockaddr *)p;
+
+        if (!is_valid_ether_addr(addr->sa_data))
+                return -EADDRNOTAVAIL;
+
+        memcpy(netdev->dev_addr, addr->sa_data, netdev->addr_len);
+        memcpy(mdev->hw_addr, addr->sa_data, ETH_ALEN);
+
+        return 0;
+}
+
+
 static const struct net_device_ops mgmt_netdev_ops = {
 	.ndo_open            = mgmt_open,
 	.ndo_stop            = mgmt_close,
 	.ndo_start_xmit      = mgmt_tx,
 	.ndo_get_stats64     = mgmt_get_stats64,
+	.ndo_set_mac_address = mgmt_set_mac,
 };
 
 static void dump_hw_descq(struct otxcn_hw_descq *descq)
@@ -885,12 +903,13 @@ static int __init mgmt_init(void)
 		goto tq_dma_free;
 	}
 	/* we support only single queue at this time */
-	ndev = alloc_etherdev(sizeof(struct otxmn_dev));
-	if (!ndev) {
+	ndev = alloc_netdev(sizeof(struct otxmn_dev), MGMT_IFACE_NAME,
+			    NET_NAME_UNKNOWN, ether_setup);
+        if (!ndev) {
 		ret = -ENOMEM;
-		printk(KERN_ERR "mgmt_net: alloc_etherdev failed\n");
+		printk(KERN_ERR "mgmt_net: alloc_netdev failed\n");
 		goto rq_dma_free;
-	}
+        }
 	ndev->netdev_ops = &mgmt_netdev_ops;
 	ndev->hw_features = NETIF_F_HIGHDMA;
 	ndev->features = ndev->hw_features;
@@ -942,7 +961,7 @@ static int __init mgmt_init(void)
 	mutex_init(&mdev->mbox_lock);
 	ret = register_netdev(ndev);
 	if (ret) {
-		printk(KERN_ERR "i mgmt_net: register_netdev failed\n");
+		printk(KERN_ERR "mgmt_net: register_netdev failed\n");
 		goto destroy_mutex;
 	}
 	change_host_status(mdev, OTXMN_HOST_READY, false);
