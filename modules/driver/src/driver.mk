@@ -7,7 +7,7 @@
 # This file, which is part of the CNNIC SDK which also includes the
 # CNNIC SDK Package from Cavium Networks, contains proprietary and
 # confidential information of Cavium Networks and in some cases its
-# suppliers. 
+# suppliers.
 #
 # Any licensed reproduction, distribution, modification, or other use of
 # this file or the confidential information or patented inventions
@@ -27,11 +27,14 @@
 # IMPORTANT: Do not leave spaces at the end of directory paths.
 #
 
+#Get running kernel version
+KERNEL_VERSION ?= $(shell uname -r)
+
 # Enable this flag if the driver and applications will run on an OCTEON
 # in PCI Host mode(ie, when OCTEON is the Host ).
 #HOST_IS_OCTEON=1
 
-# Define COMPILEFOR = OCTEON_VF to compile the kernel modules for VFs. These 
+# Define COMPILEFOR = OCTEON_VF to compile the kernel modules for VFs. These
 # modules will run on OCTEON VF BASE drivers.
 #COMPILEFOR = OCTEON_VF
 
@@ -52,7 +55,6 @@ export ARCH
 
 OCTDRVFLAGS  += -DOCTEON_HOST
 
-
 # The compiler needs to be changed only for the host sources.
 # No changes are made if the core application includes this file.
 ifneq ($(findstring OCTEON_CORE_DRIVER,$(COMPILE)), OCTEON_CORE_DRIVER)
@@ -61,7 +63,7 @@ CC=mips64-octeon-linux-gnu-gcc
 AR=mips64-octeon-linux-gnu-ar
 endif
 else
-kernel_source := /lib/modules/$(shell uname -r)/build
+kernel_source := /lib/modules/$(KERNEL_VERSION)/build
 ENABLE_CURSES=1
 endif
 
@@ -73,9 +75,6 @@ BINDIR := $(CNNIC_ROOT)/modules/driver/bin
 
 #Enables Advanced Error Reporting of the PCIe bus
 #OCTDRVFLAGS  += -DPCIE_AER
-
-#Get running kernel version
-KERNEL_VERSION = $(shell uname -r)
 
 #extract kernel major version from kernel version
 KERNEL_MAJOR = $(shell echo $(KERNEL_VERSION) | \
@@ -111,13 +110,13 @@ if($(KERNEL_REVISION) >= $(3)) {print 1} else { print 0 } \
 #Use these MACRO for compiling CNNIC Host driver on multiple kernel patch revisions.
 OCTDRVFLAGS += -DKERNEL_PATCH_VERSION=$(KERNEL_PATCH_REVISION)
 
-#Enable this when IOMMU is ON in host machine, for DROQ functional tests. 
+#Enable this when IOMMU is ON in host machine, for DROQ functional tests.
 OCTDRVFLAGS  += -DDROQ_TEST_REUSE_BUFS
 
 OCTDRVFLAGS += -DBUFPTR_ONLY_MODE
 
-#New flag for OCTEON-III models. Code specific to OCTEON-III will be kept under this. 
-#Disable the other models, if OCTEON-III is enabled. 
+#New flag for OCTEON-III models. Code specific to OCTEON-III will be kept under this.
+#Disable the other models, if OCTEON-III is enabled.
 #ifneq ($(or $(findstring OCTEON_CN73XX, $(OCTEON_MODEL)), \
             $(findstring OCTEON_CN78XX, $(OCTEON_MODEL)), \
             $(findstring OCTEON_CN23XX, $(OCTEON_MODEL))), )
@@ -125,7 +124,7 @@ OCTDRVFLAGS += -DENABLE_OCTEON_III=1
 #Enable this flag to use NAPI for only NIC mode operation.
 #OCTDRVFLAGS += -DOCT_NIC_USE_NAPI
 #OCTDRVFLAGS += -DOCT_NIC_IQ_USE_NAPI
-#OCTDRVFLAGS += -DOCT_TX2_ISM_INT 
+#OCTDRVFLAGS += -DOCT_TX2_ISM_INT
 
 #This feature is meant for kernel versions above 3.4.110
 ifeq ($(call kernel_compare, 3, 4, 110), 1)
@@ -140,4 +139,4 @@ OCTDRVFLAGS += -DUSE_SINGLE_PF
 #OCTDRVFLAGS += -DBUILD_FOR_EMULATOR
 #endif
 
-# $Id$ 
+# $Id$
