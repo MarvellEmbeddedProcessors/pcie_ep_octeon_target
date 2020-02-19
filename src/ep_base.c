@@ -28,6 +28,8 @@
 #define NPU_HANDSHAKE_SIGNATURE 0xABCDABCD
 void *pem_io_base;
 void *sdp_base;
+void __iomem *bar0_internal_addr;
+EXPORT_SYMBOL(bar0_internal_addr);
 
 //TODO: fix the names npu_barmap_mem and npu_bar_map
 /* local memory mapped through BAR for access from host */
@@ -56,6 +58,9 @@ static irqreturn_t npu_base_interrupt(int irq, void *dev_id)
 		printk("nw_agent[0] = %x\n",
 		       *(volatile uint32_t *)(npu_barmap_mem +
 					      (NPU_BARMAP_NW_AGENT_OFFSET - NPU_BARMAP_FIREWALL_OFFSET)));
+		bar0_internal_addr = npu_barmap_mem +
+				     (NPU_BARMAP_NW_AGENT_OFFSET -
+				      NPU_BARMAP_FIREWALL_OFFSET);
 		printk("RPC[0] = %x\n",
 		       *(volatile uint32_t *)(npu_barmap_mem +
 					      (NPU_BARMAP_RPC_OFFSET - NPU_BARMAP_FIREWALL_OFFSET)));
