@@ -139,4 +139,9 @@ OCTDRVFLAGS += -DUSE_SINGLE_PF
 #OCTDRVFLAGS += -DBUILD_FOR_EMULATOR
 #endif
 
-# $Id$
+ifeq ($(PPORT_INC_DIR),)
+$(error PPORT_INC_DIR is not set)
+endif
+INCLUDE = -I$(PPORT_INC_DIR)
+
+# $Id$ 

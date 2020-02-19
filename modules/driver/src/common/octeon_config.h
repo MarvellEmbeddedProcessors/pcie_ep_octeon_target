@@ -78,7 +78,14 @@
 #define   CN83XX_MAX_OUTPUT_QUEUES	64
 
 #define   CN83XX_MAX_OQ_DESCRIPTORS     4096
-#define   CN83XX_OQ_BUF_SIZE            1536
+#define CONFIG_PPORT
+#ifdef CONFIG_PPORT
+/* PPORT_HLEN, CUSTOM_META_TAG_LEN */
+#define MV_PPORT_OVERHEAD (64 + 2)
+#else
+#define MV_PPORT_OVERHEAD 0
+#endif
+#define   CN83XX_OQ_BUF_SIZE            (1536 + MV_PPORT_OVERHEAD)
 #define   CN83XX_OQ_PKTSPER_INTR        128
 /* NIC mode performance tuning: increased from 128 to 1024 */
 #define   CN83XX_OQ_REFIL_THRESHOLD     1024
@@ -127,7 +134,7 @@
 #define   CN93XX_MAX_OUTPUT_QUEUES	128
 
 #define   CN93XX_MAX_OQ_DESCRIPTORS	4096
-#define   CN93XX_OQ_BUF_SIZE		1536
+#define   CN93XX_OQ_BUF_SIZE		(1536 + MV_PPORT_OVERHEAD)
 #define   CN93XX_OQ_PKTSPER_INTR	128
 /* NIC mode performance tuning: increased from 128 to 1024 */
 #define   CN93XX_OQ_REFIL_THRESHOLD	1024
