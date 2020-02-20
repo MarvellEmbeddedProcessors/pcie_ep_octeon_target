@@ -26,6 +26,10 @@
 #include "cavium_proc.h"
 #include "octeon_mem_ops.h"
 #include "octeon_macros.h"
+#include "barmap.h"
+
+void __iomem *nwa_bar0_internal_addr;
+EXPORT_SYMBOL(nwa_bar0_internal_addr);
 
 /* By default MSIX interrupts are enabled.
  * OCTEONTX supports only MSI-X interrupts.
@@ -290,6 +294,8 @@ int octeon_map_pci_barx(octeon_device_t * oct, int baridx, int max_map_len)
 		return 1;
 	}
 	oct->mmio[baridx].done = 1;
+
+	nwa_bar0_internal_addr = oct->mmio[baridx].hw_addr + NPU_BARMAP_NW_AGENT_OFFSET;
 
 	return 0;
 }
