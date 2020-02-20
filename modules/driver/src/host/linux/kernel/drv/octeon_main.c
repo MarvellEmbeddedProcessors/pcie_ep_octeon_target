@@ -854,12 +854,6 @@ int octeon_device_init(octeon_device_t * octeon_dev)
 
 	cavium_spin_lock_init(&octeon_dev->oct_lock);
 
-	/* Do a soft reset of the Octeon device. */
-	if (octeon_dev->fn_list.soft_reset(octeon_dev))
-		return 1;
-
-    cavium_print_msg(" Soft reset completed\n");
-
 	/* Initialize the dispatch mechanism used to push packets arriving on
 	   Octeon Output queues. */
 	if (octeon_init_dispatch_list(octeon_dev))
