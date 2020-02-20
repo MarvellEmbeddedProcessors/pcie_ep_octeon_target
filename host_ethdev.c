@@ -27,7 +27,7 @@
 #include <host_ethdev.h>
 
 
-#define MGMT_IFACE_NAME "mgmt%d"
+#define MGMT_IFACE_NAME "mvmgmt%d"
 
 #define TX_DESCQ_OFFSET(mdev)     (mdev->bar_map + OTXMN_TX_DESCQ_OFFSET)
 #define RX_DESCQ_OFFSET(mdev)     (mdev->bar_map + OTXMN_RX_DESCQ_OFFSET)
