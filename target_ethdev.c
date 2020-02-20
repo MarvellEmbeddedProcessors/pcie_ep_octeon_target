@@ -22,7 +22,7 @@
 #include <bar_space_mgmt_net.h>
 #include <target_ethdev.h>
 
-#define MGMT_IFACE_NAME "mgmt%d"
+#define MGMT_IFACE_NAME "mvmgmt%d"
 
 #define TX_DESCQ_OFFSET(mdev)	  \
 	((uint8_t *)(mdev->bar_map + OTXMN_TX_DESCQ_OFFSET))
