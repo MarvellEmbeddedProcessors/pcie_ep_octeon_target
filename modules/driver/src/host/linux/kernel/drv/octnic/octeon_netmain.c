@@ -48,6 +48,8 @@ octeon_config_t *octeon_dev_conf(octeon_device_t * oct);
 #define LINK_STATUS_REQUESTED    1
 #define LINK_STATUS_FETCHED      2
 
+#define OCTEON_NETDEV_DEV_NAME   "eth_mux"
+
 static inline void octnet_free_netdev(octnet_os_devptr_t * dev)
 {
 	return free_netdev(dev);
@@ -591,6 +593,7 @@ octnet_setup_nic_device(int octeon_id, oct_link_info_t * link_info, int ifidx)
 		cavium_error("OCTNIC: Device allocation failed\n");
 		return -ENOMEM;
 	}
+	pndev->dev.init_name = OCTEON_NETDEV_DEV_NAME;
 
 	octprops[octeon_id]->pndev[ifidx] = pndev;
 
