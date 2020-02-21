@@ -48,7 +48,7 @@ octeon_config_t *octeon_dev_conf(octeon_device_t * oct);
 #define LINK_STATUS_REQUESTED    1
 #define LINK_STATUS_FETCHED      2
 
-#define OCTEON_NETDEV_DEV_NAME   "eth_mux"
+#define OCTEON_NETDEV_DEV_NAME   "mux_dev"
 
 static inline void octnet_free_netdev(octnet_os_devptr_t * dev)
 {
