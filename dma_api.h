@@ -17,7 +17,7 @@ typedef enum {
 
 struct device *get_dpi_dma_dev(void);
 void host_writel(host_dma_addr_t host_addr, uint32_t val);
-uint32_t __iomem *host_ioremapl(host_dma_addr_t host_addr);
+void __iomem *host_ioremap(host_dma_addr_t host_addr);
 void host_iounmap(void __iomem *addr);
 int dpi_vf_init(void);
 void dpi_vf_cleanup(void);
