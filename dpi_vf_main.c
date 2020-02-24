@@ -27,6 +27,7 @@
 #define DPI_AURA 0
 #define DPI_NUM_VFS 1
 #define FPA_NUM_VFS 1
+#define DPI_DMA_CMDX_SIZE 64
 
 static struct fpapf_com_s *fpapf;
 static struct fpavf_com_s *fpavf;
@@ -44,6 +45,7 @@ struct dma_queue_ctx {
 	u16 reserved;
 	u64 dpi_buf;
 	void *dpi_buf_ptr;
+	spinlock_t queue_lock;
 };
 
 struct dpivf_t {
@@ -184,6 +186,7 @@ static int dpi_dma_queue_write(struct dpivf_t *dpi_vf, u16 qid, u16 cmd_count,
 	/* Normally there is plenty of
 	 * room in the current buffer for the command
 	 */
+	spin_lock_bh(&qctx->queue_lock);
 	if (qctx->index + cmd_count < qctx->pool_size_m1) {
 		u64 *ptr = qctx->dpi_buf_ptr;
 
@@ -205,6 +208,7 @@ static int dpi_dma_queue_write(struct dpivf_t *dpi_vf, u16 qid, u16 cmd_count,
 
 		dpi_buf = fpavf->alloc(fpa, DPI_AURA);
 		if (!dpi_buf) {
+			spin_unlock_bh(&qctx->queue_lock);
 			dev_err(dev, "Failed to allocate");
 			return -ENODEV;
 		}
@@ -244,6 +248,7 @@ static int dpi_dma_queue_write(struct dpivf_t *dpi_vf, u16 qid, u16 cmd_count,
 		if (qctx->index >= qctx->pool_size_m1) {
 			dpi_buf = fpavf->alloc(fpa, DPI_AURA);
 			if (!dpi_buf) {
+				spin_unlock_bh(&qctx->queue_lock);
 				dev_err(dev, "Failed to allocate");
 				return -ENODEV;
 			}
@@ -262,6 +267,7 @@ static int dpi_dma_queue_write(struct dpivf_t *dpi_vf, u16 qid, u16 cmd_count,
 			qctx->index = 0;
 		}
 	}
+	spin_unlock_bh(&qctx->queue_lock);
 
 	return 0;
 }
@@ -275,7 +281,7 @@ static int dpi_dma_queue_write(struct dpivf_t *dpi_vf, u16 qid, u16 cmd_count,
  *  @len: Size of bytes to be transferred
  *  @dir: Direction of the transfer
  */
-int do_dma_sync(host_dma_addr_t local_dma_addr, host_dma_addr_t host_dma_addr,
+int do_dma_sync(local_dma_addr_t local_dma_addr, host_dma_addr_t host_dma_addr,
 		void *local_virt_addr, int len,	host_dma_dir_t dir)
 {
 
@@ -300,13 +306,118 @@ struct device *get_dpi_dma_dev(void)
 }
 EXPORT_SYMBOL(get_dpi_dma_dev);
 
-int do_dma_sync_dpi(host_dma_addr_t local_dma_addr, host_dma_addr_t host_addr,
+/* caller needs to provide iova addrs, and completion_word, caller needs to poll completion word */
+int do_dma_async_dpi_vector(local_dma_addr_t *local_addr, host_dma_addr_t *host_addr,
+			    int *len, int num_ptrs, host_dma_dir_t dir, local_dma_addr_t comp_iova)
+{
+	dpi_dma_buf_ptr_t cmd = {0};
+	dpi_dma_ptr_t lptr[DPI_MAX_PTR] = {0};
+	dpi_dma_ptr_t hptr[DPI_MAX_PTR] = {0};
+	u64 dpi_cmd[DPI_DMA_CMDX_SIZE] = {0};
+	dpi_dma_instr_hdr_s *header = (dpi_dma_instr_hdr_s *)&dpi_cmd[0];
+	dpi_dma_queue_ctx_t ctx = {0};
+	u8 nfst, nlst;
+	u16 index = 0;
+	int i;
+
+
+	if (num_ptrs > DPI_MAX_PTR || num_ptrs < 1)
+		return -EINVAL;
+	/* TODO check Sum(len[i]) < 64K */
+	/* why len ?? */
+	//comp_data = devm_kzalloc(dev, 8, GFP_DMA);
+
+	for (i = 0; i < num_ptrs; i++) {
+		lptr[i].s.ptr = local_addr[i];
+		lptr[i].s.length = len[i];
+		hptr[i].s.ptr = host_addr[i];
+		hptr[i].s.length = len[i];
+		if (dir == DMA_FROM_HOST) {
+			cmd.rptr[i] = &hptr[i];
+			cmd.wptr[i] = &lptr[i];
+		} else {
+			cmd.rptr[i] = &lptr[i];
+			cmd.wptr[i] = &hptr[i];
+		}
+		cmd.rptr_cnt++;
+		cmd.wptr_cnt++;
+	}
+	if (dir == DMA_FROM_HOST)
+		ctx.xtype = DPI_XTYPE_INBOUND;
+	else
+		ctx.xtype = DPI_XTYPE_OUTBOUND;
+
+	ctx.pt = 0;
+	header->s.ptr = comp_iova;
+	header->s.xtype = ctx.xtype & 0x3;
+	header->s.pt = ctx.pt & 0x3;
+	//header->s.ptr = 1;
+	header->s.deallocv = ctx.deallocv;
+	header->s.tt = ctx.tt & 0x3;
+	header->s.grp = ctx.grp & 0x3ff;
+	header->s.csel = 0;
+	header->s.ca = 1;
+	//header->s.fi = 1;
+
+	if (header->s.deallocv)
+		header->s.pvfe = 1;
+
+	/* TODO: define macros for 0x2 and 0x3. */
+	if (header->s.pt == 0x2)
+		header->s.ptr = header->s.ptr | 0x3;
+
+	index += 4;
+
+	if (ctx.xtype ==  DPI_XTYPE_INBOUND) {
+		header->s.fport = 0;
+		header->s.lport = 0;
+		header->s.nfst = cmd.wptr_cnt & 0xf;
+		header->s.nlst = cmd.rptr_cnt & 0xf;
+		nfst = cmd.wptr_cnt & 0xf;
+		nlst = cmd.rptr_cnt & 0xf;
+		for (i = 0; i < nfst; i++) {
+			dpi_cmd[index++] = cmd.wptr[i]->u[0];
+			dpi_cmd[index++] = cmd.wptr[i]->u[1];
+		}
+		for (i = 0; i < nlst; i++) {
+			dpi_cmd[index++] = cmd.rptr[i]->u[0];
+			dpi_cmd[index++] = cmd.rptr[i]->u[1];
+		}
+	} else {
+		header->s.fport = 0;
+		header->s.lport = 0;
+		header->s.nfst = cmd.rptr_cnt & 0xf;
+		header->s.nlst = cmd.wptr_cnt & 0xf;
+		nfst = cmd.rptr_cnt & 0xf;
+		nlst = cmd.wptr_cnt & 0xf;
+
+		for (i = 0; i < nfst; i++) {
+			dpi_cmd[index++] = cmd.rptr[i]->u[0];
+			dpi_cmd[index++] = cmd.rptr[i]->u[1];
+		}
+
+		for (i = 0; i < nlst; i++) {
+			dpi_cmd[index++] = cmd.wptr[i]->u[0];
+			dpi_cmd[index++] = cmd.wptr[i]->u[1];
+		}
+	}
+	/*for (i = 0; i < index; i++) {
+		printk("dpi_cmd[%d]: 0x%016llx\n", i, dpi_cmd[i]);
+	}*/
+
+	dpi_dma_queue_write(dpi_vf, 0, index, dpi_cmd);
+
+	wmb();
+	writeq_relaxed(index, dpi_vf->reg_base + DPI_VDMA_DBELL);
+	return 0;
+}
+EXPORT_SYMBOL(do_dma_async_dpi_vector);
+
+int do_dma_sync_dpi(local_dma_addr_t local_dma_addr, host_dma_addr_t host_addr,
 		    void *local_ptr, int len, host_dma_dir_t dir)
 {
 	struct device *dev = &dpi_vf->pdev->dev;
-	void *buf, *bufp[1];
-	volatile u64 *comp_ptr;
-	dpi_dma_req_compl_t *comp_data;
+	u64  *comp_data;
 	dpi_dma_buf_ptr_t cmd = {0};
 	dpi_dma_ptr_t lptr = {0};
 	dpi_dma_ptr_t hptr = {0};
@@ -317,23 +428,30 @@ int do_dma_sync_dpi(host_dma_addr_t local_dma_addr, host_dma_addr_t host_addr,
 	u16 index = 0;
 	u64 iova, comp_iova;
 	u64 *dpi_buf_ptr;
+	unsigned long time_start;
 	int i;
 
-	comp_data = devm_kzalloc(dev, len, GFP_DMA);
-	memset(comp_data, 0, len);
+	comp_data = dma_alloc_coherent(dev, 128, &comp_iova, GFP_ATOMIC);
+	if (comp_data == NULL) {
+		printk("dpi_dma: dma alloc errr\n");
+		return -1;
+	}
+	WRITE_ONCE(*comp_data,  0xFF);
 
-	if (local_ptr)
-		iova = dma_map_single(dev, local_ptr, len, DMA_BIDIRECTIONAL);
-	else
+	if (local_ptr) {
+		if (dir == DMA_FROM_HOST)
+			iova = dma_map_single(dev, local_ptr, len, DMA_FROM_DEVICE);
+		else	
+			iova = dma_map_single(dev, local_ptr, len, DMA_TO_DEVICE);
+
+	} else {
 		iova = local_dma_addr;
+	}
 
 	lptr.s.ptr = iova;
 	lptr.s.length = len;
 	hptr.s.ptr = host_addr;
 	hptr.s.length = len;
-
-	buf = (void *)&cmd;
-	bufp[0] = &buf;
 
 	if (dir == DMA_FROM_HOST) {
 		cmd.rptr[0] = &hptr;
@@ -349,9 +467,6 @@ int do_dma_sync_dpi(host_dma_addr_t local_dma_addr, host_dma_addr_t host_addr,
 	cmd.wptr_cnt = 1;
 
 	ctx.pt = 0;
-	cmd.comp_ptr = comp_data;
-	cmd.comp_ptr->cdata = 0xFF;
-	comp_iova = dma_map_single(dev, comp_data, 1024, DMA_BIDIRECTIONAL);
 	header->s.ptr = comp_iova;
 	header->s.xtype = ctx.xtype & 0x3;
 	header->s.pt = ctx.pt & 0x3;
@@ -407,28 +522,39 @@ int do_dma_sync_dpi(host_dma_addr_t local_dma_addr, host_dma_addr_t host_addr,
 	}
 
 	dpi_buf_ptr = dpi_vf->qctx[0].dpi_buf_ptr;
-	dpi_dma_queue_write(dpi_vf, 0, index, dpi_cmd);
-
-	wmb();
-	writeq_relaxed(index, dpi_vf->reg_base + DPI_VDMA_DBELL);
-	comp_ptr = &cmd.comp_ptr->cdata;
-	/* Wait for the completion */
-	while (true) {
-		if (*comp_ptr != 0xFF)
-			break;
-	}
-	if (*comp_ptr != 0) {
-		dev_err(dev, "DMA failed with err %llx\n", *comp_ptr);
+	if (dpi_dma_queue_write(dpi_vf, 0, index, dpi_cmd)) {
+		dev_err(dev, "DMA queue write fail\n");
 		return -1;
 	}
 
-	if (local_ptr)
-		dma_unmap_single(dev, iova, len, DMA_BIDIRECTIONAL);
+	wmb();
+	writeq_relaxed(index, dpi_vf->reg_base + DPI_VDMA_DBELL);
+	/* Wait for the completion */
+	time_start = jiffies;
+	while (true) {
+		if (READ_ONCE(*comp_data) != 0xFF)
+			break;
+		if (time_after(jiffies, (time_start + (1 * HZ)))) {
+			dev_err(dev, "DMA timed out\n");
+			for (i = 0; i < index; i++) {
+				printk("dpi_cmd[%d]: 0x%016llx\n", i, dpi_cmd[i]);
+			}
+			return -1;
+		}
+	}
+	if (*comp_data != 0) {
+		dev_err(dev, "DMA failed with err %llx\n", *comp_data);
+		return -1;
+	}
 
-	dma_unmap_single(dev, comp_iova, 1024, DMA_BIDIRECTIONAL);
+	if (local_ptr) {
+		if (dir == DMA_FROM_HOST)
+			dma_unmap_single(dev, iova, len, DMA_FROM_DEVICE);
+		else	
+			dma_unmap_single(dev, iova, len, DMA_TO_DEVICE);
 
-	devm_kfree(dev, comp_data);
-
+	}
+	dma_free_coherent(dev, 128, comp_data, comp_iova);
 	return 0;
 }
 EXPORT_SYMBOL(do_dma_sync_dpi);
@@ -511,6 +637,7 @@ int dpi_vf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	dpi_vf->qctx[0].dpi_buf_ptr = dpi_buf_ptr;
 	dpi_vf->qctx[0].pool_size_m1 = (DPI_CHUNK_SIZE >> 3) - 2;
 	dpi_vf->qctx[0].dpi_buf = dpi_buf;
+	spin_lock_init(&dpi_vf->qctx[0].queue_lock);
 
 	cfg.buf_size = DPI_CHUNK_SIZE;
 	cfg.inst_aura = DPI_AURA;

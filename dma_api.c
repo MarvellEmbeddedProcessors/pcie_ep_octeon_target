@@ -77,7 +77,10 @@ static void setup_s2m_regx_acc(void)
 	}
 }
 
-void host_writel(host_dma_addr_t host_addr, uint32_t val)
+/* return cpu_addr to be used to read/write to a given
+ * host phys_addr
+ */
+void __iomem *host_ioremap(host_dma_addr_t host_addr)
 {
 	void  __iomem *raddrp = NULL;
 	void  __iomem *raddr = NULL;
@@ -88,8 +91,8 @@ void host_writel(host_dma_addr_t host_addr, uint32_t val)
 		  host_addr, val); */
 	index = host_addr >> 32;
 	if (index > 255) {
-		printk(KERN_DEBUG "phys addr too big 0x%llx\n", host_addr);
-		return;
+		printk(KERN_ERR "phys addr too big 0x%llx\n", host_addr);
+		return NULL;
 	}
 	s2m_op.u64 = 0;
 	s2m_op.s.region = index;
@@ -99,12 +102,31 @@ void host_writel(host_dma_addr_t host_addr, uint32_t val)
 	/* printk(KERN_DEBUG "s2m_op.u64 0x%016llx\n", s2m_op.u64); */
 	raddrp = ioremap((s2m_op.u64 & (~(PAGE_SIZE - 1))), PAGE_SIZE);
 	if (raddrp == NULL) {
-		printk(KERN_DEBUG "ioremap failed\n");
+		printk(KERN_ERR "ioremap failed\n");
+		return NULL;
+	}
+	raddr = raddrp + (s2m_op.u64 & (PAGE_SIZE - 1));
+	return raddr;
+}
+EXPORT_SYMBOL(host_ioremap);
+
+void host_iounmap(void __iomem *addr)
+{
+	iounmap(addr);
+}
+EXPORT_SYMBOL(host_iounmap);
+
+void host_writel(host_dma_addr_t host_addr, uint32_t val)
+{
+	uint32_t *addr;
+
+	addr = (uint32_t *)host_ioremap(host_addr);
+	if (addr == NULL) {
+		printk(KERN_ERR "ioremap failed\n");
 		return;
 	}
-	raddr = (uint8_t *)raddrp + (s2m_op.u64 & (PAGE_SIZE - 1));
-	writel(val, raddr);
-	iounmap(raddrp);
+	writel(val, addr);
+	host_iounmap(addr);
 }
 EXPORT_SYMBOL(host_writel);
 
