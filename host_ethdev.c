@@ -33,17 +33,21 @@
 #define RX_DESCQ_OFFSET(mdev)     (mdev->bar_map + OTXMN_RX_DESCQ_OFFSET)
 
 #define TARGET_STATUS_REG(mdev)        (mdev->bar_map + OTXMN_TARGET_STATUS_REG)
+#define TARGET_INTR_REG(mdev)          (mdev->bar_map + OTXMN_TARGET_INTR_REG)
 #define TARGET_MBOX_MSG_REG(mdev, i)  \
 	(mdev->bar_map + OTXMN_TARGET_MBOX_OFFSET + (i * 8))
 #define TARGET_MBOX_ACK_REG(mdev)    \
 	(mdev->bar_map + OTXMN_TARGET_MBOX_ACK_REG)
 
 #define HOST_STATUS_REG(mdev)      (mdev->bar_map + OTXMN_HOST_STATUS_REG)
+#define HOST_INTR_REG(mdev)        (mdev->bar_map + OTXMN_HOST_INTR_REG)
 #define HOST_MBOX_ACK_REG(mdev)    (mdev->bar_map + OTXMN_HOST_MBOX_ACK_REG)
 #define HOST_MBOX_MSG_REG(mdev, i)    \
 	(mdev->bar_map + OTXMN_HOST_MBOX_OFFSET + (i * 8))
 
 static struct otxmn_dev *gmdev;
+static int mgmt_net_napi_poll(struct napi_struct *napi, int budget);
+static int mgmt_net_intr_hndlr(void *arg);
 
 static uint64_t get_host_status(struct otxmn_dev *mdev)
 {
@@ -147,6 +151,8 @@ netdev_tx_t mgmt_tx(struct sk_buff *skb, struct net_device *dev)
 	dma_addr_t dma;
 	/* hard code */
 	int idx = 0;
+	int xmit_more;
+	int bytes;
 
 	tq = &mdev->txq[idx];
 	/* should not get packets without IFF_UP */
@@ -161,10 +167,20 @@ netdev_tx_t mgmt_tx(struct sk_buff *skb, struct net_device *dev)
 		tq->errors++;
 		return NETDEV_TX_OK;
 	}
+	bytes = skb->len;
+	xmit_more = skb->xmit_more;
 	cur_cons_idx = READ_ONCE(*tq->cons_idx_shadow);
 	cur_prod_idx = READ_ONCE(tq->local_prod_idx);
 	if (!otxmn_circq_space(cur_prod_idx, cur_cons_idx, tq->mask)) {
 		tq->errors++;
+		/* if we have accumulated skbs send them */
+		if (tq->pending) {
+			writel(tq->local_prod_idx, tq->hw_prod_idx);
+			/* todo use shadow val */
+			if (readq(TARGET_INTR_REG(mdev)) != 0)
+				mv_send_facility_dbell(MV_FACILITY_MGMT_NETDEV, 0);
+			tq->pending = 0;
+		}
 		return NETDEV_TX_BUSY;
 	}
 	memset(&ptr, 0, sizeof(struct otxcn_hw_desc_ptr));
@@ -180,7 +196,7 @@ netdev_tx_t mgmt_tx(struct sk_buff *skb, struct net_device *dev)
 	ptr.ptr = dma;
 	hw_desc_ptr = tq->hw_descq +
 		OTXCN_DESC_ARR_ENTRY_OFFSET(cur_prod_idx);
-	/*printk(KERN_DEBUG "is_frag:%d total_len:%d ptr_type:%d ptr_len:%d ptr:0x%llx\n",
+	/* printk(KERN_DEBUG "tx is_frag:%d total_len:%d ptr_type:%d ptr_len:%d ptr:0x%llx\n",
 		 ptr.hdr.s_mgmt_net.is_frag,
 		 ptr.hdr.s_mgmt_net.total_len,
 		 ptr.hdr.s_mgmt_net.ptr_type,
@@ -194,8 +210,17 @@ netdev_tx_t mgmt_tx(struct sk_buff *skb, struct net_device *dev)
 	wmb();
 	cur_prod_idx = otxmn_circq_inc(cur_prod_idx, tq->mask);
 	WRITE_ONCE(tq->local_prod_idx, cur_prod_idx);
-	writel(tq->local_prod_idx, tq->hw_prod_idx);
+	tq->pkts  += 1;
+	tq->bytes += bytes;
 	wmb();
+	if (xmit_more && tq->pending < DPIX_MAX_PTR) {
+		tq->pending++;
+		return NETDEV_TX_OK;
+	}
+	writel(tq->local_prod_idx, tq->hw_prod_idx);
+	if (readq(TARGET_INTR_REG(mdev)) != 0)
+		mv_send_facility_dbell(MV_FACILITY_MGMT_NETDEV, 0);
+	tq->pending = 0;
 	return NETDEV_TX_OK;
 err:
 	tq->errors++;
@@ -265,14 +290,15 @@ static const struct net_device_ops mgmt_netdev_ops = {
 static void dump_hw_descq(struct otxcn_hw_descq *descq)
 {
 	struct  otxcn_hw_desc_ptr *ptr;
-	int i;
+	int i, count;
 
 	printk(KERN_DEBUG "prod_idx %u\n", descq->prod_idx);
 	printk(KERN_DEBUG "cons_idx %u\n", descq->cons_idx);
 	printk(KERN_DEBUG "num_entries %u\n", descq->num_entries);
 	printk(KERN_DEBUG "shadow_cons_idx_addr 0x%llx\n",
 		descq->shadow_cons_idx_addr);
-	for (i = 0; i < descq->num_entries; i++) {
+	count = otxmn_circq_depth(descq->prod_idx, descq->cons_idx, descq->num_entries - 1);
+	for (i = 0; i < count; i++) {
 		ptr = &descq->desc_arr[i];
 		printk(KERN_DEBUG "idx:%d is_frag:%d total_len:%d ptr_type:%d ptr_len:%d ptr:0x%llx\n",
 			i,
@@ -313,8 +339,8 @@ static int mdev_clean_tx_ring(struct otxmn_dev *mdev, int q_idx)
 	tq->local_cons_idx = tq->local_prod_idx = 0;
 	*tq->cons_idx_shadow = 0;
 	tq->status = OTXMN_DESCQ_CLEAN;
-	kfree(tq->skb_list);
-	kfree(tq->dma_list);
+	vfree(tq->skb_list);
+	vfree(tq->dma_list);
 	/* tq status need to be updated before memset */
 	wmb();
 	mmio_memset(tq->hw_descq, 0, descq_tot_size);
@@ -347,35 +373,39 @@ static int mdev_setup_tx_ring(struct otxmn_dev *mdev, int q_idx)
 		return -ENOMEM;
 	}
 	tq = &mdev->txq[q_idx];
+	tq->priv = mdev;
+	tq->q_num = q_idx;
 	tq->local_prod_idx = 0;
 	tq->local_cons_idx = 0;
+	tq->pending = 0;
 	tq->element_count = element_count;
 	tq->mask = element_count - 1;
 	descq->num_entries = element_count;
 	tq->cons_idx_shadow = mdev->tq_cons_shdw_vaddr + q_idx;
 	descq->shadow_cons_idx_addr = mdev->tq_cons_shdw_dma +
 		(q_idx * sizeof(*mdev->tq_cons_shdw_vaddr));
+	*tq->cons_idx_shadow = 0;
 	tq->hw_descq = TX_DESCQ_OFFSET(mdev) + (q_idx * descq_tot_size);
 	tq->hw_prod_idx = (uint32_t *)(tq->hw_descq +
 				       offsetof(struct otxcn_hw_descq,
 						prod_idx));
-	tq->skb_list = kzalloc(sizeof(struct sk_buff *) * element_count,
-			       GFP_KERNEL);
+	tq->skb_list = vzalloc(sizeof(struct sk_buff *) * element_count);
 	if (!tq->skb_list) {
 		kfree(descq);
 		printk(KERN_ERR "mgmt_net: tq skb_list alloc  failed\n");
 		return -ENOMEM;
 	}
-	tq->dma_list = kzalloc(sizeof(dma_addr_t) * element_count, GFP_KERNEL);
+	tq->dma_list = vzalloc(sizeof(dma_addr_t) * element_count);
 	if (!tq->dma_list) {
 		kfree(descq);
-		kfree(tq->skb_list);
+		vfree(tq->skb_list);
 		printk(KERN_ERR "mgmt_net: tq dma_list malloc failed\n");
 		return -ENOMEM;
 	}
+	spin_lock_init(&tq->lock);
 	wmb();
-	/* printk(KERN_DEBUG "tx hw descq\n"); */
-	/* dump_hw_descq(descq); */
+	/* printk(KERN_DEBUG "tx hw descq\n");
+	 * dump_hw_descq(descq); */
 	tq->status = OTXMN_DESCQ_READY;
 	/* tq status needs to be updated before memwrite */
 	wmb();
@@ -411,6 +441,10 @@ static void mdev_clean_rx_ring(struct otxmn_dev *mdev, int q_idx)
 
 	if (rq->status == OTXMN_DESCQ_CLEAN)
 		return;
+	writeq(0, HOST_INTR_REG(mdev));
+	napi_disable(&rq->napi);
+	mv_facility_unregister_event_callback(MV_FACILITY_MGMT_NETDEV);
+	netif_napi_del(&rq->napi);
 	cons_idx = rq->local_cons_idx;
 	prod_idx = rq->local_prod_idx;
 	count = otxmn_circq_depth(prod_idx, cons_idx, rq->mask);
@@ -431,8 +465,8 @@ static void mdev_clean_rx_ring(struct otxmn_dev *mdev, int q_idx)
 	}
 	rq->local_prod_idx = rq->local_cons_idx = 0;
 	*rq->cons_idx_shadow = 0;
-	kfree(rq->skb_list);
-	kfree(rq->dma_list);
+	vfree(rq->skb_list);
+	vfree(rq->dma_list);
 	rq->status = OTXMN_DESCQ_CLEAN;
 	/* rq needs to be updated before memset */
 	wmb();
@@ -460,6 +494,7 @@ static int mdev_setup_rx_ring(struct otxmn_dev *mdev, int q_idx)
 
 
 	rq = &mdev->rxq[q_idx];
+	rq->priv = mdev;
 	descq_tot_size = sizeof(struct otxcn_hw_descq) + (element_count *
 			      sizeof(struct otxcn_hw_desc_ptr));
 	descq = kzalloc(descq_tot_size, GFP_KERNEL);
@@ -471,25 +506,28 @@ static int mdev_setup_rx_ring(struct otxmn_dev *mdev, int q_idx)
 	rq->local_cons_idx = 0;
 	rq->element_count = element_count;
 	rq->mask = element_count - 1;
-	rq->skb_list = kzalloc(sizeof(struct sk_buff *) * element_count,
-			       GFP_KERNEL);
+	rq->q_num = q_idx;
+	rq->skb_list = vzalloc(sizeof(struct sk_buff *) * element_count);
 	if (!rq->skb_list) {
 		kfree(descq);
 		printk(KERN_ERR "mgmt_net: rq skb_list  alloc failed\n");
 		return -ENOMEM;
 	}
-	rq->dma_list = kzalloc(sizeof(dma_addr_t) * element_count, GFP_KERNEL);
+	rq->dma_list = vzalloc(sizeof(dma_addr_t) * element_count);
 	if (!rq->dma_list) {
 		kfree(descq);
-		kfree(rq->skb_list);
+		vfree(rq->skb_list);
 		printk(KERN_ERR "mgmt_net: rq dma_list  alloc failed\n");
 		return -ENOMEM;
 	}
 	descq->num_entries = element_count;
-	descq->buf_size =  OTXMN_RX_BUF_SIZE;
+	descq->buf_size = OTXMN_RX_BUF_SIZE;
 	rq->cons_idx_shadow = mdev->rq_cons_shdw_vaddr + q_idx;
+	/* TODO split the shadow add per cache line for each queue 
+	 */
 	descq->shadow_cons_idx_addr = mdev->rq_cons_shdw_dma +
 					(q_idx * sizeof(*rq->cons_idx_shadow));
+	*rq->cons_idx_shadow = 0;
 	count = otxmn_circq_space(rq->local_prod_idx, rq->local_cons_idx,
 				  rq->mask);
 	for (i = 0; i < count; i++) {
@@ -523,14 +561,27 @@ static int mdev_setup_rx_ring(struct otxmn_dev *mdev, int q_idx)
 				       offsetof(struct otxcn_hw_descq,
 						prod_idx));
 	/* printk(KERN_DEBUG "rx hw descq\n");
-	dump_hw_descq(descq);
+	 * dump_hw_descq(descq);
 	printk(KERN_DEBUG "dma list\n");
 	for (i = 0; i < count; i++)
-		printk(KERN_DEBUG "skb->data %p  dma 0x%llx\n",
-		       rq->skb_list[i]->data, rq->dma_list[i]);
+		printk(KERN_DEBUG "idx:%d skb->data %p  dma 0x%llx\n",
+		       i, rq->skb_list[i]->data, rq->dma_list[i]);	
 	*/
+	ret = mv_facility_register_event_callback(MV_FACILITY_MGMT_NETDEV,
+					  	  mgmt_net_intr_hndlr,
+                                       	  	  (void *)mdev);
+	if (ret) {
+		printk("register event callback failed\n");
+		ret = -ENOENT;
+		goto error;
+	}
+	netif_napi_add(mdev->ndev, &rq->napi, mgmt_net_napi_poll,
+			                          NAPI_POLL_WEIGHT);
+	napi_enable(&mdev->rxq[0].napi);
+	writeq(1, HOST_INTR_REG(mdev));
 	rq->status = OTXMN_DESCQ_READY;
 	/* rq needs to be updated before memwrite */
+	spin_lock_init(&rq->lock);
 	wmb();
 	mmio_memwrite(rq->hw_descq, descq, descq_tot_size);
 	kfree(descq);
@@ -550,8 +601,8 @@ error:
 	rq->local_prod_idx = 0;
 	rq->local_cons_idx = 0;
 	kfree(descq);
-	kfree(rq->skb_list);
-	kfree(rq->dma_list);
+	vfree(rq->skb_list);
+	vfree(rq->dma_list);
 	return ret;
 }
 
@@ -609,7 +660,10 @@ static int handle_target_status(struct otxmn_dev *mdev)
 		target_status = get_target_status(mdev);
 		if (target_status != OTXMN_TARGET_RUNNING) {
 			printk(KERN_DEBUG "mgmt_net: target stopped\n");
+			change_host_status(mdev, OTXMN_HOST_GOING_DOWN,
+						   false);
 			netif_carrier_off(mdev->ndev);
+			napi_synchronize(&mdev->rxq[0].napi);
 			ret = mdev_reinit_rings(mdev);
 			if (ret) {
 				change_host_status(mdev, OTXMN_HOST_FATAL,
@@ -627,24 +681,31 @@ static int handle_target_status(struct otxmn_dev *mdev)
 	return ret;
 }
 
-static int handle_txq_completion(struct otxmn_dev *mdev, int q_idx)
+static bool __handle_txq_completion(struct otxmn_dev *mdev, int q_idx, int budget)
 {
 	struct otxmn_sw_descq *tq = &mdev->txq[q_idx];
-	uint32_t prev_cons_idx, cur_cons_idx;
-	int bytes = 0, pkts = 0;
+	uint32_t cons_idx, prod_idx;
 	struct sk_buff *skb;
 	int count, start, i;
 	dma_addr_t dma;
+	bool resched = false;
 
-	prev_cons_idx = tq->local_cons_idx;
-	cur_cons_idx =  *tq->cons_idx_shadow;
-	count = otxmn_circq_depth(cur_cons_idx,  prev_cons_idx, tq->mask);
-	start = prev_cons_idx;
+	if (!mdev->admin_up)
+		return false;
+	if (get_host_status(mdev) != OTXMN_HOST_RUNNING)
+		return false;
+
+	cons_idx = READ_ONCE(tq->local_cons_idx);
+	prod_idx =  READ_ONCE(*tq->cons_idx_shadow);
+	count = otxmn_circq_depth(prod_idx, cons_idx, tq->mask);
+	if (budget && count > budget) {
+		resched = true;
+		count = budget;
+	}
+	start = cons_idx;
 	for (i = 0; i < count; i++) {
 		skb = tq->skb_list[start];
 		dma = tq->dma_list[start];
-		pkts += 1;
-		bytes += skb->len;
 		dma_unmap_single(mdev->dev, dma, skb->len, DMA_TO_DEVICE);
 		dev_kfree_skb_any(skb);
 		tq->skb_list[start] = NULL;
@@ -653,10 +714,18 @@ static int handle_txq_completion(struct otxmn_dev *mdev, int q_idx)
 	}
 	/* update lists before updating cons idx */
 	wmb();
-	tq->local_cons_idx = cur_cons_idx;
-	tq->pkts  += pkts;
-	tq->bytes += bytes;
-	return count;
+	cons_idx = otxmn_circq_add(cons_idx, count, tq->mask);
+	WRITE_ONCE(tq->local_cons_idx, cons_idx);
+	wmb();
+	if (resched == false) {
+		/* check again */
+		cons_idx = READ_ONCE(tq->local_cons_idx);
+		prod_idx =  READ_ONCE(*tq->cons_idx_shadow);
+		count = otxmn_circq_depth(prod_idx, cons_idx, tq->mask);
+		if (count)
+			resched = true;
+	}
+	return resched;
 }
 
 static int rxq_refill(struct otxmn_dev *mdev, int q_idx, int count)
@@ -673,7 +742,7 @@ static int rxq_refill(struct otxmn_dev *mdev, int q_idx, int count)
 	start = cur_prod_idx;
 	for (i = 0; i < count; i++) {
 		memset(&ptr, 0, sizeof(struct otxcn_hw_desc_ptr));
-		skb = alloc_skb(OTXMN_RX_BUF_SIZE, GFP_KERNEL);
+		skb = dev_alloc_skb(OTXMN_RX_BUF_SIZE);
 		if (!skb) {
 			printk(KERN_ERR "mgmt_net: skb alloc fail\n");
 			break;
@@ -693,7 +762,6 @@ static int rxq_refill(struct otxmn_dev *mdev, int q_idx, int count)
 			printk(KERN_ERR "mgmt_net:refill err entry !empty\n");
 			break;
 		}
-
 		rq->skb_list[start] = skb;
 		rq->dma_list[start] = dma;
 		hw_desc_ptr = rq->hw_descq +
@@ -708,6 +776,9 @@ static int rxq_refill(struct otxmn_dev *mdev, int q_idx, int count)
 	WRITE_ONCE(rq->local_prod_idx, cur_prod_idx);
 	writel(rq->local_prod_idx, rq->hw_prod_idx);
 	wmb();
+	/* tx complete intr to target */
+	if (readq(TARGET_INTR_REG(mdev)) != 0)
+		mv_send_facility_dbell(MV_FACILITY_MGMT_NETDEV, 0);
 	return i;
 }
 
@@ -738,7 +809,7 @@ static int rxq_refill(struct otxmn_dev *mdev, int q_idx, int count)
 	}
 } */
 
-static int handle_rxq(struct otxmn_dev *mdev, int q_idx)
+static bool __handle_rxq(struct otxmn_dev *mdev, int q_idx, int budget, int from_wq)
 {
 	struct otxmn_sw_descq *rq = &mdev->rxq[q_idx];
 	uint32_t cons_idx, prod_idx;
@@ -748,15 +819,23 @@ static int handle_rxq(struct otxmn_dev *mdev, int q_idx)
 	struct sk_buff *skb;
 	struct otxcn_hw_descq *tmp_descq;
 	int descq_tot_size;
+	bool resched = false;
+	struct napi_struct *napi = &rq->napi;
 
 	if (!mdev->admin_up)
-		return 0;
+		return false;
 	if (get_host_status(mdev) != OTXMN_HOST_RUNNING)
-		return 0;
+		return false;
 
 	cons_idx = READ_ONCE(rq->local_cons_idx);
 	prod_idx =  READ_ONCE(*rq->cons_idx_shadow);
 	count = otxmn_circq_depth(prod_idx,  cons_idx, rq->mask);
+	if (!count)
+		return false;
+	if (budget && count > budget) {
+		resched = true;
+		count = budget;
+	}
 	start = cons_idx;
 	for (i = 0; i < count; i++) {
 		skb = rq->skb_list[start];
@@ -807,8 +886,10 @@ static int handle_rxq(struct otxmn_dev *mdev, int q_idx)
 			skb->protocol = eth_type_trans(skb, mdev->ndev);
 			rq->pkts += 1;
 			rq->bytes += ptr.hdr.s_mgmt_net.total_len;
-			/* we are in process context */
-			netif_rx_ni(skb);
+			if (from_wq)
+				netif_receive_skb(skb);
+			else
+				napi_gro_receive(napi, skb);
 		}
 		rq->skb_list[start] = NULL;
 		rq->dma_list[start] = 0;
@@ -819,20 +900,57 @@ static int handle_rxq(struct otxmn_dev *mdev, int q_idx)
 	cons_idx = otxmn_circq_add(cons_idx, count, rq->mask);
 	WRITE_ONCE(rq->local_cons_idx, cons_idx);
 	wmb();
-	return count;
+	rxq_refill(mdev, q_idx, count);
+	/* check again */
+	if (resched == false) {
+		cons_idx = READ_ONCE(rq->local_cons_idx);
+		prod_idx = READ_ONCE(*rq->cons_idx_shadow);
+		count = otxmn_circq_depth(prod_idx,  cons_idx, rq->mask);
+		if (count) 
+			resched = true;
+	}
+	return resched;
 }
 
-static void mdev_rxtx(struct otxmn_dev *mdev)
+static int mgmt_net_napi_poll(struct napi_struct *napi, int budget)
 {
-	int i, count;
+	struct otxmn_sw_descq *rq;
+	struct otxmn_sw_descq *tq;
+	struct otxmn_dev *mdev;
+	int q_num;
+	bool need_resched = false;
 
-	for (i = 0; i < mdev->num_txq; i++)
-		handle_txq_completion(mdev, i);
-	for (i = 0; i < mdev->num_rxq; i++) {
-		count = handle_rxq(mdev, i);
-		if (count)
-			rxq_refill(mdev, i, count);
-	}
+	rq = container_of(napi, struct otxmn_sw_descq, napi);
+	mdev = (struct otxmn_dev *)rq->priv;
+	q_num = rq->q_num;
+	tq = &mdev->txq[q_num];
+	
+	spin_lock_bh(&tq->lock);
+	need_resched |= __handle_txq_completion(mdev, q_num, budget);
+	spin_unlock_bh(&tq->lock);
+
+	spin_lock_bh(&rq->lock);
+	need_resched |= __handle_rxq(mdev, q_num, budget, 0);
+	spin_unlock_bh(&rq->lock);
+
+	if (need_resched)
+		return budget;
+	napi_complete(napi);
+	writeq(1, HOST_INTR_REG(mdev));
+	wmb();
+	return 0; 
+}
+
+static int mgmt_net_intr_hndlr(void *arg)
+{
+	struct otxmn_dev *mdev;
+
+	mdev = (struct otxmn_dev *)arg;
+	writeq(0, HOST_INTR_REG(mdev));
+	wmb();
+	/* hard coded queue num */
+	napi_schedule_irqoff(&mdev->rxq[0].napi);
+	return 0;
 }
 
 static void mgmt_net_task(struct work_struct *work)
@@ -841,6 +959,7 @@ static void mgmt_net_task(struct work_struct *work)
 	union otxmn_mbox_msg msg;
 	struct otxmn_dev *mdev;
 	int ret;
+	int q_num = 0;
 
 	mdev = (struct otxmn_dev *)container_of(delayed_work, struct otxmn_dev,
 						service_task);
@@ -857,7 +976,14 @@ static void mgmt_net_task(struct work_struct *work)
 			break;
 		}
 	}
-	mdev_rxtx(mdev);
+	if (spin_trylock_bh(&mdev->txq[q_num].lock)) {
+		__handle_txq_completion(mdev, q_num, 0);
+		spin_unlock_bh(&mdev->txq[q_num].lock);
+	}
+	if (spin_trylock_bh(&mdev->rxq[q_num].lock)) {
+		__handle_rxq(mdev, q_num, 0, 1);
+		spin_unlock_bh(&mdev->rxq[q_num].lock);
+	}
 	queue_delayed_work(mdev->mgmt_wq, &mdev->service_task,
 			   usecs_to_jiffies(OTXMN_SERVICE_TASK_US));
 }
@@ -877,6 +1003,10 @@ static int __init mgmt_init(void)
 	}
 	if (conf.memsize < OTXMN_BAR_SIZE) {
 		printk(KERN_ERR "mgmt_net:bar size less %d\n", conf.memsize);
+		return -ENODEV;
+	}
+	if (conf.num_h2t_dbells < 1) {
+		printk(KERN_ERR "mgmt_net:need at least 1 h2t dbell %d\n", conf.num_h2t_dbells);
 		return -ENODEV;
 	}
 	printk(KERN_DEBUG "mgmt_net:conf.map_addr.bar_map %p\n",
@@ -981,12 +1111,12 @@ free_net:
 	free_netdev(ndev);
 rq_dma_free:
 	dma_free_coherent(conf.dma_dev.host_ep_dev,
-			  (sizeof(uint64_t *) * num_rxq),
+			  (sizeof(uint32_t) * num_rxq),
 			  rq_cons_shdw_vaddr,
 			  rq_cons_shdw_dma);
 tq_dma_free:
 	dma_free_coherent(conf.dma_dev.host_ep_dev,
-			  (sizeof(uint64_t *) * num_txq),
+			  (sizeof(uint32_t) * num_txq),
 			  tq_cons_shdw_vaddr,
 			  tq_cons_shdw_dma);
 	return ret;
@@ -995,11 +1125,11 @@ tq_dma_free:
 static void teardown_mdev_resources(struct otxmn_dev *mdev)
 {
 	dma_free_coherent(mdev->dev,
-			  (sizeof(uint64_t *) * mdev->num_rxq),
+			  (sizeof(uint32_t) * mdev->num_rxq),
 			  mdev->rq_cons_shdw_vaddr,
 			  mdev->rq_cons_shdw_dma);
 	dma_free_coherent(mdev->dev,
-			  (sizeof(uint64_t *) * mdev->num_txq),
+			  (sizeof(uint32_t) * mdev->num_txq),
 			  mdev->tq_cons_shdw_vaddr,
 			  mdev->tq_cons_shdw_dma);
 }
@@ -1013,12 +1143,14 @@ static void __exit mgmt_exit(void)
 	mdev = gmdev;
 	netif_carrier_off(mdev->ndev);
 	change_host_status(mdev, OTXMN_HOST_GOING_DOWN, true);
+	napi_synchronize(&mdev->rxq[0].napi);
 	cancel_delayed_work_sync(&mdev->service_task);
+	mdev_clean_rx_rings(mdev);
+	mdev_clean_tx_rings(mdev);
+	change_host_status(mdev, OTXMN_HOST_GOING_DOWN, true);
 	mutex_destroy(&mdev->mbox_lock);
 	destroy_workqueue(mdev->mgmt_wq);
 	unregister_netdev(mdev->ndev);
-	mdev_clean_rx_rings(mdev);
-	mdev_clean_tx_rings(mdev);
 	teardown_mdev_resources(mdev);
 	free_netdev(mdev->ndev);
 	gmdev = NULL;
