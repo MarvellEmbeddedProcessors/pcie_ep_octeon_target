@@ -22,12 +22,12 @@
 //#define FIREWALL_NW_AGENT_FDT_NAME     "firewall-network-agent-intr"
 //#define FIREWALL_RPC_FDT_NAME          "firewall-rpc-intr"
 
-#define MAX_INTERRUPTS	10
 
 #define PEMX_REG_BASE(pem)  (0x87E0C0000000ULL | (pem << 24))
 #define NPU_HANDSHAKE_SIGNATURE 0xABCDABCD
 void *pem_io_base;
 void *sdp_base;
+void *oei_trig_remap_addr;
 void __iomem *nwa_internal_addr;
 EXPORT_SYMBOL(nwa_internal_addr);
 
@@ -186,6 +186,12 @@ static int npu_base_setup(struct npu_bar_map *bar_map)
 	sdp_base = ioremap(CN83xx_SDP_BASE, 1024*1024);
 	if (sdp_base == NULL) {
 		printk("Failed to ioremap SDP CSR space\n");
+		return -1;
+	}
+#define SDP0_EPF0_OEI_TRIG_ADDR 0x874000800000UL
+	oei_trig_remap_addr = ioremap(SDP0_EPF0_OEI_TRIG_ADDR, 8);
+	if (oei_trig_remap_addr == NULL) {
+		printk("Failed to ioremap oei_trig space\n");
 		return -1;
 	}
 

@@ -12,6 +12,26 @@ mv_facility_conf_t facility_conf[MV_FACILITY_COUNT];
 /* TODO: should make it use dynamic alloc memory ?? */
 mv_facility_event_cb_t facility_handler[MV_FACILITY_COUNT];
 
+
+extern void *oei_trig_remap_addr;
+extern int irq_list[MAX_INTERRUPTS];
+/* platform device */
+extern struct device   *plat_dev;
+
+
+#define CN83XX_SDP0_EPF0_OEI_TRIG (1UL << 23)
+
+union sdp_epf_oei_trig {
+	uint64_t u64;
+	struct {
+		uint64_t bit_num:6;
+		uint64_t rsvd2:12;
+		uint64_t clr:1;
+		uint64_t set:1;
+		uint64_t rsvd:44;
+	} s;
+};
+
 void mv_dump_facility_conf(int type)
 {
 	mv_facility_conf_t *conf = &facility_conf[type];
@@ -107,14 +127,50 @@ EXPORT_SYMBOL_GPL(mv_get_facility_conf);
 int mv_facility_request_dbell_irq(int type, int dbell,
 				  irq_handler_t handler, void *arg)
 {
-	printk("%s: IRQ's not supported\n", __func__);
-	return -EINVAL;
+	struct device *dev = plat_dev;
+	char irq_name[32];
+	int ret = -EINVAL, irq;
+
+	switch(type) {
+	case MV_FACILITY_MGMT_NETDEV:
+		if (dbell >= MV_FACILITY_MGMT_NETDEV_IRQ_CNT) {
+			printk("request irq %d is out of range\n", dbell);
+			return -ENOENT;
+		}
+		sprintf(irq_name, "mgmt_net_irq%d", dbell);
+		irq = irq_list[NPU_FACILITY_MGMT_NETDEV_IRQ_IDX+dbell];
+		printk("registering irq %d arg %p\n", irq, arg);
+		ret = devm_request_irq(dev, irq, handler, 0, irq_name, arg);
+		if (ret < 0)
+			return ret;
+		break;
+	default:
+		printk("%s: IRQ's not supported\n", __func__);
+		break;
+
+	}
+	return ret;
 }
 EXPORT_SYMBOL_GPL(mv_facility_request_dbell_irq);
 
 void mv_facility_free_dbell_irq(int type, int dbell, void *arg)
 {
-	printk("%s: IRQ's not supported\n", __func__);
+	struct device *dev = plat_dev;
+	int irq;
+
+	switch(type) {
+	case MV_FACILITY_MGMT_NETDEV:
+		if (dbell >= MV_FACILITY_MGMT_NETDEV_IRQ_CNT) {
+			printk("request irq %d is out of range\n", dbell);
+			return;
+		}
+		irq = irq_list[NPU_FACILITY_MGMT_NETDEV_IRQ_IDX+dbell];
+		devm_free_irq(dev, irq, arg);
+		break;
+	default:
+		printk("%s: IRQ's not supported\n", __func__);
+		break;
+	}
 }
 EXPORT_SYMBOL_GPL(mv_facility_free_dbell_irq);
 
@@ -157,7 +213,14 @@ EXPORT_SYMBOL_GPL(mv_send_facility_dbell);
 
 int mv_send_facility_event(int type)
 {
-	printk("%s: invoked for type-%d\n", __func__, type);
+	union sdp_epf_oei_trig trig;
+	uint64_t *addr;
+
+	trig.u64 = 0;
+	trig.s.set = 1;
+	trig.s.bit_num = type;
+	addr = oei_trig_remap_addr;
+	WRITE_ONCE(*addr, trig.u64);
 	return 0;
 }
 EXPORT_SYMBOL_GPL(mv_send_facility_event);
