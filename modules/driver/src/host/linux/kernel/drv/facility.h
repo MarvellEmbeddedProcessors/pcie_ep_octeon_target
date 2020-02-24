@@ -171,7 +171,8 @@ void mv_facility_free_dbell_irq(int type, int dbell, void *arg);
  *
  * If a facility does not have dedicated IRQs, it’s driver should call
  * this API to register common callback for all events to the facility
- * The callback handler is invoked in process context.
+ * The callback handler is invoked in hard interrupt context.
+ * the user needs to ack and return and use their own bottom half
  * @param type Facility type.
  * @param handler callback function.
  * @param cb_arg argument to be passed to the callback handler.

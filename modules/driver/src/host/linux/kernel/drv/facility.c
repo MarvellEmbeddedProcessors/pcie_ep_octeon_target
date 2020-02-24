@@ -139,7 +139,7 @@ int mv_send_facility_dbell(int type, int dbell)
 
 	facility_map = &npu_memmap_info.facility_map[type];
 
-	printk("type=%d, dbell=%d, start=%d\n",type,dbell, facility_map->h2t_dbell_start);
+	/* printk("type=%d, dbell=%d, start=%d\n",type,dbell, facility_map->h2t_dbell_start); */
 	irq = dbell + facility_map->h2t_dbell_start;
 
 	/* check if dbell falls in range */
@@ -151,7 +151,7 @@ int mv_send_facility_dbell(int type, int dbell)
 	else
 		return -EINVAL;
 
-	printk("%s: invoked for type-%d, dbell-%d\n", __func__, type, dbell);
+	/* printk("%s: invoked for type-%d, dbell-%d\n", __func__, type, dbell); */
 	return 0;
 }
 EXPORT_SYMBOL_GPL(mv_send_facility_dbell);
@@ -162,3 +162,13 @@ int mv_send_facility_event(int type)
 	return 0;
 }
 EXPORT_SYMBOL_GPL(mv_send_facility_event);
+
+void mv_facility_irq_handler(uint64_t event_word)
+{
+	int i;
+
+	for (i = 0; i < MV_FACILITY_COUNT; i++) {
+		if ((event_word & (1UL << i)) && facility_handler[i].cb)
+			facility_handler[i].cb(facility_handler[i].cb_arg);
+	}
+}

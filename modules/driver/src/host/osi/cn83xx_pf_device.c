@@ -28,6 +28,8 @@
 #include "octeon_macros.h"
 #include "octeon-pci.h"
 
+extern void mv_facility_irq_handler(uint64_t event_word);
+
 extern int cn83xx_droq_intr_handler(octeon_ioq_vector_t * ioq_vector);
 
 extern void cn83xx_iq_intr_handler(octeon_ioq_vector_t * ioq_vector);
@@ -816,10 +818,10 @@ cvm_intr_return_t cn83xx_interrupt_handler(void *dev)
 	/* Check for OEI INTR */
 	reg_val = octeon_read_csr64(oct, CN83XX_SDP_EPF_OEI_RINT(oct->epf_num));
 	if (reg_val) {
-		cavium_print_msg("received OEI_RINT intr: 0x%016llx\n",
-				 reg_val);
 		octeon_write_csr64(oct, CN83XX_SDP_EPF_OEI_RINT(oct->epf_num),
 				   reg_val);
+		/* used by facility */
+		mv_facility_irq_handler(reg_val);
 		goto irq_handled;
 	}
 
@@ -995,8 +997,8 @@ static void cn83xx_enable_pf_interrupt(void *chip, uint8_t intr_flag)
 			   intr_mask);
 	octeon_write_csr64(oct, CN83XX_SDP_EPF_ORERR_RINT_ENA_W1S(oct->epf_num),
 			   intr_mask);
-	octeon_write_csr64(oct, CN83XX_SDP_EPF_OEI_RINT_ENA_W1S(oct->epf_num),
-			   intr_mask);
+
+	octeon_write_csr64(oct, CN83XX_SDP_EPF_OEI_RINT_ENA_W1S(oct->epf_num), -1ULL);
 	octeon_write_csr64(oct, CN83XX_SLI_EPF_MISC_RINT_ENA_W1S(oct->epf_num),
 			   intr_mask);
 	octeon_write_csr64(oct, CN83XX_SLI_EPF_PP_VF_RINT_ENA_W1S(oct->epf_num),
@@ -1033,8 +1035,7 @@ static void cn83xx_disable_pf_interrupt(void *chip, uint8_t intr_flag)
 			   intr_mask);
 	octeon_write_csr64(oct, CN83XX_SDP_EPF_ORERR_RINT_ENA_W1C(oct->epf_num),
 			   intr_mask);
-	octeon_write_csr64(oct, CN83XX_SDP_EPF_OEI_RINT_ENA_W1C(oct->epf_num),
-			   intr_mask);
+	octeon_write_csr64(oct, CN83XX_SDP_EPF_OEI_RINT_ENA_W1C(oct->epf_num), -1ULL);
 	octeon_write_csr64(oct, CN83XX_SLI_EPF_MISC_RINT_ENA_W1C(oct->epf_num),
 			   intr_mask);
 	octeon_write_csr64(oct, CN83XX_SLI_EPF_PP_VF_RINT_ENA_W1C(oct->epf_num),
