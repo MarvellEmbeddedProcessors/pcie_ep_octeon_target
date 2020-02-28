@@ -9,6 +9,7 @@
 #include <linux/platform_device.h>
 #include <linux/uaccess.h>
 #include <linux/slab.h>
+#include <linux/iommu.h>
 //#include <linux/watchdog.h>
 //#include <asm/arch_timer.h>
 #include "barmap.h"
@@ -24,6 +25,8 @@
 
 
 #define PEMX_REG_BASE(pem)  (0x87E0C0000000ULL | (pem << 24))
+#define PEMX_REG_BASE_93XX(pem) (0x8E0000000000ULL | (pem << 36))
+
 #define NPU_HANDSHAKE_SIGNATURE 0xABCDABCD
 void *pem_io_base;
 void *sdp_base;
@@ -41,6 +44,33 @@ int irq_list[MAX_INTERRUPTS];
 
 /* platform device */
 struct device	*plat_dev;
+
+enum board_type {
+	CN83XX_BOARD,
+	CN93XX_BOARD,
+	UNKNOWN_BOARD
+};
+
+static enum board_type get_board_type(void)
+{
+      unsigned int res = 0;
+
+      __asm volatile
+       (
+        "MRS %[result], S3_0_C0_C0_0": [result] "=r" (res)
+           );
+
+      res = res >> 4;
+      res = res & 0xfff;
+
+      if (res == 0xA3)
+	      return CN83XX_BOARD;
+      else if (res == 0xB2)
+	      return CN93XX_BOARD;
+      else
+	      return UNKNOWN_BOARD;
+
+}
 
 static irqreturn_t npu_base_interrupt(int irq, void *dev_id)
 {
@@ -127,10 +157,16 @@ static int npu_base_setup(struct npu_bar_map *bar_map)
 {
 	phys_addr_t barmap_mem_phys;
 	phys_addr_t phys_addr_i;
+	enum board_type btype;
 	uint64_t bar1_idx_val;
 	void *bar1_idx_addr;
 	int i;
 
+	btype = get_board_type();
+	if ((btype != CN83XX_BOARD) && (btype != CN93XX_BOARD)) {
+		printk("Unsupported board type\n");
+		return -1;
+	}
 	npu_barmap_mem = kmalloc(NPU_BARMAP_FIREWALL_SIZE, GFP_KERNEL);
 	if (npu_barmap_mem == NULL) {
 		printk("%s: Failed to allocate memory\n", __func__);
@@ -146,8 +182,13 @@ static int npu_base_setup(struct npu_bar_map *bar_map)
 
 //TODO: remove BAR1 references; 96xx has BAR4
 #define PEM_BAR1_INDEX_OFFSET(idx) (0x100 + (idx << 3))
+#define PEM_BAR4_INDEX_OFFSET(idx) (0x700 + (idx << 3))
 	//TODO: unmap() in unload
-	pem_io_base = ioremap(PEMX_REG_BASE(0), 1024*1024);
+	if (btype == CN83XX_BOARD)
+		pem_io_base = ioremap(PEMX_REG_BASE(0), 1024*1024);
+	else if (btype == CN93XX_BOARD)
+		pem_io_base = ioremap(PEMX_REG_BASE_93XX(0ULL), 1024*1024);
+
 	if (pem_io_base == NULL) {
 		printk("Failed to ioremap PEM CSR space\n");
 		return -1;
@@ -164,7 +205,10 @@ static int npu_base_setup(struct npu_bar_map *bar_map)
 	     i < CN83XX_PEM_BAR1_INDEX_MAX_ENTRIES-1; i++) {
 		int ii = i - NPU_BARMAP_FIREWALL_FIRST_ENTRY;
 		phys_addr_i = barmap_mem_phys + (ii * NPU_BARMAP_ENTRY_SIZE);
-		bar1_idx_addr = pem_io_base + PEM_BAR1_INDEX_OFFSET(i);
+		if (btype == CN83XX_BOARD)
+			bar1_idx_addr = pem_io_base + PEM_BAR1_INDEX_OFFSET(i);
+		else if (btype == CN93XX_BOARD)
+			bar1_idx_addr = pem_io_base + PEM_BAR4_INDEX_OFFSET(i);
 		bar1_idx_val = ((phys_addr_i >> 22) << 4) | 1;
 		printk("Writing BAR entry-%d; addr=%p, val=%llx\n",
 		       i, bar1_idx_addr, bar1_idx_val);
@@ -174,16 +218,25 @@ static int npu_base_setup(struct npu_bar_map *bar_map)
 	/* Map GICD CSR space to BAR1_INDEX(15) so that Host can just do a
 	 * local memory write to interrupt NPU for any work on any virtual ring
 	 */
-	bar1_idx_addr = pem_io_base + PEM_BAR1_INDEX_OFFSET(15);
+	if (btype == CN83XX_BOARD)
+		bar1_idx_addr = pem_io_base + PEM_BAR1_INDEX_OFFSET(15);
+	else if (btype == CN93XX_BOARD)
+		bar1_idx_addr = pem_io_base + PEM_BAR4_INDEX_OFFSET(15);
+
 	bar1_idx_val = ((NPU_GICD_BASE >> 22) << 4) | 1;
 	printk("Writing BAR entry-15 to map GICD; addr=%p, val=%llx\n",
 	       bar1_idx_addr, bar1_idx_val);
 	*(volatile uint64_t *)bar1_idx_addr = bar1_idx_val;
 	
 	/* write the mapped memory addr to scratch */
+#define CN93xx_SDP_BASE 0x86E080000000
+#define CN93XX_SDP0_SCRATCH_OFFSET(x,y) (0x000205E0 | (x << 36) | (y << 25))
 #define CN83xx_SDP_BASE 0x874080000000
 #define CN83XX_SDP0_SCRATCH_OFFSET(x) (0x00020180 | (x << 23))
-	sdp_base = ioremap(CN83xx_SDP_BASE, 1024*1024);
+	if (btype == CN83XX_BOARD)
+		sdp_base = ioremap(CN83xx_SDP_BASE, 1024*1024);
+	else if (btype == CN93XX_BOARD)
+		sdp_base = ioremap(CN93xx_SDP_BASE, 1024*1024);
 	if (sdp_base == NULL) {
 		printk("Failed to ioremap SDP CSR space\n");
 		return -1;
@@ -202,9 +255,16 @@ static void npu_handshake_ready(struct npu_bar_map *bar_map)
 {
 	uint64_t scratch_val;
 	void *scratch_addr;
+	enum board_type btype;
 
 	printk("Writing to scratch register\n");
-	scratch_addr = sdp_base + CN83XX_SDP0_SCRATCH_OFFSET(0);
+	btype = get_board_type();
+	if (btype == CN83XX_BOARD)
+		scratch_addr = sdp_base + CN83XX_SDP0_SCRATCH_OFFSET(0);
+	else if (btype == CN93XX_BOARD)
+		scratch_addr = sdp_base + CN93XX_SDP0_SCRATCH_OFFSET(0ULL,0);
+	else
+		return;
 	scratch_val = ((uint64_t)(NPU_BARMAP_FIREWALL_FIRST_ENTRY *
 		       NPU_BARMAP_ENTRY_SIZE) << 32) |
 		       NPU_HANDSHAKE_SIGNATURE;
@@ -218,11 +278,76 @@ extern void mv_facility_conf_init(struct device *dev,
 				  struct npu_bar_map *barmap);
 extern int npu_device_access_init(void);
 
+static u32 host_sid = 0x030000;
 static int npu_base_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
-	int i, irq, first_irq, irq_count;
+	int i, irq, first_irq, irq_count, ret;
 	char *dev_id = NPU_BASE_DEVICE_ID;
+	struct device *smmu_dev;
+	const struct iommu_ops *smmu_ops;
+	struct iommu_domain *host_domain;
+
+	smmu_dev = bus_find_device_by_name(&platform_bus_type,
+					   NULL,
+					   "830000000000.smmu");
+	if (!smmu_dev) {
+		dev_err(dev, "Cannot locate smmu device\n");
+		goto exit;
+	}
+
+	smmu_ops = platform_bus_type.iommu_ops;
+	if (!smmu_ops) {
+		dev_err(dev, "Cannot locate smmu_ops\n");
+		goto exit;
+	}
+
+	host_domain = smmu_ops->domain_alloc(IOMMU_DOMAIN_IDENTITY);
+	if (!host_domain) {
+		dev_err(dev, "Cannot allocate smmu domain for host\n");
+		goto exit;
+	}
+
+	/* caller sets these; see __iommu_domain_alloc */
+	host_domain->ops = smmu_ops;
+	host_domain->type = IOMMU_DOMAIN_IDENTITY;
+	host_domain->pgsize_bitmap = smmu_ops->pgsize_bitmap;
+
+	dev_dbg(dev, "OLD dev->iommu_fwspec %p\n", dev->iommu_fwspec);
+
+	ret = iommu_fwspec_init(dev, smmu_dev->fwnode, smmu_ops);
+	if (ret) {
+		dev_err(dev, "Error %d from iommu_fwspec_init()\n",
+			ret);
+		goto exit;
+	}
+
+	dev_dbg(dev, "NEW dev->iommu_fwspec %p\n", dev->iommu_fwspec);
+
+	ret = iommu_fwspec_add_ids(dev, &host_sid, 1);
+	if (ret) {
+		dev_err(dev, "Error %d from iommu_fwspec_add_ids()\n",
+			ret);
+		goto exit;
+	}
+
+	ret = smmu_ops->add_device(dev);
+	if (ret) {
+		dev_err(dev, "Error %d from smmu_ops->add_device()\n",
+			ret);
+		goto exit;
+	}
+
+	ret = smmu_ops->attach_dev(host_domain, dev);
+	if (ret) {
+		/* remove device from domain */
+		smmu_ops->remove_device(dev);
+
+		dev_err(dev,
+			"Error %d from smmu_ops->attach_dev()\n",
+			ret);
+		goto exit;
+	}
 
 	irq = platform_get_irq(pdev, 0);
 	if (irq < 0) {
@@ -237,23 +362,32 @@ static int npu_base_probe(struct platform_device *pdev)
 	}
 
 	if (get_device_irq_info(FIREWALL_FDT_NAME,
-				&irq_count, &first_irq))
+				&irq_count, &first_irq)) {
+		printk("get irq info failed\n");
 		return -1;
+	}
 
 	for (i = 0; i < irq_count; i++)
 		irq_list[i] = platform_get_irq(pdev, i);
 
-	if (npu_bar_map_init(&bar_map, first_irq, irq_count))
+	if (npu_bar_map_init(&bar_map, first_irq, irq_count)) {
+		printk("bar map int failed\n");
 		return -1;
+	}
 
-	if (npu_base_setup(&bar_map))
+	if (npu_base_setup(&bar_map)) {
+		printk("Base setup failed\n");
 		return -1;
+	}
 
 	plat_dev = dev;
 	npu_handshake_ready(&bar_map);
 	mv_facility_conf_init(dev, npu_barmap_mem, &bar_map);
 	npu_device_access_init();
 	return 0;
+
+exit:
+	return ret ? -ENODEV : 0;
 }
 
 static void npu_base_shutdown(struct platform_device *pdev)
