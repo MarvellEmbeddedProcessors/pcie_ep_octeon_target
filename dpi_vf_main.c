@@ -302,7 +302,11 @@ EXPORT_SYMBOL(do_dma_sync);
 
 struct device *get_dpi_dma_dev(void)
 {
-	return &dpi_vf->pdev->dev;
+
+	if (dpi_vf)
+		return &dpi_vf->pdev->dev;
+	else
+		return NULL;
 }
 EXPORT_SYMBOL(get_dpi_dma_dev);
 
