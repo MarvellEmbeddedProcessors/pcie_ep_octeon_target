@@ -1133,9 +1133,17 @@ int setup_cn93xx_octeon_pf_device(octeon_device_t * oct)
 	if (octeon_map_pci_barx(oct, 0, 0))
 		return 1;
 
+	/* TODO: It is not required */
 	if (octeon_map_pci_barx(oct, 1, MAX_BAR1_IOREMAP_SIZE)) {
 		cavium_error("%s CN93XX BAR1 map failed\n", __FUNCTION__);
 		octeon_unmap_pci_barx(oct, 0);
+		return 1;
+	}
+
+	if (octeon_map_pci_barx(oct, 2, MAX_BAR1_IOREMAP_SIZE)) {
+		cavium_error("%s CN93XX BAR4 map failed\n", __FUNCTION__);
+		octeon_unmap_pci_barx(oct, 0);
+		octeon_unmap_pci_barx(oct, 1);
 		return 1;
 	}
 
@@ -1363,6 +1371,7 @@ int setup_cn93xx_octeon_pf_device(octeon_device_t * oct)
 free_barx:
 	octeon_unmap_pci_barx(oct, 0);
 	octeon_unmap_pci_barx(oct, 1);
+	octeon_unmap_pci_barx(oct, 2);
 	return 1;
 
 }

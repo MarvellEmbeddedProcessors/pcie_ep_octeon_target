@@ -379,7 +379,7 @@ int octnet_change_mtu(struct net_device *pndev, int new_mtu)
 
 	nparams.resp_order = OCTEON_RESP_ORDERED;
 #if  !defined(ETHERPCI)
-	ret = octnet_send_nic_ctrl_pkt(priv->oct_dev, &nctrl, nparams);
+	ret = 0;
 	if (ret < 0) {
 		cavium_error("OCTNIC: Failed to set MTU\n");
 		return -1;
@@ -387,6 +387,7 @@ int octnet_change_mtu(struct net_device *pndev, int new_mtu)
 #else
 	octnet_link_ctrl_cmd_completion((void *)&nctrl);
 #endif
+	octnet_link_ctrl_cmd_completion((void *)&nctrl);
 
 	return 0;
 }

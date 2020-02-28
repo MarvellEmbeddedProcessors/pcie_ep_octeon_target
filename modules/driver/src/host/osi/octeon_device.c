@@ -1613,31 +1613,32 @@ int dump_hostfw_config(octeon_config_t * temp_oct_conf)
 }
 
 void npu_mem_and_intr_test (octeon_device_t *octeon_dev,
+			    int idx,
 			    struct npu_bar_map *barmap)
 {
 	struct facility_bar_map *facility_map;
 
 	//write to first 4-bytes of every region
 	facility_map = &barmap->facility_map[MV_FACILITY_CONTROL];
-	*(volatile uint32_t *)(octeon_dev->mmio[1].hw_addr +
+	*(volatile uint32_t *)(octeon_dev->mmio[idx].hw_addr +
 				facility_map->offset) = 0xA5A5A5A5;
 
 	facility_map = &barmap->facility_map[MV_FACILITY_MGMT_NETDEV];
-	*(volatile uint32_t *)(octeon_dev->mmio[1].hw_addr +
+	*(volatile uint32_t *)(octeon_dev->mmio[idx].hw_addr +
 				facility_map->offset) = 0xA6A6A6A6;
 
 	facility_map = &barmap->facility_map[MV_FACILITY_NW_AGENT];
-	*(volatile uint32_t *)(octeon_dev->mmio[1].hw_addr +
+	*(volatile uint32_t *)(octeon_dev->mmio[idx].hw_addr +
 				facility_map->offset) = 0x5A5A5A5A;
 
 	facility_map = &barmap->facility_map[MV_FACILITY_RPC];
-	*(volatile uint32_t *)(octeon_dev->mmio[1].hw_addr +
+	*(volatile uint32_t *)(octeon_dev->mmio[idx].hw_addr +
 				facility_map->offset) = 0xABABABAB;
 	//raise control interrupt
 	facility_map = &barmap->facility_map[MV_FACILITY_CONTROL];
 	printk("Raising interrupt; offset=%x, #spi=%x\n",
 	       barmap->gicd_offset, facility_map->h2t_dbell_start);
-	*(volatile uint32_t *)(octeon_dev->mmio[1].hw_addr +
+	*(volatile uint32_t *)(octeon_dev->mmio[idx].hw_addr +
 		 barmap->gicd_offset) = facility_map->h2t_dbell_start;
 }
 
@@ -1674,7 +1675,7 @@ octeon_wait_for_npu_base(void *octptr, unsigned long arg UNUSED)
 	printk("hw_addr = 0x%llx\n", (unsigned long long)octeon_dev->mmio[1].hw_addr);
 		npu_bar_map_save(octeon_dev->mmio[1].hw_addr + (reg_val >> 32));
 		npu_barmap_dump((void *)&npu_memmap_info);
-		npu_mem_and_intr_test(octeon_dev, &npu_memmap_info);
+		npu_mem_and_intr_test(octeon_dev, 1, &npu_memmap_info);
 	//npu_handshake_done = true;
 	//return OCT_POLL_FN_FINISHED;
 		mv_facility_conf_init(octeon_dev);
@@ -1683,9 +1684,23 @@ octeon_wait_for_npu_base(void *octptr, unsigned long arg UNUSED)
 		if (host_device_access_init() < 0)
 			pr_err("host_device_access_init failed\n");
 	} else if(octeon_dev->chip_id == OCTEON_CN93XX_PF) {
-		//TODO: add support for 93xx */
-		printk_once("##### Facility not implemented yet for 93xx\n");
-		return OCT_POLL_FN_FINISHED;
+		reg_val = octeon_read_csr64(octeon_dev, CN93XX_SDP_EPF_SCRATCH);
+		if((reg_val & 0xffffffff) != NPU_BASE_READY_MAGIC) {
+			return OCT_POLL_FN_CONTINUE;
+		}
+		printk("%s: CN83xx NPU is ready; MAGIC=0x%llX; memmap=0x%llX\n",
+		       __func__, reg_val & 0xffffffff, reg_val >> 32);
+		printk("hw_addr = 0x%llx\n", (unsigned long long)octeon_dev->mmio[2].hw_addr);
+		npu_bar_map_save(octeon_dev->mmio[2].hw_addr + (reg_val >> 32));
+		npu_barmap_dump((void *)&npu_memmap_info);
+		npu_mem_and_intr_test(octeon_dev, 2, &npu_memmap_info);
+	//npu_handshake_done = true;
+	//return OCT_POLL_FN_FINISHED;
+		mv_facility_conf_init(octeon_dev);
+
+		/* setup the Host device access for RPC */
+		if (host_device_access_init() < 0)
+			pr_err("host_device_access_init failed\n");
 	} else {
 		printk("%s: Chip id 0x%x is not supported\n",
 		       __func__, octeon_dev->chip_id);
@@ -1793,6 +1808,9 @@ octeon_hostfw_handshake(void *octptr, unsigned long arg UNUSED)
 	switch (oct->chip_id) {
 	case OCTEON_CN83XX_PF:
 		scratch_reg_addr = CN83XX_SDP_SCRATCH(0);
+		break;
+	case OCTEON_CN93XX_PF:
+		scratch_reg_addr = CN93XX_SDP_EPF_SCRATCH;
 		break;
 	}
 

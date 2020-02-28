@@ -179,14 +179,14 @@ typedef enum {
 
 typedef int (proc_show_t) (struct seq_file * s, void *v);
 
-typedef ssize_t(proc_write_t) (struct file * filp, const char __user * buf,
+typedef ssize_t(proc_write_new_t) (struct file * filp, const char __user * buf,
 			       size_t count, loff_t * offp);
 
 typedef struct {
 	char name[20];
 	mode_t attributes;
 	proc_show_t *proc_show;
-	proc_write_t *proc_write;
+	proc_write_new_t *proc_write;
 	octeon_proc_type_t type;
 } octeon_proc_entry_t;
 

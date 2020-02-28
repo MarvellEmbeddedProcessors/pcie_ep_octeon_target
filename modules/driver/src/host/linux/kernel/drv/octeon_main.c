@@ -628,6 +628,8 @@ void octeon_destroy_resources(octeon_device_t * oct_dev)
 	case OCT_DEV_PCI_MAP_DONE:
 		octeon_unmap_pci_barx(oct_dev, 0);
 		octeon_unmap_pci_barx(oct_dev, 1);
+		if (oct_dev->chip_id == OCTEON_CN93XX_PF)
+			octeon_unmap_pci_barx(oct_dev, 2);
 
 		cavium_print_msg("OCTEON[%d]: BAR unmapped.\n",
 				 oct_dev->octeon_id);
