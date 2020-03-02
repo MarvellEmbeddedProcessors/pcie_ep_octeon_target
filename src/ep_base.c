@@ -288,65 +288,67 @@ static int npu_base_probe(struct platform_device *pdev)
 	const struct iommu_ops *smmu_ops;
 	struct iommu_domain *host_domain;
 
-	smmu_dev = bus_find_device_by_name(&platform_bus_type,
-					   NULL,
-					   "830000000000.smmu");
-	if (!smmu_dev) {
-		dev_err(dev, "Cannot locate smmu device\n");
-		goto exit;
-	}
+	if (get_board_type() == CN93XX_BOARD) {
+		smmu_dev = bus_find_device_by_name(&platform_bus_type,
+						   NULL,
+						   "830000000000.smmu");
+		if (!smmu_dev) {
+			dev_err(dev, "Cannot locate smmu device\n");
+			goto exit;
+		}
 
-	smmu_ops = platform_bus_type.iommu_ops;
-	if (!smmu_ops) {
-		dev_err(dev, "Cannot locate smmu_ops\n");
-		goto exit;
-	}
+		smmu_ops = platform_bus_type.iommu_ops;
+		if (!smmu_ops) {
+			dev_err(dev, "Cannot locate smmu_ops\n");
+			goto exit;
+		}
 
-	host_domain = smmu_ops->domain_alloc(IOMMU_DOMAIN_IDENTITY);
-	if (!host_domain) {
-		dev_err(dev, "Cannot allocate smmu domain for host\n");
-		goto exit;
-	}
+		host_domain = smmu_ops->domain_alloc(IOMMU_DOMAIN_IDENTITY);
+		if (!host_domain) {
+			dev_err(dev, "Cannot allocate smmu domain for host\n");
+			goto exit;
+		}
 
-	/* caller sets these; see __iommu_domain_alloc */
-	host_domain->ops = smmu_ops;
-	host_domain->type = IOMMU_DOMAIN_IDENTITY;
-	host_domain->pgsize_bitmap = smmu_ops->pgsize_bitmap;
+		/* caller sets these; see __iommu_domain_alloc */
+		host_domain->ops = smmu_ops;
+		host_domain->type = IOMMU_DOMAIN_IDENTITY;
+		host_domain->pgsize_bitmap = smmu_ops->pgsize_bitmap;
 
-	dev_dbg(dev, "OLD dev->iommu_fwspec %p\n", dev->iommu_fwspec);
+		dev_dbg(dev, "OLD dev->iommu_fwspec %p\n", dev->iommu_fwspec);
 
-	ret = iommu_fwspec_init(dev, smmu_dev->fwnode, smmu_ops);
-	if (ret) {
-		dev_err(dev, "Error %d from iommu_fwspec_init()\n",
-			ret);
-		goto exit;
-	}
+		ret = iommu_fwspec_init(dev, smmu_dev->fwnode, smmu_ops);
+		if (ret) {
+			dev_err(dev, "Error %d from iommu_fwspec_init()\n",
+				ret);
+			goto exit;
+		}
 
-	dev_dbg(dev, "NEW dev->iommu_fwspec %p\n", dev->iommu_fwspec);
+		dev_dbg(dev, "NEW dev->iommu_fwspec %p\n", dev->iommu_fwspec);
 
-	ret = iommu_fwspec_add_ids(dev, &host_sid, 1);
-	if (ret) {
-		dev_err(dev, "Error %d from iommu_fwspec_add_ids()\n",
-			ret);
-		goto exit;
-	}
+		ret = iommu_fwspec_add_ids(dev, &host_sid, 1);
+		if (ret) {
+			dev_err(dev, "Error %d from iommu_fwspec_add_ids()\n",
+				ret);
+			goto exit;
+		}
 
-	ret = smmu_ops->add_device(dev);
-	if (ret) {
-		dev_err(dev, "Error %d from smmu_ops->add_device()\n",
-			ret);
-		goto exit;
-	}
+		ret = smmu_ops->add_device(dev);
+		if (ret) {
+			dev_err(dev, "Error %d from smmu_ops->add_device()\n",
+				ret);
+			goto exit;
+		}
 
-	ret = smmu_ops->attach_dev(host_domain, dev);
-	if (ret) {
-		/* remove device from domain */
-		smmu_ops->remove_device(dev);
+		ret = smmu_ops->attach_dev(host_domain, dev);
+		if (ret) {
+			/* remove device from domain */
+			smmu_ops->remove_device(dev);
 
-		dev_err(dev,
-			"Error %d from smmu_ops->attach_dev()\n",
-			ret);
-		goto exit;
+			dev_err(dev,
+				"Error %d from smmu_ops->attach_dev()\n",
+				ret);
+			goto exit;
+		}
 	}
 
 	irq = platform_get_irq(pdev, 0);
