@@ -22,6 +22,9 @@
 //#define FIREWALL_MGMT_NETDEV_FDT_NAME  "firewall-mgmt-netdev-intr"
 //#define FIREWALL_NW_AGENT_FDT_NAME     "firewall-network-agent-intr"
 //#define FIREWALL_RPC_FDT_NAME          "firewall-rpc-intr"
+static unsigned int  host_sid = 0x030000;
+module_param(host_sid, uint, 0644);
+MODULE_PARM_DESC(host_sid, "host stream id (((0x3 + PEM_NUM) << 16) + Host_requester id");
 
 
 #define PEMX_REG_BASE(pem)  (0x87E0C0000000ULL | (pem << 24))
@@ -278,7 +281,6 @@ extern void mv_facility_conf_init(struct device *dev,
 				  struct npu_bar_map *barmap);
 extern int npu_device_access_init(void);
 
-static u32 host_sid = 0x030000;
 static int npu_base_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
