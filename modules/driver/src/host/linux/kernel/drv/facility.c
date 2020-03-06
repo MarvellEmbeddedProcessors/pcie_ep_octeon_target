@@ -19,13 +19,17 @@ mv_facility_event_cb_t facility_handler[MV_FACILITY_COUNT];
 
 void mv_facility_conf_init(octeon_device_t *oct)
 {
-	void *bar1_addr = oct->mmio[1].hw_addr;
+	void *bar1_addr;
 	struct device *dev = &oct->pci_dev->dev;
 	struct facility_bar_map *facility_map;
 
 	memset(&facility_conf, 0,
 	       sizeof(mv_facility_conf_t) * MV_FACILITY_COUNT);
 
+	if(oct->chip_id == OCTEON_CN93XX_PF)
+		bar1_addr = oct->mmio[2].hw_addr;
+	else
+		bar1_addr = oct->mmio[1].hw_addr;
 	/* TODO: set name for all facility names */
 	facility_map = &npu_memmap_info.facility_map[MV_FACILITY_CONTROL];
 	facility_conf[MV_FACILITY_CONTROL].type = MV_FACILITY_CONTROL;
@@ -145,11 +149,16 @@ int mv_send_facility_dbell(int type, int dbell)
 	/* check if dbell falls in range */
 	if (irq >= facility_map->h2t_dbell_start &&
 	    irq < (facility_map->h2t_dbell_start +
-		     facility_map->h2t_dbell_count))
-		*(volatile uint32_t *)(octeon_device[0]->mmio[1].hw_addr +
-			 npu_memmap_info.gicd_offset) = irq;
-	else
+		     facility_map->h2t_dbell_count)) {
+		if(octeon_device[0]->chip_id == OCTEON_CN93XX_PF)
+			*(volatile uint32_t *)(octeon_device[0]->mmio[2].hw_addr +
+			 	npu_memmap_info.gicd_offset) = irq;
+		else
+			*(volatile uint32_t *)(octeon_device[0]->mmio[1].hw_addr +
+			 	npu_memmap_info.gicd_offset) = irq;
+	} else {
 		return -EINVAL;
+	}
 
 	/* printk("%s: invoked for type-%d, dbell-%d\n", __func__, type, dbell); */
 	return 0;
