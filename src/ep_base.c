@@ -26,13 +26,28 @@ static unsigned int  host_sid = 0x030000;
 module_param(host_sid, uint, 0644);
 MODULE_PARM_DESC(host_sid, "host stream id (((0x3 + PEM_NUM) << 16) + Host_requester id");
 
+static unsigned int  pem_num = 0;
+module_param(pem_num, uint, 0644);
+MODULE_PARM_DESC(pem_num, "PEM number to use");
 
-#define PEMX_REG_BASE(pem)  (0x87E0C0000000ULL | (pem << 24))
-#define PEMX_REG_BASE_93XX(pem) (0x8E0000000000ULL | (pem << 36))
+static unsigned int  epf_num = 0;
+module_param(epf_num, uint, 0644);
+MODULE_PARM_DESC(epf_num, "epf number to use");
+
+#define CN93xx_SDP_BASE 0x86E080000000ULL
+#define CN93XX_SDP0_EPFX_SCRATCH_OFFSET(epf) (0x000205E0ULL | (epf << 25))
+#define CN93XX_SDP0_EPFX_OEI_TRIG_ADDR(epf) (0x86E0C0000000ULL | (epf << 25))
+#define PEMX_REG_BASE_93XX(pem) (0x8E0000000000ULL | ((uint64_t)pem << 36))
+
+#define CN83xx_SDP_BASE 0x874080000000ULL
+#define CN83XX_SDP0_SCRATCH_OFFSET(epf) (0x00020180ULL | (epf << 23))
+#define CN83XX_SDP0_EPFX_OEI_TRIG_ADDR(epf) (0x874000800000ULL | (epf << 16))
+#define PEMX_REG_BASE_83XX(pem)  (0x87E0C0000000ULL | (pem << 24))
+
+#define PEM_BAR1_INDEX_OFFSET(idx) (0x100 + (idx << 3))
+#define PEM_BAR4_INDEX_OFFSET(idx) (0x700 + (idx << 3))
 
 #define NPU_HANDSHAKE_SIGNATURE 0xABCDABCD
-void *pem_io_base;
-void *sdp_base;
 void *oei_trig_remap_addr;
 void __iomem *nwa_internal_addr;
 EXPORT_SYMBOL(nwa_internal_addr);
@@ -53,6 +68,34 @@ enum board_type {
 	CN93XX_BOARD,
 	UNKNOWN_BOARD
 };
+
+static uint64_t npu_csr_read(uint64_t csr_addr)
+{
+	uint64_t val;
+	uint64_t *addr;
+
+	addr = ioremap(csr_addr, 8);
+	if (addr == NULL) {
+		printk("Failed to ioremap SDP CSR space\n");
+		return -1UL;
+	}
+	val = READ_ONCE(*addr);
+	iounmap(addr);
+	return val;
+}
+
+static void npu_csr_write(uint64_t csr_addr, uint64_t val)
+{
+	uint64_t *addr;
+
+	addr = ioremap(csr_addr, 8);
+	if (addr == NULL) {
+		printk("Failed to ioremap SDP CSR space\n");
+		return;
+	}
+	WRITE_ONCE(*addr, val);
+	iounmap(addr);
+}
 
 static enum board_type get_board_type(void)
 {
@@ -161,8 +204,8 @@ static int npu_base_setup(struct npu_bar_map *bar_map)
 	phys_addr_t barmap_mem_phys;
 	phys_addr_t phys_addr_i;
 	enum board_type btype;
-	uint64_t bar1_idx_val;
-	void *bar1_idx_addr;
+	uint64_t bar_idx_val;
+	uint64_t bar_idx_addr;
 	int i;
 
 	btype = get_board_type();
@@ -184,18 +227,7 @@ static int npu_base_setup(struct npu_bar_map *bar_map)
 	memcpy(npu_barmap_mem, (void *)bar_map, sizeof(struct npu_bar_map));
 
 //TODO: remove BAR1 references; 96xx has BAR4
-#define PEM_BAR1_INDEX_OFFSET(idx) (0x100 + (idx << 3))
-#define PEM_BAR4_INDEX_OFFSET(idx) (0x700 + (idx << 3))
 	//TODO: unmap() in unload
-	if (btype == CN83XX_BOARD)
-		pem_io_base = ioremap(PEMX_REG_BASE(0), 1024*1024);
-	else if (btype == CN93XX_BOARD)
-		pem_io_base = ioremap(PEMX_REG_BASE_93XX(0ULL), 1024*1024);
-
-	if (pem_io_base == NULL) {
-		printk("Failed to ioremap PEM CSR space\n");
-		return -1;
-	}
 	/* Write memory mapping to PEM BAR1_INDEX */
 	printk("Mapping NPU physical memory to BAR1 entries ...\n");
 	if (NPU_BARMAP_FIREWALL_SIZE > NPU_BARMAP_MAX_SIZE) {
@@ -209,43 +241,34 @@ static int npu_base_setup(struct npu_bar_map *bar_map)
 		int ii = i - NPU_BARMAP_FIREWALL_FIRST_ENTRY;
 		phys_addr_i = barmap_mem_phys + (ii * NPU_BARMAP_ENTRY_SIZE);
 		if (btype == CN83XX_BOARD)
-			bar1_idx_addr = pem_io_base + PEM_BAR1_INDEX_OFFSET(i);
+			bar_idx_addr = PEMX_REG_BASE_83XX(pem_num) + PEM_BAR1_INDEX_OFFSET(i);
 		else if (btype == CN93XX_BOARD)
-			bar1_idx_addr = pem_io_base + PEM_BAR4_INDEX_OFFSET(i);
-		bar1_idx_val = ((phys_addr_i >> 22) << 4) | 1;
-		printk("Writing BAR entry-%d; addr=%p, val=%llx\n",
-		       i, bar1_idx_addr, bar1_idx_val);
-		*(volatile uint64_t *)bar1_idx_addr = bar1_idx_val;
+			bar_idx_addr = PEMX_REG_BASE_93XX(pem_num) + PEM_BAR4_INDEX_OFFSET(i);
+		bar_idx_val = ((phys_addr_i >> 22) << 4) | 1;
+		printk("Writing BAR entry-%d; addr=%llx, val=%llx\n",
+		       i, bar_idx_addr, bar_idx_val);
+		npu_csr_write(bar_idx_addr, bar_idx_val);
 	}
 
 	/* Map GICD CSR space to BAR1_INDEX(15) so that Host can just do a
 	 * local memory write to interrupt NPU for any work on any virtual ring
 	 */
 	if (btype == CN83XX_BOARD)
-		bar1_idx_addr = pem_io_base + PEM_BAR1_INDEX_OFFSET(15);
+		bar_idx_addr = PEMX_REG_BASE_83XX(pem_num) + PEM_BAR1_INDEX_OFFSET(15);
 	else if (btype == CN93XX_BOARD)
-		bar1_idx_addr = pem_io_base + PEM_BAR4_INDEX_OFFSET(15);
+		bar_idx_addr = PEMX_REG_BASE_93XX(pem_num)  + PEM_BAR4_INDEX_OFFSET(15);
 
-	bar1_idx_val = ((NPU_GICD_BASE >> 22) << 4) | 1;
-	printk("Writing BAR entry-15 to map GICD; addr=%p, val=%llx\n",
-	       bar1_idx_addr, bar1_idx_val);
-	*(volatile uint64_t *)bar1_idx_addr = bar1_idx_val;
+	bar_idx_val = ((NPU_GICD_BASE >> 22) << 4) | 1;
+	printk("Writing BAR entry-15 to map GICD; addr=%llx, val=%llx\n",
+	       bar_idx_addr, bar_idx_val);
+	npu_csr_write(bar_idx_addr, bar_idx_val);
 	
-	/* write the mapped memory addr to scratch */
-#define CN93xx_SDP_BASE 0x86E080000000
-#define CN93XX_SDP0_SCRATCH_OFFSET(x,y) (0x000205E0 | (x << 36) | (y << 25))
-#define CN83xx_SDP_BASE 0x874080000000
-#define CN83XX_SDP0_SCRATCH_OFFSET(x) (0x00020180 | (x << 23))
+	
 	if (btype == CN83XX_BOARD)
-		sdp_base = ioremap(CN83xx_SDP_BASE, 1024*1024);
+		oei_trig_remap_addr = ioremap(CN83XX_SDP0_EPFX_OEI_TRIG_ADDR(epf_num), 8);
 	else if (btype == CN93XX_BOARD)
-		sdp_base = ioremap(CN93xx_SDP_BASE, 1024*1024);
-	if (sdp_base == NULL) {
-		printk("Failed to ioremap SDP CSR space\n");
-		return -1;
-	}
-#define SDP0_EPF0_OEI_TRIG_ADDR 0x874000800000UL
-	oei_trig_remap_addr = ioremap(SDP0_EPF0_OEI_TRIG_ADDR, 8);
+		oei_trig_remap_addr = ioremap(CN93XX_SDP0_EPFX_OEI_TRIG_ADDR(epf_num), 8);
+			
 	if (oei_trig_remap_addr == NULL) {
 		printk("Failed to ioremap oei_trig space\n");
 		return -1;
@@ -257,23 +280,23 @@ static int npu_base_setup(struct npu_bar_map *bar_map)
 static void npu_handshake_ready(struct npu_bar_map *bar_map)
 {
 	uint64_t scratch_val;
-	void *scratch_addr;
+	uint64_t scratch_addr;
 	enum board_type btype;
 
 	printk("Writing to scratch register\n");
 	btype = get_board_type();
 	if (btype == CN83XX_BOARD)
-		scratch_addr = sdp_base + CN83XX_SDP0_SCRATCH_OFFSET(0);
+		scratch_addr = CN83xx_SDP_BASE + CN83XX_SDP0_SCRATCH_OFFSET(epf_num);
 	else if (btype == CN93XX_BOARD)
-		scratch_addr = sdp_base + CN93XX_SDP0_SCRATCH_OFFSET(0ULL,0);
+		scratch_addr = CN93xx_SDP_BASE + CN93XX_SDP0_EPFX_SCRATCH_OFFSET(epf_num);
 	else
 		return;
 	scratch_val = ((uint64_t)(NPU_BARMAP_FIREWALL_FIRST_ENTRY *
 		       NPU_BARMAP_ENTRY_SIZE) << 32) |
 		       NPU_HANDSHAKE_SIGNATURE;
-	*(volatile uint64_t *)scratch_addr = scratch_val;
-	printk("Wrote to scratch: %p=%llx\n",
-	       scratch_addr, *(volatile uint64_t *)scratch_addr);
+	npu_csr_write(scratch_addr, scratch_val);
+	printk("Wrote to scratch: %llx=%llx\n",
+	       scratch_addr, npu_csr_read(scratch_addr));
 }
 
 extern void mv_facility_conf_init(struct device *dev,
