@@ -40,6 +40,9 @@ union sli_s2m_op_s {
 #define RWTYPE_RELAXED_ORDER 0
 #define RWTYPE_NO_SNOOP      1
 
+extern u64 *local_ptr, local_iova;
+extern enum board_type btype;
+
 union sli0_s2m_regx_acc {
 	uint64_t u64;
 	struct {
@@ -55,6 +58,19 @@ union sli0_s2m_regx_acc {
 		uint64_t rsvd1      :9;
 	} s;
 } __packed;
+
+DEFINE_PER_CPU(u64, cpu_lptr);
+DEFINE_PER_CPU(u64, cpu_iova);
+void init_percpu_vars(u8 *local_ptr, u64 local_iova)
+{
+	int cpu;
+
+	/* modify the cpuvar value */
+	for_each_online_cpu(cpu) {
+		per_cpu(cpu_lptr, cpu) = (u64)(local_ptr + (cpu * sizeof(u32)));
+		per_cpu(cpu_iova, cpu) = local_iova + (cpu * sizeof(u32));
+	}
+}
 
 static void setup_s2m_regx_acc(void)
 {
@@ -89,23 +105,27 @@ void __iomem *host_ioremap(host_dma_addr_t host_addr)
 
 	/* printk(KERN_DEBUG "host_writel  host_addr 0x%llx val  %u\n",
 		  host_addr, val); */
-	index = host_addr >> 32;
-	if (index > 255) {
-		printk(KERN_ERR "phys addr too big 0x%llx\n", host_addr);
-		return NULL;
+	if (btype == CN83XX_BOARD) {
+		index = host_addr >> 32;
+		if (index > 255) {
+			printk(KERN_ERR "phys addr too big 0x%llx\n", host_addr);
+			return NULL;
+		}
+		s2m_op.u64 = 0;
+		s2m_op.s.region = index;
+		s2m_op.s.io = 1;
+		s2m_op.s.did_hi = 8;
+		s2m_op.s.addr = host_addr & ((1UL << 32) - 1);
+		/* printk(KERN_DEBUG "s2m_op.u64 0x%016llx\n", s2m_op.u64); */
+		raddrp = ioremap((s2m_op.u64 & (~(PAGE_SIZE - 1))), PAGE_SIZE);
+		if (raddrp == NULL) {
+			printk(KERN_ERR "ioremap failed\n");
+			return NULL;
+		}
+		raddr = raddrp + (s2m_op.u64 & (PAGE_SIZE - 1));
+	} else { /* 93XX */
+		raddr = (void  __iomem *)host_addr;
 	}
-	s2m_op.u64 = 0;
-	s2m_op.s.region = index;
-	s2m_op.s.io = 1;
-	s2m_op.s.did_hi = 8;
-	s2m_op.s.addr = host_addr & ((1UL << 32) - 1);
-	/* printk(KERN_DEBUG "s2m_op.u64 0x%016llx\n", s2m_op.u64); */
-	raddrp = ioremap((s2m_op.u64 & (~(PAGE_SIZE - 1))), PAGE_SIZE);
-	if (raddrp == NULL) {
-		printk(KERN_ERR "ioremap failed\n");
-		return NULL;
-	}
-	raddr = raddrp + (s2m_op.u64 & (PAGE_SIZE - 1));
 	return raddr;
 }
 EXPORT_SYMBOL(host_ioremap);
@@ -116,7 +136,7 @@ void host_iounmap(void __iomem *addr)
 }
 EXPORT_SYMBOL(host_iounmap);
 
-void host_writel(host_dma_addr_t host_addr, uint32_t val)
+void host_map_writel(host_dma_addr_t host_addr, uint32_t val)
 {
 	uint32_t *addr;
 
@@ -127,6 +147,25 @@ void host_writel(host_dma_addr_t host_addr, uint32_t val)
 	}
 	writel(val, addr);
 	host_iounmap(addr);
+}
+EXPORT_SYMBOL(host_map_writel);
+
+void host_writel(uint32_t val,  void __iomem *host_addr)
+{
+	host_dma_addr_t riova, liova;
+	u32 *lva;
+
+	if (btype == CN83XX_BOARD) {
+		writel(val, host_addr);
+	} else {
+		riova = (host_dma_addr_t)host_addr;
+		liova = get_cpu_var(cpu_iova);
+		lva = (u32 *)get_cpu_var(cpu_lptr);
+		WRITE_ONCE(*lva, val);
+		do_dma_sync_dpi(liova, riova, lva, sizeof(u32), DMA_TO_HOST);
+		put_cpu_var(cpu_iova);
+		put_cpu_var(cpu_lptr);
+	}
 }
 EXPORT_SYMBOL(host_writel);
 

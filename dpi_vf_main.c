@@ -9,18 +9,24 @@
 #include <linux/pci.h>
 #include <linux/delay.h>
 #include <linux/iommu.h>
+#include <linux/fs.h>
 
 #include "dpi.h"
 #include "fpa.h"
 #include "dpi_cmd.h"
 #include "dma_api.h"
+#include "octeontx_mbox.h"
+#include "octeontx.h"
+#include "otx2_npa_pf.h"
 
 #define DRV_NAME "octeontx-dpi-vf"
 #define DRV_VERSION "1.0"
 #define PCI_VENDOR_ID_CAVIUM 0x177d
-#define PCI_DEVICE_ID_OCTEONTX_DPI_VF 0xA058
+#define PCI_DEVICE_ID_OCTEONTX_DPI_VF_83XX 0xA058
+#define PCI_DEVICE_ID_OCTEONTX_DPI_VF_93XX 0xA081
 
 #define DPI_CHUNK_SIZE 1024
+#define DPI_DMA_CMD_SIZE 64
 #define DPI_MAX_QUEUES 8
 #define DPI_NB_CHUNKS 4096
 #define FPA_DPI_XAQ_GMID 0x5
@@ -31,12 +37,28 @@
 
 static struct fpapf_com_s *fpapf;
 static struct fpavf_com_s *fpavf;
+u8 *local_ptr;
+u64 local_iova;
+enum board_type btype;
 
 //struct dpipf_com_s *dpipf_com_ptr;
 struct dpipf *dpi_pf;
 struct dpivf_t *dpi_vf;
 struct dpipf_com_s *dpipf;
 static struct fpavf *fpa;
+
+extern struct dpipf_com_s dpipf_com;
+struct dpipf_com_s {
+        u64 (*create_domain)(u32 id, u16 domain_id, u32 num_vfs,
+                             void *master, void *master_data,
+                             struct kobject *kobj);
+        int (*destroy_domain)(u32 id, u16 domain_id, struct kobject *kobj);
+        int (*reset_domain)(u32, u16);
+        int (*receive_message)(u32, u16 domain_id,
+                               struct mbox_hdr *hdr, union mbox_data *req,
+                               union mbox_data *resp, void *add_data);
+        int (*get_vf_count)(u32 id);
+};
 
 struct dma_queue_ctx {
 	u16 qid;
@@ -62,7 +84,8 @@ struct dpivf_t {
 };
 
 static const struct pci_device_id dpi_id_table[] = {
-	{ PCI_DEVICE(PCI_VENDOR_ID_CAVIUM, PCI_DEVICE_ID_OCTEONTX_DPI_VF) },
+	{ PCI_DEVICE(PCI_VENDOR_ID_CAVIUM, PCI_DEVICE_ID_OCTEONTX_DPI_VF_83XX) },
+	{ PCI_DEVICE(PCI_VENDOR_ID_CAVIUM, PCI_DEVICE_ID_OCTEONTX_DPI_VF_93XX) },
 	{ 0, }	/* end of table */
 };
 
@@ -152,6 +175,8 @@ static int dpivf_pre_setup(struct dpivf_t *dpi_vf)
 		goto put_3_deps;
 	}
 
+	return 0;
+
 put_3_deps:
 	symbol_put(fpavf_com);
 put_2_deps:
@@ -206,7 +231,11 @@ static int dpi_dma_queue_write(struct dpivf_t *dpi_vf, u16 qid, u16 cmd_count,
 		//dev_info(dev, "%s:%d Allocating new command buffer\n",
 		//		__func__, __LINE__);
 
-		dpi_buf = fpavf->alloc(fpa, DPI_AURA);
+		if (btype == CN83XX_BOARD)
+			dpi_buf = fpavf->alloc(fpa, DPI_AURA);
+
+		else
+			dpi_buf = npa_alloc_buf();
 		if (!dpi_buf) {
 			spin_unlock_bh(&qctx->queue_lock);
 			dev_err(dev, "Failed to allocate");
@@ -246,13 +275,15 @@ static int dpi_dma_queue_write(struct dpivf_t *dpi_vf, u16 qid, u16 cmd_count,
 			*ptr++ = *cmds++;
 		/* queue index may greater than pool size */
 		if (qctx->index >= qctx->pool_size_m1) {
-			dpi_buf = fpavf->alloc(fpa, DPI_AURA);
+			if (btype == CN83XX_BOARD)
+				dpi_buf = fpavf->alloc(fpa, DPI_AURA);
+			else
+				dpi_buf = npa_alloc_buf();
 			if (!dpi_buf) {
 				spin_unlock_bh(&qctx->queue_lock);
 				dev_err(dev, "Failed to allocate");
 				return -ENODEV;
 			}
-
 			if (dpi_vf->iommu_domain)
 				dpi_buf_phys =
 					iommu_iova_to_phys(dpi_vf->iommu_domain,
@@ -563,6 +594,27 @@ int do_dma_sync_dpi(local_dma_addr_t local_dma_addr, host_dma_addr_t host_addr,
 }
 EXPORT_SYMBOL(do_dma_sync_dpi);
 
+static enum board_type get_board_type(void)
+{
+      unsigned int res = 0;
+
+      __asm volatile
+       (
+        "MRS %[result], S3_0_C0_C0_0": [result] "=r" (res)
+           );
+
+      res = res >> 4;
+      res = res & 0xfff;
+
+      if (res == 0xA3)
+              return CN83XX_BOARD;
+      else if (res == 0xB2)
+              return CN93XX_BOARD;
+      else
+              return UNKNOWN_BOARD;
+
+}
+
 int dpi_vf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 {
 	struct device *dev = &pdev->dev;
@@ -570,13 +622,17 @@ int dpi_vf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	union mbox_data resp;
 	struct mbox_hdr hdr;
 	struct mbox_dpi_cfg cfg;
-	int err;
+	int err, vfid;
 #ifdef TEST_DPI_DMA_API
 	struct page *p, *p1;
 	u64 iova1;
 	u8 *fptr, *fptr1;
 #endif
 	u64 val, *dpi_buf_ptr, dpi_buf, dpi_buf_phys;
+	
+	btype = get_board_type();
+	if ((btype != CN83XX_BOARD) && (btype != CN93XX_BOARD))
+		return -EINVAL;
 
 	dpi_vf = devm_kzalloc(dev, sizeof(struct dpivf_t), GFP_KERNEL);
 	if (!dpi_vf) {
@@ -611,47 +667,69 @@ int dpi_vf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	writeq_relaxed(0x0, dpi_vf->reg_base + DPI_VDMA_EN);
 	writeq_relaxed(0x0, dpi_vf->reg_base + DPI_VDMA_REQQ_CTL);
-	val = readq_relaxed(dpi_vf->reg_base + DPI_VDMA_SADDR);
-	dpi_vf->vf_id = (val >> 24) & 0xffff;
-	dpi_vf->domain = FPA_DPI_XAQ_GMID;
+	if (btype == CN83XX_BOARD) {
+		val = readq_relaxed(dpi_vf->reg_base + DPI_VDMA_SADDR);
+		dpi_vf->vf_id = (val >> 24) & 0xffff;
+		dpi_vf->domain = FPA_DPI_XAQ_GMID;
 
-	err = dpivf_pre_setup(dpi_vf);
-	if (err) {
-		dev_err(dev, "Pre-requisites failed");
-		return -ENODEV;
+		err = dpivf_pre_setup(dpi_vf);
+		if (err) {
+			dev_err(dev, "Pre-requisites failed");
+			return -ENODEV;
+		}
+
+		dpi_buf = fpavf->alloc(fpa, DPI_AURA);
+		if (!dpi_buf) {
+			symbol_put(fpapf_com);
+			symbol_put(fpavf_com);
+			dev_err(dev, "Failed to allocate");
+			return -ENODEV;
+		}
+
+		dpi_vf->iommu_domain = iommu_get_domain_for_dev(&pdev->dev);
+		if (dpi_vf->iommu_domain)
+			dpi_buf_phys = iommu_iova_to_phys(dpi_vf->iommu_domain, dpi_buf);
+		else
+			dpi_buf_phys = dpi_buf;
+
+		dpi_buf_ptr = phys_to_virt(dpi_buf_phys);
+		cfg.buf_size = DPI_CHUNK_SIZE;
+		cfg.inst_aura = DPI_AURA;
+
+		hdr.coproc = DPI_COPROC;
+		hdr.msg = DPI_QUEUE_OPEN;
+		hdr.vfid = dpi_vf->vf_id;
+		/* Opening DPI queue */
+		dpipf->receive_message(dpi_vf->vf_id, dpi_vf->domain, &hdr, &req,
+				&resp, &cfg);
+	} else {
+		npa_aura_pool_init(DPI_NB_CHUNKS, DPI_CHUNK_SIZE,
+				   &dpi_vf->pdev->dev);
+
+		vfid = pdev->devfn - 1;	
+		dpi_buf = npa_alloc_buf();
+		if (!dpi_buf) {
+			dev_err(dev, "Failed to allocate");
+			return -ENOMEM;
+		}
+		dpi_vf->iommu_domain = iommu_get_domain_for_dev(dev);
+		if (dpi_vf->iommu_domain)
+			dpi_buf_phys = iommu_iova_to_phys(dpi_vf->iommu_domain, dpi_buf);
+		else
+			dpi_buf_phys = dpi_buf;
+		dpi_buf_ptr = phys_to_virt(dpi_buf_phys);
+		/*This memory is used for host_writel API */
+		local_ptr = dma_alloc_coherent(dev,
+				(num_online_cpus() * sizeof(u64)),
+				&local_iova, GFP_ATOMIC);
+		init_percpu_vars(local_ptr, local_iova);
 	}
-
-	dpi_buf = fpavf->alloc(fpa, DPI_AURA);
-	if (!dpi_buf) {
-		symbol_put(fpapf_com);
-		symbol_put(fpavf_com);
-		dev_err(dev, "Failed to allocate");
-		return -ENODEV;
-	}
-
-	dpi_vf->iommu_domain = iommu_get_domain_for_dev(&pdev->dev);
-	if (dpi_vf->iommu_domain)
-		dpi_buf_phys = iommu_iova_to_phys(dpi_vf->iommu_domain, dpi_buf);
-	else
-		dpi_buf_phys = dpi_buf;
-
-	dpi_buf_ptr = phys_to_virt(dpi_buf_phys);
 	writeq_relaxed(((dpi_buf >> 7) << 7),
 			dpi_vf->reg_base + DPI_VDMA_SADDR);
 	dpi_vf->qctx[0].dpi_buf_ptr = dpi_buf_ptr;
 	dpi_vf->qctx[0].pool_size_m1 = (DPI_CHUNK_SIZE >> 3) - 2;
 	dpi_vf->qctx[0].dpi_buf = dpi_buf;
 	spin_lock_init(&dpi_vf->qctx[0].queue_lock);
-
-	cfg.buf_size = DPI_CHUNK_SIZE;
-	cfg.inst_aura = DPI_AURA;
-
-	hdr.coproc = DPI_COPROC;
-	hdr.msg = DPI_QUEUE_OPEN;
-	hdr.vfid = dpi_vf->vf_id;
-	/* Opening DPI queue */
-	dpipf->receive_message(dpi_vf->vf_id, dpi_vf->domain, &hdr, &req,
-			&resp, &cfg);
 
 	/* Enabling DMA Engine */
 	writeq_relaxed(0x1, dpi_vf->reg_base + DPI_VDMA_EN);
@@ -716,6 +794,10 @@ static void dpi_remove(struct pci_dev *pdev)
 	union mbox_data resp;
 	struct mbox_hdr hdr;
 	struct dpivf_t *dpi_vf;
+
+	if (btype == CN93XX_BOARD)
+		dma_free_coherent(&pdev->dev, (num_online_cpus() * sizeof(u64)),
+				local_ptr, local_iova);
 
 	dpi_vf = pci_get_drvdata(pdev);
 	/* Disable Engine */
