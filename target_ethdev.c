@@ -634,7 +634,7 @@ static bool __mgmt_txq_completion(struct otxmn_dev *mdev, int q_idx, int budget)
 		wmb();
 		WRITE_ONCE(descq->cons_idx, cons_idx);
 		//printk("tx comp host writel params host_addr 0x%p cons_idx %d\n", tq->shadow_cons_idx_ioremap_addr, descq->cons_idx);
-		writel(descq->cons_idx, tq->shadow_cons_idx_ioremap_addr);
+		host_writel(descq->cons_idx, tq->shadow_cons_idx_ioremap_addr);
 		wmb();
 		/* send rx intr event only if host has not disabled intrs
 		 * if host enables intr after we have read this
@@ -1033,7 +1033,7 @@ static bool __handle_rxq_completion(struct otxmn_dev *mdev, int q_idx, int budge
 		wmb();
 		WRITE_ONCE(descq->cons_idx, cons_idx);
 		//printk("rx comp host writel params host_addr 0x%p cons_idx %d\n", rq->shadow_cons_idx_ioremap_addr, descq->cons_idx);
-		writel(descq->cons_idx, rq->shadow_cons_idx_ioremap_addr);
+		host_writel(descq->cons_idx, rq->shadow_cons_idx_ioremap_addr);
 		wmb();
 		/* send tx comp intr event only if host has not disabled intrs
 		 * if host enables intr after we have read this
