@@ -2342,7 +2342,7 @@ uint32_t get_octeon_count(void)
 	oct = get_octeon_device(0);
 	/* 93xx(96xx) supports only one device for now */
 #ifdef USE_SINGLE_PF
-	if (oct->chip_id == OCTEON_CN93XX_PF)
+	if (oct && oct->chip_id == OCTEON_CN93XX_PF)
 		return 1;
 	else
 #endif
