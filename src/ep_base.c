@@ -46,6 +46,7 @@ MODULE_PARM_DESC(epf_num, "epf number to use");
 
 #define PEM_BAR1_INDEX_OFFSET(idx) (0x100 + (idx << 3))
 #define PEM_BAR4_INDEX_OFFSET(idx) (0x700 + (idx << 3))
+#define PEM_DIS_PORT_OFFSET 0x50
 
 #define NPU_HANDSHAKE_SIGNATURE 0xABCDABCD
 void *oei_trig_remap_addr;
@@ -180,6 +181,7 @@ static int npu_base_setup(struct npu_bar_map *bar_map)
 	unsigned long part_num;
 	uint64_t bar_idx_val;
 	uint64_t bar_idx_addr;
+	uint64_t disport_addr;
 	int i;
 
 	part_num = read_cpuid_part_number();
@@ -237,16 +239,19 @@ static int npu_base_setup(struct npu_bar_map *bar_map)
 	printk("Writing BAR entry-15 to map GICD; addr=%llx, val=%llx\n",
 	       bar_idx_addr, bar_idx_val);
 	npu_csr_write(bar_idx_addr, bar_idx_val);
-	
-	
+
 	if (part_num == CAVIUM_CPU_PART_T83)
 		oei_trig_remap_addr = ioremap(CN83XX_SDP0_EPFX_OEI_TRIG_ADDR(epf_num), 8);
 	else if (part_num == MRVL_CPU_PART_OCTEONTX2_96XX)
 		oei_trig_remap_addr = ioremap(CN93XX_SDP0_EPFX_OEI_TRIG_ADDR(epf_num), 8);
-			
+
 	if (oei_trig_remap_addr == NULL) {
 		printk("Failed to ioremap oei_trig space\n");
 		return -1;
+	}
+	if (part_num == MRVL_CPU_PART_OCTEONTX2_96XX) {
+		disport_addr = PEMX_REG_BASE_93XX(pem_num) + PEM_DIS_PORT_OFFSET;
+		npu_csr_write(disport_addr, 1);
 	}
 
 	return 0;
