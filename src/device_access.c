@@ -82,7 +82,8 @@ int mv_request_dbell_irq(int handle, u32 dbell, irq_handler_t irq_handler,
 		sprintf(irq_name, "rpc_irq%d", dbell);
 		irq = irq_list[NPU_FACILITY_RPC_IRQ_IDX+dbell];
 		printk("registering irq %d\n", irq);
-		ret = devm_request_irq(dev, irq, irq_handler, 0, irq_name, dev);
+
+		ret = devm_request_irq(dev, irq, irq_handler, 0, irq_name, arg);
 		if (ret < 0)
 			return ret;
 	} else {
@@ -92,6 +93,27 @@ int mv_request_dbell_irq(int handle, u32 dbell, irq_handler_t irq_handler,
 	return ret;
 }
 EXPORT_SYMBOL(mv_request_dbell_irq);
+
+int mv_free_dbell_irq(int handle, uint32_t dbell, void *arg)
+{
+	struct device *dev = plat_dev;
+	int irq;
+
+	if (handle == MV_FACILITY_RPC) {
+		if (dbell >= MV_FACILITY_RPC_IRQ_CNT) {
+			pr_err("RPC free irq %d is out of range\n", dbell);
+			return -ENOENT;
+		}
+
+		irq = irq_list[NPU_FACILITY_RPC_IRQ_IDX+dbell];
+		devm_free_irq(dev, irq, arg);
+	} else {
+		return -ENOENT;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(mv_free_dbell_irq);
 
 int mv_pci_sync_dma(dma_addr_t host, dma_addr_t target, int direction, int size)
 {
