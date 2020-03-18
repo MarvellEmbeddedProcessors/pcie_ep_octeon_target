@@ -321,13 +321,11 @@ int do_dma_sync(local_dma_addr_t local_dma_addr, host_dma_addr_t host_dma_addr,
 
 	/* Use DMA if the length is 64 bytes or more */
 	if (len >= 64)
-		do_dma_sync_dpi(local_dma_addr, host_dma_addr, local_virt_addr,
+		return do_dma_sync_dpi(local_dma_addr, host_dma_addr, local_virt_addr,
 				len, dir);
 	else
-		do_dma_sync_sli(local_dma_addr, host_dma_addr, local_virt_addr,
+		return do_dma_sync_sli(local_dma_addr, host_dma_addr, local_virt_addr,
 				len, dir);
-
-	return 0;
 }
 EXPORT_SYMBOL(do_dma_sync);
 
