@@ -35,6 +35,14 @@
 #define FPA_NUM_VFS 1
 #define DPI_DMA_CMDX_SIZE 64
 
+
+static unsigned int pem_num = 0;
+module_param(pem_num, uint, 0644);
+MODULE_PARM_DESC(pem_num, "pem number to use");
+/* pem 1 and pem 3 do not support dpi */
+#define MAX_PEM 4
+static int lport[MAX_PEM] = { 0, -1, 1, -1 };
+
 static struct fpapf_com_s *fpapf;
 static struct fpavf_com_s *fpavf;
 u8 *local_ptr;
@@ -335,7 +343,9 @@ struct device *get_dpi_dma_dev(void)
 }
 EXPORT_SYMBOL(get_dpi_dma_dev);
 
-/* caller needs to provide iova addrs, and completion_word, caller needs to poll completion word */
+/* caller needs to provide iova addrs, and completion_word, caller needs to poll completion word 
+ * we use only the common fields in hdr for 8xxx and 9xxx hence dont differentiate
+ */
 int do_dma_async_dpi_vector(local_dma_addr_t *local_addr, host_dma_addr_t *host_addr,
 			    int *len, int num_ptrs, host_dma_dir_t dir, local_dma_addr_t comp_iova)
 {
@@ -343,18 +353,15 @@ int do_dma_async_dpi_vector(local_dma_addr_t *local_addr, host_dma_addr_t *host_
 	dpi_dma_ptr_t lptr[DPI_MAX_PTR] = {0};
 	dpi_dma_ptr_t hptr[DPI_MAX_PTR] = {0};
 	u64 dpi_cmd[DPI_DMA_CMDX_SIZE] = {0};
-	dpi_dma_instr_hdr_s *header = (dpi_dma_instr_hdr_s *)&dpi_cmd[0];
-	dpi_dma_queue_ctx_t ctx = {0};
+	union dpi_dma_instr_hdr_s *header = (union dpi_dma_instr_hdr_s *)&dpi_cmd[0];
 	u8 nfst, nlst;
 	u16 index = 0;
 	int i;
 
 
+	/* TODO check Sum(len[i]) < 64K */
 	if (num_ptrs > DPI_MAX_PTR || num_ptrs < 1)
 		return -EINVAL;
-	/* TODO check Sum(len[i]) < 64K */
-	/* why len ?? */
-	//comp_data = devm_kzalloc(dev, 8, GFP_DMA);
 
 	for (i = 0; i < num_ptrs; i++) {
 		lptr[i].s.ptr = local_addr[i];
@@ -372,34 +379,16 @@ int do_dma_async_dpi_vector(local_dma_addr_t *local_addr, host_dma_addr_t *host_
 		cmd.wptr_cnt++;
 	}
 	if (dir == DMA_FROM_HOST)
-		ctx.xtype = DPI_XTYPE_INBOUND;
+		header->s.xtype = DPI_HDR_XTYPE_E_INBOUND;
 	else
-		ctx.xtype = DPI_XTYPE_OUTBOUND;
+		header->s.xtype = DPI_HDR_XTYPE_E_OUTBOUND;
 
-	ctx.pt = 0;
 	header->s.ptr = comp_iova;
-	header->s.xtype = ctx.xtype & 0x3;
-	header->s.pt = ctx.pt & 0x3;
-	//header->s.ptr = 1;
-	header->s.deallocv = ctx.deallocv;
-	header->s.tt = ctx.tt & 0x3;
-	header->s.grp = ctx.grp & 0x3ff;
-	header->s.csel = 0;
-	header->s.ca = 1;
-	//header->s.fi = 1;
-
-	if (header->s.deallocv)
-		header->s.pvfe = 1;
-
-	/* TODO: define macros for 0x2 and 0x3. */
-	if (header->s.pt == 0x2)
-		header->s.ptr = header->s.ptr | 0x3;
+	header->s.lport = lport[pem_num];
 
 	index += 4;
 
-	if (ctx.xtype ==  DPI_XTYPE_INBOUND) {
-		header->s.fport = 0;
-		header->s.lport = 0;
+	if (header->s.xtype == DPI_HDR_XTYPE_E_INBOUND) {
 		header->s.nfst = cmd.wptr_cnt & 0xf;
 		header->s.nlst = cmd.rptr_cnt & 0xf;
 		nfst = cmd.wptr_cnt & 0xf;
@@ -413,8 +402,6 @@ int do_dma_async_dpi_vector(local_dma_addr_t *local_addr, host_dma_addr_t *host_
 			dpi_cmd[index++] = cmd.rptr[i]->u[1];
 		}
 	} else {
-		header->s.fport = 0;
-		header->s.lport = 0;
 		header->s.nfst = cmd.rptr_cnt & 0xf;
 		header->s.nlst = cmd.wptr_cnt & 0xf;
 		nfst = cmd.rptr_cnt & 0xf;
@@ -442,23 +429,24 @@ int do_dma_async_dpi_vector(local_dma_addr_t *local_addr, host_dma_addr_t *host_
 }
 EXPORT_SYMBOL(do_dma_async_dpi_vector);
 
+ /* we use only the common fields in hdr for 8xxx and 9xxx hence dont differentiate */
 int do_dma_sync_dpi(local_dma_addr_t local_dma_addr, host_dma_addr_t host_addr,
 		    void *local_ptr, int len, host_dma_dir_t dir)
 {
 	struct device *dev = &dpi_vf->pdev->dev;
-	u64  *comp_data;
+	u64  *comp_data = NULL;
 	dpi_dma_buf_ptr_t cmd = {0};
 	dpi_dma_ptr_t lptr = {0};
 	dpi_dma_ptr_t hptr = {0};
 	u64 dpi_cmd[DPI_DMA_CMD_SIZE] = {0};
-	dpi_dma_instr_hdr_s *header = (dpi_dma_instr_hdr_s *)&dpi_cmd[0];
-	dpi_dma_queue_ctx_t ctx = {0};
+	union dpi_dma_instr_hdr_s *header = (union dpi_dma_instr_hdr_s *)&dpi_cmd[0];
 	u8 nfst, nlst;
 	u16 index = 0;
 	u64 iova, comp_iova;
 	u64 *dpi_buf_ptr;
 	unsigned long time_start;
 	int i;
+	int  ret = 0;
 
 	comp_data = dma_alloc_coherent(dev, 128, &comp_iova, GFP_ATOMIC);
 	if (comp_data == NULL) {
@@ -470,7 +458,7 @@ int do_dma_sync_dpi(local_dma_addr_t local_dma_addr, host_dma_addr_t host_addr,
 	if (local_ptr) {
 		if (dir == DMA_FROM_HOST)
 			iova = dma_map_single(dev, local_ptr, len, DMA_FROM_DEVICE);
-		else	
+		else
 			iova = dma_map_single(dev, local_ptr, len, DMA_TO_DEVICE);
 
 	} else {
@@ -485,40 +473,21 @@ int do_dma_sync_dpi(local_dma_addr_t local_dma_addr, host_dma_addr_t host_addr,
 	if (dir == DMA_FROM_HOST) {
 		cmd.rptr[0] = &hptr;
 		cmd.wptr[0] = &lptr;
-		ctx.xtype = DPI_XTYPE_INBOUND;
+		header->s.xtype = DPI_HDR_XTYPE_E_INBOUND;
 	} else {
 		cmd.rptr[0] = &lptr;
 		cmd.wptr[0] = &hptr;
-		ctx.xtype = DPI_XTYPE_OUTBOUND;
+		header->s.xtype = DPI_HDR_XTYPE_E_OUTBOUND;
 	}
 
 	cmd.rptr_cnt = 1;
 	cmd.wptr_cnt = 1;
-
-	ctx.pt = 0;
 	header->s.ptr = comp_iova;
-	header->s.xtype = ctx.xtype & 0x3;
-	header->s.pt = ctx.pt & 0x3;
-	//header->s.ptr = 1;
-	header->s.deallocv = ctx.deallocv;
-	header->s.tt = ctx.tt & 0x3;
-	header->s.grp = ctx.grp & 0x3ff;
-	header->s.csel = 0;
-	header->s.ca = 1;
-	//header->s.fi = 1;
-
-	if (header->s.deallocv)
-		header->s.pvfe = 1;
-
-	/* TODO: define macros for 0x2 and 0x3. */
-	if (header->s.pt == 0x2)
-		header->s.ptr = header->s.ptr | 0x3;
+	header->s.lport = lport[pem_num];
 
 	index += 4;
 
-	if (ctx.xtype ==  DPI_XTYPE_INBOUND) {
-		header->s.fport = 0;
-		header->s.lport = 0;
+	if (header->s.xtype == DPI_HDR_XTYPE_E_INBOUND) {
 		header->s.nfst = cmd.wptr_cnt & 0xf;
 		header->s.nlst = cmd.rptr_cnt & 0xf;
 		nfst = cmd.wptr_cnt & 0xf;
@@ -532,8 +501,6 @@ int do_dma_sync_dpi(local_dma_addr_t local_dma_addr, host_dma_addr_t host_addr,
 			dpi_cmd[index++] = cmd.rptr[i]->u[1];
 		}
 	} else {
-		header->s.fport = 0;
-		header->s.lport = 0;
 		header->s.nfst = cmd.rptr_cnt & 0xf;
 		header->s.nlst = cmd.wptr_cnt & 0xf;
 		nfst = cmd.rptr_cnt & 0xf;
@@ -553,7 +520,8 @@ int do_dma_sync_dpi(local_dma_addr_t local_dma_addr, host_dma_addr_t host_addr,
 	dpi_buf_ptr = dpi_vf->qctx[0].dpi_buf_ptr;
 	if (dpi_dma_queue_write(dpi_vf, 0, index, dpi_cmd)) {
 		dev_err(dev, "DMA queue write fail\n");
-		return -1;
+		ret = -1;
+		goto err;
 	}
 
 	wmb();
@@ -568,23 +536,24 @@ int do_dma_sync_dpi(local_dma_addr_t local_dma_addr, host_dma_addr_t host_addr,
 			for (i = 0; i < index; i++) {
 				printk("dpi_cmd[%d]: 0x%016llx\n", i, dpi_cmd[i]);
 			}
-			return -1;
+			ret = -1;
+			goto err;
 		}
 	}
-	if (*comp_data != 0) {
-		dev_err(dev, "DMA failed with err %llx\n", *comp_data);
-		return -1;
-	}
-
+err:
 	if (local_ptr) {
 		if (dir == DMA_FROM_HOST)
 			dma_unmap_single(dev, iova, len, DMA_FROM_DEVICE);
-		else	
+		else
 			dma_unmap_single(dev, iova, len, DMA_TO_DEVICE);
+	}
 
+	if (*comp_data != 0) {
+		dev_err(dev, "DMA failed with err %llx\n", *comp_data);
+		ret = -1;
 	}
 	dma_free_coherent(dev, 128, comp_data, comp_iova);
-	return 0;
+	return ret;
 }
 EXPORT_SYMBOL(do_dma_sync_dpi);
 
