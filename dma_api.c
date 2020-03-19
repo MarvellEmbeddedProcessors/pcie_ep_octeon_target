@@ -41,7 +41,7 @@ union sli_s2m_op_s {
 #define RWTYPE_NO_SNOOP      1
 
 extern u64 *local_ptr, local_iova;
-extern enum board_type btype;
+extern unsigned long part_num;
 
 union sli0_s2m_regx_acc {
 	uint64_t u64;
@@ -105,7 +105,7 @@ void __iomem *host_ioremap(host_dma_addr_t host_addr)
 
 	/* printk(KERN_DEBUG "host_writel  host_addr 0x%llx val  %u\n",
 		  host_addr, val); */
-	if (btype == CN83XX_BOARD) {
+	if (part_num == CAVIUM_CPU_PART_T83) {
 		index = host_addr >> 32;
 		if (index > 255) {
 			printk(KERN_ERR "phys addr too big 0x%llx\n", host_addr);
@@ -155,7 +155,7 @@ void host_writel(uint32_t val,  void __iomem *host_addr)
 	host_dma_addr_t riova, liova;
 	u32 *lva;
 
-	if (btype == CN83XX_BOARD) {
+	if (part_num == CAVIUM_CPU_PART_T83) {
 		writel(val, host_addr);
 	} else {
 		riova = (host_dma_addr_t)host_addr;

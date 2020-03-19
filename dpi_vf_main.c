@@ -39,7 +39,7 @@ static struct fpapf_com_s *fpapf;
 static struct fpavf_com_s *fpavf;
 u8 *local_ptr;
 u64 local_iova;
-enum board_type btype;
+unsigned long part_num;
 
 //struct dpipf_com_s *dpipf_com_ptr;
 struct dpipf *dpi_pf;
@@ -231,11 +231,11 @@ static int dpi_dma_queue_write(struct dpivf_t *dpi_vf, u16 qid, u16 cmd_count,
 		//dev_info(dev, "%s:%d Allocating new command buffer\n",
 		//		__func__, __LINE__);
 
-		if (btype == CN83XX_BOARD)
+		if (part_num == CAVIUM_CPU_PART_T83)
 			dpi_buf = fpavf->alloc(fpa, DPI_AURA);
-
 		else
 			dpi_buf = npa_alloc_buf();
+
 		if (!dpi_buf) {
 			spin_unlock_bh(&qctx->queue_lock);
 			dev_err(dev, "Failed to allocate");
@@ -275,7 +275,7 @@ static int dpi_dma_queue_write(struct dpivf_t *dpi_vf, u16 qid, u16 cmd_count,
 			*ptr++ = *cmds++;
 		/* queue index may greater than pool size */
 		if (qctx->index >= qctx->pool_size_m1) {
-			if (btype == CN83XX_BOARD)
+			if (part_num == CAVIUM_CPU_PART_T83)
 				dpi_buf = fpavf->alloc(fpa, DPI_AURA);
 			else
 				dpi_buf = npa_alloc_buf();
@@ -588,27 +588,6 @@ int do_dma_sync_dpi(local_dma_addr_t local_dma_addr, host_dma_addr_t host_addr,
 }
 EXPORT_SYMBOL(do_dma_sync_dpi);
 
-static enum board_type get_board_type(void)
-{
-      unsigned int res = 0;
-
-      __asm volatile
-       (
-        "MRS %[result], S3_0_C0_C0_0": [result] "=r" (res)
-           );
-
-      res = res >> 4;
-      res = res & 0xfff;
-
-      if (res == 0xA3)
-              return CN83XX_BOARD;
-      else if (res == 0xB2)
-              return CN93XX_BOARD;
-      else
-              return UNKNOWN_BOARD;
-
-}
-
 int dpi_vf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 {
 	struct device *dev = &pdev->dev;
@@ -623,10 +602,13 @@ int dpi_vf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	u8 *fptr, *fptr1;
 #endif
 	u64 val, *dpi_buf_ptr, dpi_buf, dpi_buf_phys;
-	
-	btype = get_board_type();
-	if ((btype != CN83XX_BOARD) && (btype != CN93XX_BOARD))
+
+	part_num = read_cpuid_part_number();
+	if ((part_num != CAVIUM_CPU_PART_T83) &&
+	    (part_num != MRVL_CPU_PART_OCTEONTX2_96XX)) {
+		printk("Unsupported CPU type\n");
 		return -EINVAL;
+	}
 
 	dpi_vf = devm_kzalloc(dev, sizeof(struct dpivf_t), GFP_KERNEL);
 	if (!dpi_vf) {
@@ -661,7 +643,7 @@ int dpi_vf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	writeq_relaxed(0x0, dpi_vf->reg_base + DPI_VDMA_EN);
 	writeq_relaxed(0x0, dpi_vf->reg_base + DPI_VDMA_REQQ_CTL);
-	if (btype == CN83XX_BOARD) {
+	if (part_num == CAVIUM_CPU_PART_T83) {
 		val = readq_relaxed(dpi_vf->reg_base + DPI_VDMA_SADDR);
 		dpi_vf->vf_id = (val >> 24) & 0xffff;
 		dpi_vf->domain = FPA_DPI_XAQ_GMID;
@@ -700,7 +682,7 @@ int dpi_vf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		npa_aura_pool_init(DPI_NB_CHUNKS, DPI_CHUNK_SIZE,
 				   &dpi_vf->pdev->dev);
 
-		vfid = pdev->devfn - 1;	
+		vfid = pdev->devfn - 1;
 		dpi_buf = npa_alloc_buf();
 		if (!dpi_buf) {
 			dev_err(dev, "Failed to allocate");
@@ -789,7 +771,7 @@ static void dpi_remove(struct pci_dev *pdev)
 	struct mbox_hdr hdr;
 	struct dpivf_t *dpi_vf;
 
-	if (btype == CN93XX_BOARD)
+	if (part_num == MRVL_CPU_PART_OCTEONTX2_96XX)
 		dma_free_coherent(&pdev->dev, (num_online_cpus() * sizeof(u64)),
 				local_ptr, local_iova);
 
