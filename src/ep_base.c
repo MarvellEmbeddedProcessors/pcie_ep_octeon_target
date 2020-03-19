@@ -52,6 +52,7 @@ void *oei_trig_remap_addr;
 void __iomem *nwa_internal_addr;
 EXPORT_SYMBOL(nwa_internal_addr);
 
+struct iommu_ops *smmu_ops;
 //TODO: fix the names npu_barmap_mem and npu_bar_map
 /* local memory mapped through BAR for access from host */
 void *npu_barmap_mem;
@@ -285,7 +286,6 @@ static int npu_base_probe(struct platform_device *pdev)
 	char *dev_id = NPU_BASE_DEVICE_ID;
 	unsigned long part_num;
 	struct device *smmu_dev;
-	const struct iommu_ops *smmu_ops;
 	struct iommu_domain *host_domain;
 
 	part_num = read_cpuid_part_number();
@@ -402,7 +402,14 @@ static void npu_base_shutdown(struct platform_device *pdev)
 
 static int npu_base_remove(struct platform_device *pdev)
 {
+	struct device *dev = &pdev->dev;
+
 	printk("%s: called\n", __func__);
+
+	/* remove device from domain */
+	if (smmu_ops)
+		smmu_ops->remove_device(dev);
+
 	return 0;
 }
 
