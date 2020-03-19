@@ -442,8 +442,9 @@ octnet_push_packet(int octeon_id,
 		skb->protocol = eth_type_trans(skb, skb->dev);
 #else
 		if (unlikely(false == (pport_do_receive(skb)))) {
-			printk("pport receive error port_id(0x%08x)\n",
-			       ntohs(*(__be16 *)skb->data));
+			cavium_print(PRINT_DEBUG,
+				     "pport receive error port_id(0x%08x)\n",
+				     ntohs(*(__be16 *)skb->data));
 			free_recv_buffer(skb);
 			atomic64_inc((atomic64_t *) & priv->stats.rx_errors);
 			return;
