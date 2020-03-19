@@ -88,11 +88,6 @@ sed -e 's/^[0-9][0-9]*\.\([0-9][0-9]*\)\.[0-9][0-9]*.*/\1/')
 KERNEL_REVISION = $(shell echo $(KERNEL_VERSION) | \
 sed -e 's/^[0-9][0-9]*\.[0-9][0-9]*\.\([0-9][0-9]*\).*/\1/')
 
-#extarct kernel patch revision from kernel version
-KERNEL_PATCH_REVISION = $(shell echo $(KERNEL_VERSION) | \
-sed -e 's/^[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\-\([0-9][0-9]*\).*/\1/')
-
-
 #subroutine for comparing kernel version
 kernel_compare = $(shell \
 echo test | awk '{ \
@@ -106,9 +101,6 @@ if($(KERNEL_REVISION) >= $(3)) {print 1} else { print 0 } \
 
 #This can be used for testing IQ/OQs base mode performance on CN73xx/CN78xxpass2
 #OCTDRVFLAGS  += -DIOQ_PERF_MODE_O3
-
-#Use these MACRO for compiling CNNIC Host driver on multiple kernel patch revisions.
-OCTDRVFLAGS += -DKERNEL_PATCH_VERSION=$(KERNEL_PATCH_REVISION)
 
 #Enable this when IOMMU is ON in host machine, for DROQ functional tests.
 OCTDRVFLAGS  += -DDROQ_TEST_REUSE_BUFS

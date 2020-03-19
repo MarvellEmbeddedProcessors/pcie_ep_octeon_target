@@ -531,13 +531,13 @@ static void octnet_setup_napi(octnet_priv_t * priv)
 
 #if !defined(ETHERPCI)
 
-#if ((LINUX_VERSION_CODE < KERNEL_VERSION(3, 14, 0))&&(KERNEL_PATCH_VERSION < 514))
 /* mq support: queue selection support function for netdevice */
-static u16 octnet_select_queue(struct net_device *dev, struct sk_buff *skb)
-#else
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 14, 0))
 static u16 octnet_select_queue(struct net_device *dev, struct sk_buff *skb,
 			       void *accel_priv,
 			       select_queue_fallback_t fallback)
+#else
+#error "No support for kernel version < 3.14"
 #endif
 {
 	int qindex;

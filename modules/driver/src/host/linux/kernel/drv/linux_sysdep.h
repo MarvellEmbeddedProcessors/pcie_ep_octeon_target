@@ -612,24 +612,6 @@ static inline cavium_netbuf_t *cav_net_skb_get(cavium_netbuf_t * skbptr)
 {
 	return skb_get(skbptr);
 }
-#if ((LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0)) && (KERNEL_PATCH_VERSION >= 514))
-static inline void cav_net_check_skb_frags(cavium_netbuf_t * skbptr)
-{
-	struct sk_buff  *skb = skb_shinfo(skbptr)->frag_list;
-
-	while(skb)
-	{
-		/* Decrement the skb->users count if it's more than '1'
-		 * Here kfree_skb() decrments skb->users count only
-		 */
-		if(likely(atomic_read(&skb->users) > 1))
-			kfree_skb(skb);
-
-		skb = skb->next;
-	}
-}
-#endif
-
 #endif
 
 static inline void *cav_net_buff_rx_alloc(uint32_t size, void *ctx UNUSED)

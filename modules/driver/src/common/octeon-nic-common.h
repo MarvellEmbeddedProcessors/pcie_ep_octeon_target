@@ -78,21 +78,6 @@ typedef enum {
 	OCTNET_IFFLAG_MULTICAST = 0x4
 } octnet_ifflags_t;
 
-#if (KERNEL_PATCH_VERSION < 514)
-#if 0
-/* Indicates what features are advertised by the interface. */
-#define ADVERTISED_10baseT_Half     (1 << 0)
-#define ADVERTISED_10baseT_Full     (1 << 1)
-#define ADVERTISED_100baseT_Half    (1 << 2)
-#define ADVERTISED_100baseT_Full    (1 << 3)
-#define ADVERTISED_1000baseT_Half   (1 << 4)
-#define ADVERTISED_1000baseT_Full   (1 << 5)
-#define ADVERTISED_Autoneg          (1 << 6)
-#define ADVERTISED_10000baseT_Full  (1 << 12)
-#define ADVERTISED_Pause            (1 << 13)
-#define ADVERTISED_Asym_Pause       (1 << 14)
-#endif
-#endif
 /*
    wqe
    ---------------  0

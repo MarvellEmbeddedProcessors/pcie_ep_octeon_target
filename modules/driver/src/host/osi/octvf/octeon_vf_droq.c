@@ -839,14 +839,8 @@ octeon_droq_refill(octeon_device_t * octeon_dev UNUSED, octeon_droq_t * droq)
 			/* If users and data reference count equals to one, then
 			 * we are the only user for this SKB and data, we can 
 			 * send same buffer back to the device */
-			if (users == 1 && ref_count == 1) {
-#if ((LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0)) && (KERNEL_PATCH_VERSION >= 514))
-				/* If skb_shinfo(skb)->frag_list points to mearged skbs, decrement users count of each
- 				 * skb by '1' if it is more than '1'
-				 */ 
-				cav_net_check_skb_frags(skbptr);
-#endif
-
+			if (users == 1 && ref_count == 1 &&
+			    skb_is_linear(skb)) {
 				//printk("Users for skb: %d Data reference count:%d reusing DMA buffer\n",users, ref_count);
 				/* We have to make skb->head = NULL to free only SKB pointer
 				 * and not data pointer since we are giving back data pointer 
