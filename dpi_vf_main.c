@@ -315,17 +315,13 @@ static int dpi_dma_queue_write(struct dpivf_t *dpi_vf, u16 qid, u16 cmd_count,
 int do_dma_sync(local_dma_addr_t local_dma_addr, host_dma_addr_t host_dma_addr,
 		void *local_virt_addr, int len,	host_dma_dir_t dir)
 {
-
-	/*printk("dma_sync virt_addr %p host_addr 0x%llx\n len %d dir %d\n",
-		  virt_addr, host_addr, len, dir);*/
-
 	/* Use DMA if the length is 64 bytes or more */
 	if (len >= 64)
-		return do_dma_sync_dpi(local_dma_addr, host_dma_addr, local_virt_addr,
-				len, dir);
+		return do_dma_sync_dpi(local_dma_addr, host_dma_addr, NULL,
+				       len, dir);
 	else
-		return do_dma_sync_sli(local_dma_addr, host_dma_addr, local_virt_addr,
-				len, dir);
+		return do_dma_sync_sli(local_dma_addr, host_dma_addr,
+				       local_virt_addr, len, dir);
 }
 EXPORT_SYMBOL(do_dma_sync);
 
