@@ -766,9 +766,6 @@ static void dpivf_pre_setup_undo(struct dpivf_t *dpi_vf)
 
 static void dpi_remove(struct pci_dev *pdev)
 {
-	union mbox_data req;
-	union mbox_data resp;
-	struct mbox_hdr hdr;
 	struct dpivf_t *dpi_vf;
 
 	if (part_num == MRVL_CPU_PART_OCTEONTX2_96XX)
@@ -779,15 +776,21 @@ static void dpi_remove(struct pci_dev *pdev)
 	/* Disable Engine */
 	writeq_relaxed(0x0, dpi_vf->reg_base + DPI_VDMA_EN);
 
-	hdr.coproc = DPI_COPROC;
-	hdr.msg = DPI_QUEUE_CLOSE;
-	hdr.vfid = dpi_vf->vf_id;
-	resp.data = 0xff;
-	/* Closing DPI queue */
-	dpipf->receive_message(dpi_vf->vf_id, dpi_vf->domain, &hdr, &req,
-			&resp, NULL);
+	if (part_num == CAVIUM_CPU_PART_T83) {
+		union mbox_data req;
+		union mbox_data resp;
+		struct mbox_hdr hdr;
 
-	dpivf_pre_setup_undo(dpi_vf);
+		hdr.coproc = DPI_COPROC;
+		hdr.msg = DPI_QUEUE_CLOSE;
+		hdr.vfid = dpi_vf->vf_id;
+		resp.data = 0xff;
+		/* Closing DPI queue */
+		dpipf->receive_message(dpi_vf->vf_id, dpi_vf->domain, &hdr, &req,
+				       &resp, NULL);
+
+		dpivf_pre_setup_undo(dpi_vf);
+	}
 }
 
 static struct pci_driver dpi_vf_driver = {
