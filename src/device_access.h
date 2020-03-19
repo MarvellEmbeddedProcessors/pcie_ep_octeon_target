@@ -33,5 +33,6 @@ int mv_get_num_dbell(int handle, enum mv_target target, uint32_t *num_dbells);
 int mv_request_dbell_irq(int handle, u32 dbell, irq_handler_t irq_handler,
 			 void *arg);
 int mv_free_dbell_irq(int handle, uint32_t dbell, void *arg);
-int mv_pci_sync_dma(dma_addr_t host, dma_addr_t target, int direction, int size);
+int mv_pci_sync_dma(int handle, dma_addr_t host, void *ep_addr,
+		    dma_addr_t target, int direction, int size);
 #endif

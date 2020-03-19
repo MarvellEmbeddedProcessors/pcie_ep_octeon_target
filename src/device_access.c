@@ -57,7 +57,7 @@ EXPORT_SYMBOL(mv_pci_get_dma_dev);
 
 int mv_get_num_dbell(int handle, enum mv_target target, uint32_t *num_dbells)
 {
-	if (handle == MV_FACILITY_RPC && target == TARGET_HOST)
+	if (handle == MV_FACILITY_RPC && target == TARGET_EP)
 		*num_dbells = conf.num_h2t_dbells;
 	else
 		return -ENOENT;
@@ -115,9 +115,10 @@ int mv_free_dbell_irq(int handle, uint32_t dbell, void *arg)
 }
 EXPORT_SYMBOL(mv_free_dbell_irq);
 
-int mv_pci_sync_dma(dma_addr_t host, dma_addr_t target, int direction, int size)
+int mv_pci_sync_dma(int handle, dma_addr_t host, void *ep_addr,
+		    dma_addr_t target, int direction, int size)
 {
-	return do_dma_sync(target, host, NULL, size, direction);
+	return do_dma_sync(target, host, ep_addr, size, direction);
 }
 EXPORT_SYMBOL(mv_pci_sync_dma);
 
