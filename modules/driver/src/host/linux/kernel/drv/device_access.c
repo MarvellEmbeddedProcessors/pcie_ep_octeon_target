@@ -54,7 +54,7 @@ EXPORT_SYMBOL(mv_pci_get_dma_dev);
 
 int mv_get_num_dbell(int handle, enum mv_target target, uint32_t *num_dbells)
 {
-	if (handle == MV_FACILITY_RPC && target == TARGET_HOST) {
+	if (handle == MV_FACILITY_RPC && target == TARGET_EP) {
 		*num_dbells = rpc_facility_conf.num_h2t_dbells;
 	} else {
 		return -ENOENT;
