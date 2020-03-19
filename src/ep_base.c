@@ -63,12 +63,6 @@ int irq_list[MAX_INTERRUPTS];
 /* platform device */
 struct device	*plat_dev;
 
-enum board_type {
-	CN83XX_BOARD,
-	CN93XX_BOARD,
-	UNKNOWN_BOARD
-};
-
 static uint64_t npu_csr_read(uint64_t csr_addr)
 {
 	uint64_t val;
@@ -95,27 +89,6 @@ static void npu_csr_write(uint64_t csr_addr, uint64_t val)
 	}
 	WRITE_ONCE(*addr, val);
 	iounmap(addr);
-}
-
-static enum board_type get_board_type(void)
-{
-      unsigned int res = 0;
-
-      __asm volatile
-       (
-        "MRS %[result], S3_0_C0_C0_0": [result] "=r" (res)
-           );
-
-      res = res >> 4;
-      res = res & 0xfff;
-
-      if (res == 0xA3)
-	      return CN83XX_BOARD;
-      else if (res == 0xB2)
-	      return CN93XX_BOARD;
-      else
-	      return UNKNOWN_BOARD;
-
 }
 
 static irqreturn_t npu_base_interrupt(int irq, void *dev_id)
@@ -203,14 +176,15 @@ static int npu_base_setup(struct npu_bar_map *bar_map)
 {
 	phys_addr_t barmap_mem_phys;
 	phys_addr_t phys_addr_i;
-	enum board_type btype;
+	unsigned long part_num;
 	uint64_t bar_idx_val;
 	uint64_t bar_idx_addr;
 	int i;
 
-	btype = get_board_type();
-	if ((btype != CN83XX_BOARD) && (btype != CN93XX_BOARD)) {
-		printk("Unsupported board type\n");
+	part_num = read_cpuid_part_number();
+	if ((part_num != CAVIUM_CPU_PART_T83) &&
+	    (part_num != MRVL_CPU_PART_OCTEONTX2_96XX)) {
+		printk("Unsupported CPU type\n");
 		return -1;
 	}
 	npu_barmap_mem = kmalloc(NPU_BARMAP_FIREWALL_SIZE, GFP_KERNEL);
@@ -240,9 +214,9 @@ static int npu_base_setup(struct npu_bar_map *bar_map)
 	     i < CN83XX_PEM_BAR1_INDEX_MAX_ENTRIES-1; i++) {
 		int ii = i - NPU_BARMAP_FIREWALL_FIRST_ENTRY;
 		phys_addr_i = barmap_mem_phys + (ii * NPU_BARMAP_ENTRY_SIZE);
-		if (btype == CN83XX_BOARD)
+		if (part_num == CAVIUM_CPU_PART_T83)
 			bar_idx_addr = PEMX_REG_BASE_83XX(pem_num) + PEM_BAR1_INDEX_OFFSET(i);
-		else if (btype == CN93XX_BOARD)
+		else if (part_num == MRVL_CPU_PART_OCTEONTX2_96XX)
 			bar_idx_addr = PEMX_REG_BASE_93XX(pem_num) + PEM_BAR4_INDEX_OFFSET(i);
 		bar_idx_val = ((phys_addr_i >> 22) << 4) | 1;
 		printk("Writing BAR entry-%d; addr=%llx, val=%llx\n",
@@ -253,9 +227,9 @@ static int npu_base_setup(struct npu_bar_map *bar_map)
 	/* Map GICD CSR space to BAR1_INDEX(15) so that Host can just do a
 	 * local memory write to interrupt NPU for any work on any virtual ring
 	 */
-	if (btype == CN83XX_BOARD)
+	if (part_num == CAVIUM_CPU_PART_T83)
 		bar_idx_addr = PEMX_REG_BASE_83XX(pem_num) + PEM_BAR1_INDEX_OFFSET(15);
-	else if (btype == CN93XX_BOARD)
+	else if (part_num == MRVL_CPU_PART_OCTEONTX2_96XX)
 		bar_idx_addr = PEMX_REG_BASE_93XX(pem_num)  + PEM_BAR4_INDEX_OFFSET(15);
 
 	bar_idx_val = ((NPU_GICD_BASE >> 22) << 4) | 1;
@@ -264,9 +238,9 @@ static int npu_base_setup(struct npu_bar_map *bar_map)
 	npu_csr_write(bar_idx_addr, bar_idx_val);
 	
 	
-	if (btype == CN83XX_BOARD)
+	if (part_num == CAVIUM_CPU_PART_T83)
 		oei_trig_remap_addr = ioremap(CN83XX_SDP0_EPFX_OEI_TRIG_ADDR(epf_num), 8);
-	else if (btype == CN93XX_BOARD)
+	else if (part_num == MRVL_CPU_PART_OCTEONTX2_96XX)
 		oei_trig_remap_addr = ioremap(CN93XX_SDP0_EPFX_OEI_TRIG_ADDR(epf_num), 8);
 			
 	if (oei_trig_remap_addr == NULL) {
@@ -281,13 +255,13 @@ static void npu_handshake_ready(struct npu_bar_map *bar_map)
 {
 	uint64_t scratch_val;
 	uint64_t scratch_addr;
-	enum board_type btype;
+	unsigned long part_num;
 
 	printk("Writing to scratch register\n");
-	btype = get_board_type();
-	if (btype == CN83XX_BOARD)
+	part_num = read_cpuid_part_number();
+	if (part_num == CAVIUM_CPU_PART_T83)
 		scratch_addr = CN83xx_SDP_BASE + CN83XX_SDP0_SCRATCH_OFFSET(epf_num);
-	else if (btype == CN93XX_BOARD)
+	else if (part_num == MRVL_CPU_PART_OCTEONTX2_96XX)
 		scratch_addr = CN93xx_SDP_BASE + CN93XX_SDP0_EPFX_SCRATCH_OFFSET(epf_num);
 	else
 		return;
@@ -309,11 +283,14 @@ static int npu_base_probe(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	int i, irq, first_irq, irq_count, ret;
 	char *dev_id = NPU_BASE_DEVICE_ID;
+	unsigned long part_num;
 	struct device *smmu_dev;
 	const struct iommu_ops *smmu_ops;
 	struct iommu_domain *host_domain;
 
-	if (get_board_type() == CN93XX_BOARD) {
+	part_num = read_cpuid_part_number();
+	printk("CPU Part: 0x%lx\n", part_num);
+	if (part_num == MRVL_CPU_PART_OCTEONTX2_96XX) {
 		smmu_dev = bus_find_device_by_name(&platform_bus_type,
 						   NULL,
 						   "830000000000.smmu");
