@@ -56,6 +56,7 @@ uint64_t addr;
 uint64_t  proc_iq_mask = 0xffffffffffffffffULL;
 
 int cn83xx_pf_read_csrreg_buf(struct seq_file *s, octeon_device_t * oct);
+int cn93xx_pf_read_csrreg_buf(struct seq_file *s, octeon_device_t * oct);
 int cn83xx_pf_read_configreg_buf(struct seq_file *s, octeon_device_t * oct);
 #ifdef GENERATE_PCIE_AER_MSG
 extern pci_ers_result_t
@@ -556,6 +557,8 @@ static int csrreg_show(struct seq_file *s, void *v UNUSED)
 
 	case OCTEON_CN83XX_PF:
 		return cn83xx_pf_read_csrreg_buf(s, oct);
+	case OCTEON_CN93XX_PF:
+		return cn93xx_pf_read_csrreg_buf(s, oct);
 	}
 
 	return 0;
@@ -1370,4 +1373,302 @@ int cn83xx_pf_read_csrreg_buf(struct seq_file *s, octeon_device_t * oct)
 	return 0;
 }
 
+int cn93xx_pf_read_csrreg_buf(struct seq_file *s, octeon_device_t * oct)
+{
+	uint64_t addr = 0, tmp_addr = 0;
+    int i =0;
+    int count, mac;
+    uint32_t offset[] = {0x4000, 0x4010, 0x4018, 0x4040, 
+	    		   (0x4040  | (1 << 3)), 
+	    		   (0x4040  | (2 << 3)), 
+	    		   (0x4040  | (3 << 3)), 
+	    		   (0x4040  | (4 << 3)), 
+	    		   (0x4040  | (5 << 3)), 
+                           0x4078, 0x4088, 0x4098, 0x40a0, 
+	    		   (0x40a0  | (1 << 3)), 
+	    		   (0x40a0  | (2 << 3)), 
+	    		   (0x40a0  | (3 << 3)), 
+	    		   (0x40a0  | (4 << 3)), 
+	    		   (0x40a0  | (5 << 3)), 
+			   0x40c0, 
+	    		   (0x40c0  | (1 << 3)), 
+	    		   (0x40c0  | (2 << 3)), 
+	    		   (0x40c0  | (3 << 3)), 
+	    		   (0x40c0  | (4 << 3)), 
+	    		   (0x40c0  | (5 << 3)), 
+			   0x40f0, 
+                           0x4100, 
+	    		   (0x4100  | (1 << 3)), 
+                           0x4180,
+	    		   (0x4180  | (1 << 3)), 
+			   0x4200,  
+	    		   (0x4200  | (1 << 3)), 
+			   0x4280,  
+	    		   (0x4280  | (1 << 3)), 
+			   0x4300, 
+			   0x6600,
+			   0x6600 | ( 1 << 3),
+			   0x6600 | ( 2 << 3),
+			   0x6600 | ( 3 << 3),
+			   0x6600 | ( 4 << 3),
+			   0x6600 | ( 5 << 3),
+			   0x6600 | ( 6 << 3),
+			   0x6600 | ( 7 << 3),
+			   0x66c0,
+			   0x66c0 | ( 1 << 3),
+			   0x66c0 | ( 2 << 3),
+			   0x66c0 | ( 3 << 3),
+			   0x66c0 | ( 4 << 3),
+			   0x66c0 | ( 5 << 3),
+			   0x66c0 | ( 6 << 3),
+			   0x66c0 | ( 7 << 3),
+			   0x66c0,
+			   0x66c0 | ( 1 << 3),
+			   0x66c0 | ( 2 << 3),
+			   0x66c0 | ( 3 << 3),
+			   0x66c0 | ( 4 << 3),
+			   0x66c0 | ( 5 << 3),
+			   0x66c0 | ( 6 << 3),
+			   0x66c0 | ( 7 << 3),
+			   0x6800,
+			   0x6800 | ( 1 << 5),
+			   0x6800 | ( 1 << 5) | (1 << 4),
+			   0x6800 | ( 2 << 5),
+			   0x6800 | ( 2 << 5) | (1 << 4),
+			   0x6800 | ( 3 << 5),
+			   0x6800 | ( 3 << 5) | (1 << 4),
+			   0x6800 | ( 4 << 5),
+			   0x6800 | ( 4 << 5) | (1 << 4),
+			   0x6800 | ( 5 << 5),
+			   0x6800 | ( 5 << 5) | (1 << 4),
+			   0x6800 | ( 6 << 5),
+			   0x6800 | ( 6 << 5) | (1 << 4),
+			   0x6800 | ( 7 << 5),
+			   0x6800 | ( 7 << 5) | (1 << 4),
+			   0x6800 | ( 8 << 5),
+			   0x6800 | ( 8 << 5) | (1 << 4),
+			   0x6800 | ( 9 << 5),
+			   0x6800 | ( 9 << 5) | (1 << 4),
+			   0x6800 | ( 10 << 5),
+			   0x6800 | ( 10 << 5) | (1 << 4),
+			   0x6800 | ( 11 << 5),
+			   0x6800 | ( 11 << 5) | (1 << 4),
+			   0x6800 | ( 12 << 5),
+			   0x6800 | ( 12 << 5) | (1 << 4),
+			   0x6800 | ( 13 << 5),
+			   0x6800 | ( 13 << 5) | (1 << 4),
+			   0x6800 | ( 14 << 5),
+			   0x6800 | ( 14 << 5) | (1 << 4),
+			   0x6800 | ( 15 << 5),
+			   0x6800 | ( 15 << 5) | (1 << 4),
+			   0x7000,
+			   0x7000 | ( 1 << 5),
+			   0x7000 | ( 1 << 5) | (1 << 4),
+			   0x7000 | ( 2 << 5),
+			   0x7000 | ( 2 << 5) | (1 << 4),
+			   0x7000 | ( 3 << 5),
+			   0x7000 | ( 3 << 5) | (1 << 4),
+			   0x7000 | ( 4 << 5),
+			   0x7000 | ( 4 << 5) | (1 << 4),
+			   0x7000 | ( 5 << 5),
+			   0x7000 | ( 5 << 5) | (1 << 4),
+			   0x7000 | ( 6 << 5),
+			   0x7000 | ( 6 << 5) | (1 << 4),
+			   0x7000 | ( 7 << 5),
+			   0x7000 | ( 7 << 5) | (1 << 4),
+			   0x7000 | ( 8 << 5),
+			   0x7000 | ( 8 << 5) | (1 << 4),
+			   0x7000 | ( 9 << 5),
+			   0x7000 | ( 9 << 5) | (1 << 4),
+			   0x7000 | ( 10 << 5),
+			   0x7000 | ( 10 << 5) | (1 << 4),
+			   0x7000 | ( 11 << 5),
+			   0x7000 | ( 11 << 5) | (1 << 4),
+			   0x7000 | ( 12 << 5),
+			   0x7000 | ( 12 << 5) | (1 << 4),
+			   0x7000 | ( 13 << 5),
+			   0x7000 | ( 13 << 5) | (1 << 4),
+			   0x7000 | ( 14 << 5),
+			   0x7000 | ( 14 << 5) | (1 << 4),
+			   0x7000 | ( 15 << 5),
+			   0x7000 | ( 15 << 5) | (1 << 4),
+			   0x7200,
+			   0x7200 | ( 1 << 5),
+			   0x7200 | ( 1 << 5) | (1 << 4),
+			   0x7200 | ( 2 << 5),
+			   0x7200 | ( 2 << 5) | (1 << 4),
+			   0x7200 | ( 3 << 5),
+			   0x7200 | ( 3 << 5) | (1 << 4),
+			   0x7200 | ( 4 << 5),
+			   0x7200 | ( 4 << 5) | (1 << 4),
+			   0x7200 | ( 5 << 5),
+			   0x7200 | ( 5 << 5) | (1 << 4),
+			   0x7200 | ( 6 << 5),
+			   0x7200 | ( 6 << 5) | (1 << 4),
+			   0x7200 | ( 7 << 5),
+			   0x7200 | ( 7 << 5) | (1 << 4),
+			   0x7200 | ( 8 << 5),
+			   0x7200 | ( 8 << 5) | (1 << 4),
+			   0x7200 | ( 9 << 5),
+			   0x7200 | ( 9 << 5) | (1 << 4),
+			   0x7200 | ( 10 << 5),
+			   0x7200 | ( 10 << 5) | (1 << 4),
+			   0x7200 | ( 11 << 5),
+			   0x7200 | ( 11 << 5) | (1 << 4),
+			   0x7200 | ( 12 << 5),
+			   0x7200 | ( 12 << 5) | (1 << 4),
+			   0x7200 | ( 13 << 5),
+			   0x7200 | ( 13 << 5) | (1 << 4),
+			   0x7200 | ( 14 << 5),
+			   0x7200 | ( 14 << 5) | (1 << 4),
+			   0x7200 | ( 15 << 5),
+			   0x7200 | ( 15 << 5) | (1 << 4),
+                           0x0};
+    uint32_t offset2[] = {0x140, 0x200, 0x210, 0x310, 0x400,0x410,0x420,0x430,
+   			  0x800,0x810,0x820,0x830, 
+   			  0xc00,0xc10,0xc20,0xc30, 0}; 
+    /* Reg dump of DPI registers */
+    seq_printf(s, "\n############## DPI DMA ENGINES #############\n");
+    for(i=0; i< 8; i++) {
+        addr = 0x86e000000000 + i * (0x1ULL << 11);
+        tmp_addr = 0x86e000000038 + i * (0x1ULL << 11);
+        seq_printf(s, "\n\n************** DP_DMA[%d] **************\n", i);
+	    for (; addr <= tmp_addr; addr += 0x8) {
+        	seq_printf(s, "[0x%016llx] : 0x%016llx\n", addr,
+                OCTEON_PCI_WIN_READ(oct, addr));
+        }
+    }
+
+    seq_printf(s, "\n\n ***************** DPI Global registers ***********\n");
+    for(i = 0 ; offset[i] !=0; i++) {
+        addr = 0x86e000000000 + offset[i];
+        seq_printf(s, "[0x%016llx] : 0x%016llx\n", addr,
+                    OCTEON_PCI_WIN_READ(oct, addr));
+    }
+
+    for(i=0; i< 8; i++) {
+        addr = 0x86e020000000 + i * (0x1ULL << 20);
+        tmp_addr = 0x86e020000038 + i * (0x1ULL << 20);
+        seq_printf(s, "\n\n************** DPI_VDMA[%d] **************\n", i);
+	    for (; addr <= tmp_addr; addr += 0x8) {
+        	seq_printf(s, "[0x%016llx] : 0x%016llx\n", addr,
+                OCTEON_PCI_WIN_READ(oct, addr));
+        }
+        
+        addr = 0x86e020000100 + i * (0x1ULL << 20);
+        tmp_addr = 0x86e020000118 + i * (0x1ULL << 20);
+        seq_printf(s, "\n\n************** DPI_VF[%d] **************\n", i);
+	    for (; addr <= tmp_addr; addr += 0x8) {
+        	seq_printf(s, "[0x%016llx] : 0x%016llx\n", addr,
+                OCTEON_PCI_WIN_READ(oct, addr));
+        }
+    }
+
+    mac = octeon_read_csr64(oct, 0x2c100) & 0xff ;
+    count = octeon_read_csr64(oct, (0x2c000 | (mac << 4))) >> 16 ;
+    /* Reg dump of IOQ registers */
+    seq_printf(s, "\n\n\n############## IOQ RINGS #############\n");
+	for (i = 0; i < count; i++) {
+		addr = 0x10000 + i * (0x1ULL << 17);
+		tmp_addr = addr + 0x90;
+        seq_printf(s, "\n\n*************** R[%d]_IN ************\n", i);
+		for (; addr <= tmp_addr; addr += 0x10) {
+			seq_printf(s, "[0x%016llx] : 0x%016llx\n", addr,
+				   octeon_read_csr64(oct, addr));
+		}
+        
+        addr = 0x10100 + i * (0x1ULL << 17);
+		tmp_addr = addr + 0x90;
+        seq_printf(s, "\n\n*************** R[%d]_OUT ************\n", i);
+		for (; addr <= tmp_addr; addr += 0x10) {
+			seq_printf(s, "[0x%016llx] : 0x%016llx\n", addr,
+				   octeon_read_csr64(oct, addr));
+		}
+
+        addr = 0x10210 + i * (0x1ULL << 17);
+		tmp_addr = addr + 0x30;
+        seq_printf(s, "\n\n*************** R[%d]_MBOX ************\n", i);
+		for (; addr <= tmp_addr; addr += 0x10) {
+			seq_printf(s, "[0x%016llx] : 0x%016llx\n", addr,
+				   octeon_read_csr64(oct, addr));
+		}
+
+        seq_printf(s, "\n\n*** R[%d]_ALL_INT, ERR_TYPE, VF_NUM ******\n", i);
+        addr = 0x10400 + i * (0x1ULL << 17);
+		seq_printf(s, "[0x%016llx] : 0x%016llx\n", addr,
+				   octeon_read_csr64(oct, addr));
+	}
+    /* Reg Dump of INT Registers */
+    seq_printf(s, "\n\n\n############## INT Registers  #############\n");
+    addr = 0x20100;
+    tmp_addr = addr + 0x10;
+    	for (; addr <= tmp_addr; addr += 0x10) {
+			seq_printf(s, "[0x%016llx] : 0x%016llx\n", addr,
+				   octeon_read_csr64(oct, addr));
+		}
+    addr = 0x20180;
+    tmp_addr = addr + 0x10;
+    for (; addr <= tmp_addr; addr += 0x10) {
+			seq_printf(s, "[0x%016llx] : 0x%016llx\n", addr,
+				   octeon_read_csr64(oct, addr));
+	}
+    addr = 0x20200;
+    seq_printf(s, "[0x%016llx] : 0x%016llx\n", addr,
+				   octeon_read_csr64(oct, addr));
+    addr = 0x20240;
+    tmp_addr = addr + 0x10;
+    for (; addr <= tmp_addr; addr += 0x10) {
+			seq_printf(s, "[0x%016llx] : 0x%016llx\n", addr,
+				   octeon_read_csr64(oct, addr));
+	}
+    addr = 0x20320;
+    seq_printf(s, "[0x%016llx] : 0x%016llx\n", addr,
+				   octeon_read_csr64(oct, addr));
+    addr = 0x20400;
+    seq_printf(s, "[0x%016llx] : 0x%016llx\n", addr,
+				   octeon_read_csr64(oct, addr));
+    addr = 0x204a0;
+    seq_printf(s, "[0x%016llx] : 0x%016llx\n", addr,
+				   octeon_read_csr64(oct, addr));
+    addr = 0x204e0;
+    tmp_addr = addr + 0x10;
+    for (; addr <= tmp_addr; addr += 0x10) {
+			seq_printf(s, "[0x%016llx] : 0x%016llx\n", addr,
+				   octeon_read_csr64(oct, addr));
+	}
+    addr = 0x20560;
+    tmp_addr = addr + 0x10;
+    for (; addr <= tmp_addr; addr += 0x10) {
+			seq_printf(s, "[0x%016llx] : 0x%016llx\n", addr,
+				   octeon_read_csr64(oct, addr));
+	}
+
+    addr = 0x205f0;
+    seq_printf(s, "[0x%016llx] : 0x%016llx\n", addr,
+				   octeon_read_csr64(oct, addr));
+    addr = 0x26000;
+    seq_printf(s, "[0x%016llx] : 0x%016llx\n", addr,
+				   octeon_read_csr64(oct, addr));
+    addr = 0x2c000;
+    tmp_addr = addr + 0x30;
+    for (; addr <= tmp_addr; addr += 0x10) {
+			seq_printf(s, "[0x%016llx] : 0x%016llx\n", addr,
+				   octeon_read_csr64(oct, addr));
+	}
+    for(i = 0; i<4; i++) {
+        addr = 0x86E08002C000 + (i << 4);
+        seq_printf(s, "[0x%016llx] : 0x%016llx\n", addr,
+                    OCTEON_PCI_WIN_READ(oct, addr));
+    }
+    addr = 0x2c100;
+    seq_printf(s, "[0x%016llx] : 0x%016llx\n", addr,
+				   octeon_read_csr64(oct, addr));
+
+    for(i = 0 ; offset2[i] !=0; i++) {
+        addr = 0x86E0C0080000 + offset2[i];
+        seq_printf(s, "[0x%016llx] : 0x%016llx\n", addr,
+                    OCTEON_PCI_WIN_READ(oct, addr));
+    }
+    return 0;
+}
 /* $Id: cavium_proc.c 163569 2017-07-25 15:58:46Z mchalla $ */

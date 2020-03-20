@@ -1123,6 +1123,7 @@ int setup_cn93xx_octeon_pf_device(octeon_device_t * oct)
 	uint64_t npfs = 0, rppf = 0, pf_srn = 0;
 	uint64_t nvfs = 0, rpvf = 0, vf_srn = 0;
 	uint64_t regval = 0ull;
+	int i;
 #ifndef ETHERPCI
 	int vf_rings = 0;
 #endif
@@ -1274,6 +1275,22 @@ int setup_cn93xx_octeon_pf_device(octeon_device_t * oct)
 
 		cavium_print_msg("SDP_MAC_PF_RING_CTL[%d]:0x%llx\n", oct->pcie_port,
 					regval);
+		/* Assign rings to PF */
+		for (i = 0; i < rppf; i++) {
+			regval = octeon_read_csr64(oct, CN93XX_SDP_EPVF_RING(pf_srn + i));
+			cavium_print_msg("SDP_EPVF_RING[0x%llx]:0x%llx\n",
+					CN93XX_SDP_EPVF_RING(pf_srn + i), regval);
+			regval = 0;
+			if (oct->pcie_port == 2)
+				regval |= (8 << CN93XX_SDP_FUNC_SEL_EPF_BIT_POS);
+			regval |= (0 << CN93XX_SDP_FUNC_SEL_FUNC_BIT_POS);
+
+			octeon_write_csr64(oct, CN93XX_SDP_EPVF_RING(pf_srn + i), regval);
+
+			regval = octeon_read_csr64(oct, CN93XX_SDP_EPVF_RING(pf_srn + i));
+			cavium_print_msg("SDP_EPVF_RING[0x%llx]:0x%llx\n",
+					CN93XX_SDP_EPVF_RING(pf_srn + i), regval);
+		}
 	}
 #ifndef ETHERPCI
 	if (!oct->sriov_info.num_vfs) {
@@ -1312,18 +1329,21 @@ int setup_cn93xx_octeon_pf_device(octeon_device_t * oct)
 		cavium_print_msg("SDP_EPF_RINFO[0x%x]:0x%llx\n", CN93XX_SDP_EPF_RINFO, regval);
 
 		/* Assign ring0 to VF */
-		regval = octeon_read_csr64(oct, CN93XX_SDP_EPVF_RING(vf_srn));
-		cavium_print_msg("SDP_EPVF_RING[0x%llx]:0x%llx\n",
-				CN93XX_SDP_EPVF_RING(vf_srn), regval);
-		regval = 0;
-		regval |= (oct->pcie_port << CN93XX_SDP_FUNC_SEL_EPF_BIT_POS);
-		regval |= (1 << CN93XX_SDP_FUNC_SEL_FUNC_BIT_POS);
+		for (i = 0; i < rpvf; i++) {
+			regval = octeon_read_csr64(oct, CN93XX_SDP_EPVF_RING(vf_srn + i));
+			cavium_print_msg("SDP_EPVF_RING[0x%llx]:0x%llx\n",
+					CN93XX_SDP_EPVF_RING(vf_srn + i), regval);
+			regval = 0;
+			if (oct->pcie_port == 2)
+				regval |= (8 << CN93XX_SDP_FUNC_SEL_EPF_BIT_POS);
+			regval |= (1 << CN93XX_SDP_FUNC_SEL_FUNC_BIT_POS);
 
-		octeon_write_csr64(oct, CN93XX_SDP_EPVF_RING(vf_srn), regval);
+			octeon_write_csr64(oct, CN93XX_SDP_EPVF_RING(vf_srn + i), regval);
 
-		regval = octeon_read_csr64(oct, CN93XX_SDP_EPVF_RING(vf_srn));
-		cavium_print_msg("SDP_EPVF_RING[0x%llx]:0x%llx\n",
-				CN93XX_SDP_EPVF_RING(vf_srn), regval);
+			regval = octeon_read_csr64(oct, CN93XX_SDP_EPVF_RING(vf_srn + i));
+			cavium_print_msg("SDP_EPVF_RING[0x%llx]:0x%llx\n",
+					CN93XX_SDP_EPVF_RING(vf_srn + i), regval);
+		}
 	}
 
 	oct->sriov_info.rings_per_vf = vf_rings;
