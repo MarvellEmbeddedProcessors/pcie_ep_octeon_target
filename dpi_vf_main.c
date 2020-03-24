@@ -10,6 +10,7 @@
 #include <linux/delay.h>
 #include <linux/iommu.h>
 #include <linux/fs.h>
+#include <linux/dmapool.h>
 
 #include "dpi.h"
 #include "fpa.h"
@@ -49,6 +50,7 @@ u8 *local_ptr;
 u64 local_iova;
 unsigned long part_num;
 
+struct dma_pool *comp_buf_pool;
 //struct dpipf_com_s *dpipf_com_ptr;
 struct dpipf *dpi_pf;
 struct dpivf_t *dpi_vf;
@@ -448,7 +450,7 @@ int do_dma_sync_dpi(local_dma_addr_t local_dma_addr, host_dma_addr_t host_addr,
 	int i;
 	int  ret = 0;
 
-	comp_data = dma_alloc_coherent(dev, 128, &comp_iova, GFP_ATOMIC);
+	comp_data = dma_pool_alloc(comp_buf_pool, GFP_KERNEL, &comp_iova);
 	if (comp_data == NULL) {
 		printk("dpi_dma: dma alloc errr\n");
 		return -1;
@@ -552,7 +554,7 @@ err:
 		dev_err(dev, "DMA failed with err %llx\n", *comp_data);
 		ret = -1;
 	}
-	dma_free_coherent(dev, 128, comp_data, comp_iova);
+	dma_pool_free(comp_buf_pool, comp_data, comp_iova);
 	return ret;
 }
 EXPORT_SYMBOL(do_dma_sync_dpi);
@@ -676,6 +678,12 @@ int dpi_vf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	dpi_vf->qctx[0].dpi_buf = dpi_buf;
 	spin_lock_init(&dpi_vf->qctx[0].queue_lock);
 
+	comp_buf_pool = dma_pool_create("comp_buf_pool", dev, 10 * 128, 128, 0);
+	if (!comp_buf_pool) {
+		pr_err("ERROR: Cannot allocate DMA buffer pool\n");
+		return -ENOMEM;
+	}
+
 	/* Enabling DMA Engine */
 	writeq_relaxed(0x1, dpi_vf->reg_base + DPI_VDMA_EN);
 
@@ -760,6 +768,9 @@ static void dpi_remove(struct pci_dev *pdev)
 
 		dpivf_pre_setup_undo(dpi_vf);
 	}
+
+	if (comp_buf_pool)
+		dma_pool_destroy(comp_buf_pool);
 }
 
 static struct pci_driver dpi_vf_driver = {
