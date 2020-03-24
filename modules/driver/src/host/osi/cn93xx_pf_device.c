@@ -7,6 +7,8 @@
 
 extern int cn93xx_droq_intr_handler(octeon_ioq_vector_t * ioq_vector);
 
+extern int num_rings_per_pf;
+extern int num_rings_per_vf;
 extern void cn93xx_iq_intr_handler(octeon_ioq_vector_t * ioq_vector);
 
 void cn93xx_dump_iq_regs(octeon_device_t * oct)
@@ -953,8 +955,7 @@ static void cn93xx_enable_pf_interrupt(void *chip, uint8_t intr_flag)
 			   intr_mask);
 	octeon_write_csr64(oct, CN93XX_SDP_EPF_VFORE_RINT_ENA_W1S(0), //TODO
 			   intr_mask);
-	octeon_write_csr64(oct, CN93XX_SDP_EPF_OEI_RINT_ENA_W1S,
-			   intr_mask);
+	octeon_write_csr64(oct, CN93XX_SDP_EPF_OEI_RINT_ENA_W1S, -1ULL);
 	octeon_write_csr64(oct, CN93XX_SDP_EPF_MISC_RINT_ENA_W1S,
 			   intr_mask);
 	octeon_write_csr64(oct, CN93XX_SDP_EPF_PP_VF_RINT_ENA_W1S(0),  //TODO
@@ -992,8 +993,7 @@ static void cn93xx_disable_pf_interrupt(void *chip, uint8_t intr_flag)
 			   CN93XX_SDP_EPF_IRERR_RINT_ENA_W1C, intr_mask);
 	octeon_write_csr64(oct, CN93XX_SDP_EPF_ORERR_RINT_ENA_W1C,
 			   intr_mask);
-	octeon_write_csr64(oct, CN93XX_SDP_EPF_OEI_RINT_ENA_W1C,
-			   intr_mask);
+	octeon_write_csr64(oct, CN93XX_SDP_EPF_OEI_RINT_ENA_W1C, -1ULL);
 	octeon_write_csr64(oct, CN93XX_SDP_EPF_MISC_RINT_ENA_W1C,
 			   intr_mask);
 	octeon_write_csr64(oct, CN93XX_SDP_EPF_PP_VF_RINT_ENA_W1C(0), //TODO
@@ -1200,11 +1200,11 @@ int setup_cn93xx_octeon_pf_device(octeon_device_t * oct)
 		vf_srn = 0;
 	} else {
 		/* No VF enabled, Assign ring to PF */
-		npfs = 8;
+		npfs = 1;
 		pf_srn = 0;
-		rppf = 1;
+		rppf = num_rings_per_pf;
 		nvfs = 0;
-		rpvf = 0;
+		rpvf = num_rings_per_vf;
 		vf_srn = 0;
 	}
 

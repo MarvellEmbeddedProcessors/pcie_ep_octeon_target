@@ -39,6 +39,14 @@ int octeon_msix = 1;
 module_param(octeon_msix, int, 0);
 MODULE_PARM_DESC(octeon_msix, "Flag for enabling MSI-X interrupts");
 
+int num_rings_per_pf = 8;
+module_param(num_rings_per_pf, int, 0);
+MODULE_PARM_DESC(num_rings_per_pf, "Number of rings per PF");
+
+int num_rings_per_vf = 0;
+module_param(num_rings_per_vf, int, 0);
+MODULE_PARM_DESC(num_rings_per_vf, "Number of rings per VF");
+
 int num_vfs = 0;
 module_param(num_vfs, int, 0);
 MODULE_PARM_DESC(num_vfs, "Number of Virtual Functions");

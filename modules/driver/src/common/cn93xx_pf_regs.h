@@ -79,6 +79,7 @@
 #define    CN93XX_EPF_OFFSET                       (0x1ULL << 25)
 #define    CN93XX_MAC_OFFSET                       (0x1ULL << 4)
 #define    CN93XX_BIT_ARRAY_OFFSET                 (0x1ULL << 4)
+#define    CN93XX_EPVF_RING_OFFSET                 (0x1ULL << 4)
 
 /* ################# Scratch Registers ######################### */
 #define    CN93XX_SDP_EPF_SCRATCH                  0x205E0
@@ -473,11 +474,11 @@
 
 
 #define	   CN93XX_SDP_EPVF_RING(ring)	            \
-                (CN93XX_SDP_EPVF_RING_START + ((ring) * CN93XX_RING_OFFSET))
+                (CN93XX_SDP_EPVF_RING_START + ((ring) * CN93XX_EPVF_RING_OFFSET))
 #define	   CN93XX_SDP_IN_RING_TB_MAP(ring)	            \
-                (CN93XX_SDP_N_RING_TB_MAP_START + ((ring) * CN93XX_RING_OFFSET))
+                (CN93XX_SDP_N_RING_TB_MAP_START + ((ring) * CN93XX_EPVF_RING_OFFSET))
 #define	   CN93XX_SDP_IN_RATE_LIMIT(ring)	            \
-                (CN93XX_SDP_IN_RATE_LIMIT_START + ((ring) * CN93XX_RING_OFFSET))
+                (CN93XX_SDP_IN_RATE_LIMIT_START + ((ring) * CN93XX_EPVF_RING_OFFSET))
 #define	   CN93XX_SDP_MAC_PF_RING_CTL(mac)	            \
                 (CN93XX_SDP_MAC_PF_RING_CTL_START + ((mac) * CN93XX_MAC_OFFSET))
 

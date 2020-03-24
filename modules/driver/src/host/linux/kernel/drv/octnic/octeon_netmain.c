@@ -37,6 +37,7 @@ extern void octnet_napi_drv_callback(int oct_id, int oq_no, int event);
 extern void octnet_napi_callback(void *);
 #endif
 
+static inline uint32_t octnet_get_num_ioqs(octeon_device_t * octeon_dev);
 struct octdev_props_t *octprops[MAX_OCTEON_DEVICES];
 
 octeon_config_t *octeon_dev_conf(octeon_device_t * oct);
@@ -184,7 +185,7 @@ int octnet_get_inittime_link_status(void *oct, void *props_ptr)
 	octeon_device_t *oct_dev = (octeon_device_t *) oct;
 	props = (struct octdev_props_t *)props_ptr;
 
-#if 0 //Pradeep
+#if 0
 	/* Use the link status soft instruction pre-allocated
 	   for this octeon device. */
 	si = props->si_link_status;
@@ -194,7 +195,7 @@ int octnet_get_inittime_link_status(void *oct, void *props_ptr)
 	ls = props->ls;
 	cavium_memset(ls, 0, OCT_LINK_STATUS_RESP_SIZE);
 
-#if 0 //Pradeep
+#if 0
 	cavium_init_wait_channel(&ls->s.wc);
 	si->rptr = &(ls->resp_hdr);
 	si->irh.rlenssz = (OCT_LINK_STATUS_RESP_SIZE - sizeof(ls->s));
@@ -229,7 +230,7 @@ int octnet_get_inittime_link_status(void *oct, void *props_ptr)
 			printk("dma[%d]: 0x%016llx\n", i, *(tmp + i));
 	}
 #endif
-#if 0 //Pradeep
+#if 0
 
 	si->dptr = dma_info;
 	si->ih.dlengsz = sizeof(oct_stats_dma_info_t);
@@ -254,7 +255,7 @@ int octnet_get_inittime_link_status(void *oct, void *props_ptr)
 	    || (oct_dev->chip_id == OCTEON_CN83XX_VF))
 		num_q = 8;
 	else if (oct_dev->chip_id == OCTEON_CN93XX_PF)
-		num_q = 1;
+		num_q = octnet_get_num_ioqs(oct_dev);
 
         ls->status = 0;
         ls->link_count = 1;
@@ -795,7 +796,8 @@ static inline uint32_t octnet_get_num_ioqs(octeon_device_t * octeon_dev)
 	uint32_t num_ioqs = 0, vf_rings = 0;
 	octeon_config_t *conf = octeon_dev_conf(octeon_dev);
 
-	if (octeon_dev->chip_id == OCTEON_CN83XX_PF) {
+	if ((octeon_dev->chip_id == OCTEON_CN83XX_PF) ||
+	    (octeon_dev->chip_id == OCTEON_CN93XX_PF))	{
 
 		num_ioqs = octeon_dev->sriov_info.rings_per_pf;
 		vf_rings = octeon_dev->sriov_info.rings_per_vf;
@@ -812,10 +814,6 @@ static inline uint32_t octnet_get_num_ioqs(octeon_device_t * octeon_dev)
 	} else if (octeon_dev->chip_id == OCTEON_CN83XX_VF) {
 
 		num_ioqs = octeon_dev->rings_per_vf;
-
-	} else if (octeon_dev->chip_id == OCTEON_CN93XX_PF) {
-
-		num_ioqs = 1;
 
 	} else {
 
