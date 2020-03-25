@@ -14,7 +14,6 @@
 #include <linux/string.h>
 
 #include "barmap.h"
-#include "facility.h"
 #include "device_access.h"
 #include "dma_api.h"
 
@@ -24,7 +23,7 @@ extern struct device *plat_dev;
 
 int mv_get_facility_handle(char *name)
 {
-	if (!strcmp(name, "RPC"))
+	if (!strcmp(name, MV_FACILITY_NAME_RPC))
 		return conf.type;
 	else
 		return -ENOENT;
@@ -115,8 +114,8 @@ int mv_free_dbell_irq(int handle, uint32_t dbell, void *arg)
 }
 EXPORT_SYMBOL(mv_free_dbell_irq);
 
-int mv_pci_sync_dma(int handle, dma_addr_t host, void *ep_addr,
-		    dma_addr_t target, int direction, int size)
+int mv_pci_sync_dma(int handle, host_dma_addr_t host, void *ep_addr,
+		    dma_addr_t target, enum mv_dma_dir direction, u32 size)
 {
 	return do_dma_sync(target, host, ep_addr, size, direction);
 }

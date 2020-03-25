@@ -53,7 +53,7 @@ void *oei_trig_remap_addr;
 void __iomem *nwa_internal_addr;
 EXPORT_SYMBOL(nwa_internal_addr);
 
-struct iommu_ops *smmu_ops;
+const struct iommu_ops *smmu_ops;
 //TODO: fix the names npu_barmap_mem and npu_bar_map
 /* local memory mapped through BAR for access from host */
 void *npu_barmap_mem;
@@ -221,6 +221,10 @@ static int npu_base_setup(struct npu_bar_map *bar_map)
 			bar_idx_addr = PEMX_REG_BASE_83XX(pem_num) + PEM_BAR1_INDEX_OFFSET(i);
 		else if (part_num == MRVL_CPU_PART_OCTEONTX2_96XX)
 			bar_idx_addr = PEMX_REG_BASE_93XX(pem_num) + PEM_BAR4_INDEX_OFFSET(i);
+		else {
+			printk("Error: Invalid part_num = %lu\n", part_num);
+			return -1;
+		}
 		bar_idx_val = ((phys_addr_i >> 22) << 4) | 1;
 		printk("Writing BAR entry-%d; addr=%llx, val=%llx\n",
 		       i, bar_idx_addr, bar_idx_val);
