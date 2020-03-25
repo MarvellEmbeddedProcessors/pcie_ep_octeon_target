@@ -21,7 +21,7 @@ mv_facility_conf_t rpc_facility_conf;
 
 int mv_get_facility_handle(char *name)
 {
-	if (!strcmp(name, "RPC"))
+	if (!strcmp(name, MV_FACILITY_NAME_RPC))
 		return rpc_facility_conf.type;
 	else
 		return -ENOENT;

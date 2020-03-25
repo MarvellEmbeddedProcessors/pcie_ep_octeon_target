@@ -1,5 +1,5 @@
 /**
- * @file mv_facility.h
+ * @file facility.h
  * @brief defines facility interface data structures and APIs
  *
  * Facility is a mechanism provided through which host and target
@@ -10,6 +10,8 @@
 #ifndef _FACILITY_H_
 #define _FACILITY_H_
 #include <linux/interrupt.h>
+
+#include "mv_facility.h"
 
 /**
  * @brief Facility type
@@ -52,21 +54,6 @@ enum mv_facility_flag {
 #define MV_FACILITY_RPC_IRQ_CNT 5
 
 #define MV_FACILITY_MAX_DBELLS 16
-
-/**
- * @brief facility memory address
- *
- * address of memory assigned to facility
- */
-typedef union {
-	uint64_t u64;
-
-	/* Host IO remapped address of facility memory inside BAR1 */
-	void *host_addr;
-
-	/* Target virtual address of facility memory mapped to BAR1 */
-	void *target_addr;
-} mv_facility_map_addr_t;
 
 /**
  * @brief Facility DMA device

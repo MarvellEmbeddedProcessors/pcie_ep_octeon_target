@@ -8,37 +8,10 @@
  * it under the terms of the GNU General Public License version 2 as
  * published by the Free Software Foundation.
  */
-#ifndef __HOST_DEVICE_ACCESS_H__
-#define __HOST_DEVICE_ACCESS_H__
+#ifndef _HOST_DEVICE_ACCESS_H_
+#define _HOST_DEVICE_ACCESS_H_
 
+#include "mv_facility.h"
 #include "facility.h"
 
-enum mv_target {
-	TARGET_HOST = 0,
-	TARGET_EP = 1,
-};
-
-#if 0
-typedef union {
-	uint64_t	u64;
-	/* Host IO remapped address of mapped memory */
-	void __iomem *host_addr;
-	/* Target virtual address of mapped memory */
-	void *target_addr;
-} mv_bar_map_addr_t;
-#endif
-
-typedef mv_facility_map_addr_t mv_bar_map_addr_t;
-
-typedef struct {
-	mv_bar_map_addr_t addr;
-	uint32_t memsize;
-} mv_bar_map_t;
-
-int mv_get_facility_handle(char *name);
-int mv_get_bar_mem_map(int handle, mv_bar_map_t *bar_map);
-int mv_pci_get_dma_dev(int handle, struct device **dev);
-int mv_get_num_dbell(int handle, enum mv_target target, uint32_t *num_dbells);
-int mv_send_dbell(int handle, uint32_t dbell);
-
-#endif
+#endif /* _HOST_DEVICE_ACCESS_H_ */
