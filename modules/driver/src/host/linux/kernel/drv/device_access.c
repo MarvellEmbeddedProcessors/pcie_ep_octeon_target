@@ -18,11 +18,14 @@
 #include "device_access.h"
 
 mv_facility_conf_t rpc_facility_conf;
+mv_facility_conf_t nwa_facility_conf;
 
 int mv_get_facility_handle(char *name)
 {
 	if (!strcmp(name, MV_FACILITY_NAME_RPC))
 		return rpc_facility_conf.type;
+	else if (!strcmp(name, MV_FACILITY_NAME_NETWORK_AGENT))
+		return nwa_facility_conf.type;
 	else
 		return -ENOENT;
 }
@@ -33,6 +36,9 @@ int mv_get_bar_mem_map(int handle, mv_bar_map_t *bar_map)
 	if (handle == MV_FACILITY_RPC) {
 		bar_map->addr.host_addr = rpc_facility_conf.memmap.host_addr;
 		bar_map->memsize = rpc_facility_conf.memsize;
+	} else if (handle == MV_FACILITY_NW_AGENT) {
+		bar_map->addr.host_addr = nwa_facility_conf.memmap.host_addr;
+		bar_map->memsize = nwa_facility_conf.memsize;
 	} else {
 		return -ENOENT;
 	}
@@ -98,5 +104,20 @@ int host_device_access_init(void)
 		 rpc_facility_conf.memsize,
 		 rpc_facility_conf.num_h2t_dbells);
 
+	ret = mv_get_facility_conf(MV_FACILITY_NW_AGENT, &nwa_facility_conf);
+	if (ret < 0) {
+		pr_err("Error: getting facility configuration %d failed %d\n",
+		       MV_FACILITY_RPC, ret);
+		return ret;
+	}
+
+	printk("	%s configuration\n"
+		"Type = %d, Host Addr = 0x%llx Memsize = 0x%x\n"
+		 "Doorbell_count = %d\n",
+		 nwa_facility_conf.name,
+		 nwa_facility_conf.type,
+		 (u64)nwa_facility_conf.memmap.host_addr,
+		 nwa_facility_conf.memsize,
+		 nwa_facility_conf.num_h2t_dbells);
 	return ret;
 }

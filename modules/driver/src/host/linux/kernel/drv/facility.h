@@ -45,7 +45,7 @@ enum mv_facility_flag {
 #define FACILITY_NAME_LEN 32
 #define MV_FACILITY_NAME_CONTROL "control"
 #define MV_FACILITY_NAME_MGMT_NETDEV "mgmt-netdev"
-#define MV_FACILITY_NAME_NETWORK_AGENT "network-agent"
+#define MV_FACILITY_NAME_NETWORK_AGENT "nwa"
 #define MV_FACILITY_NAME_RPC "rpc"
 
 #define MV_FACILITY_CONTROL_IRQ_CNT 1
