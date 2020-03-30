@@ -43,7 +43,7 @@ int num_rings_per_pf = 8;
 module_param(num_rings_per_pf, int, 0);
 MODULE_PARM_DESC(num_rings_per_pf, "Number of rings per PF");
 
-int num_rings_per_vf = 0;
+int num_rings_per_vf = 1;
 module_param(num_rings_per_vf, int, 0);
 MODULE_PARM_DESC(num_rings_per_vf, "Number of rings per VF");
 

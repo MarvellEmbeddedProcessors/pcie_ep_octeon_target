@@ -802,10 +802,6 @@ static inline uint32_t octnet_get_num_ioqs(octeon_device_t * octeon_dev)
 		num_ioqs = octeon_dev->sriov_info.rings_per_pf;
 		vf_rings = octeon_dev->sriov_info.rings_per_vf;
 
-		/* Limit the number of qs on PF to either 8 or same as the qs to vf */
-		if (vf_rings && (num_ioqs > vf_rings))
-			num_ioqs = vf_rings;
-
 		if (num_ioqs > MAX_IOQS_PER_NICIF)
 			num_ioqs = MAX_IOQS_PER_NICIF;
 

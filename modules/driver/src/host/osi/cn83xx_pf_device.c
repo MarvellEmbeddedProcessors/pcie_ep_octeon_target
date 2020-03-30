@@ -33,6 +33,8 @@ extern void mv_facility_irq_handler(uint64_t event_word);
 extern int cn83xx_droq_intr_handler(octeon_ioq_vector_t * ioq_vector);
 
 extern void cn83xx_iq_intr_handler(octeon_ioq_vector_t * ioq_vector);
+extern int num_rings_per_pf;
+extern int num_rings_per_vf;
 
 void cn83xx_dump_iq_regs(octeon_device_t * oct)
 {
@@ -1213,8 +1215,7 @@ int setup_cn83xx_octeon_pf_device(octeon_device_t * oct)
 			goto free_barx;
 		}
 
-		/** Leave at minimum 1 ioq for PF function. */
-		vf_rings = (epf_trs - 1) / oct->sriov_info.num_vfs;
+		vf_rings = num_rings_per_vf;
 
 		/** VF can support MAX up to 8 IOQs */
 		if (vf_rings > CN83XX_MAX_RINGS_PER_VF)
@@ -1230,14 +1231,12 @@ int setup_cn83xx_octeon_pf_device(octeon_device_t * oct)
 			    ("%s Required queue number exceeds total rings\n",
 			     __FUNCTION__);
 		}
-
 	}
 
 	oct->sriov_info.rings_per_vf = vf_rings;
 	/** All the remaining queues are handled by Physical Function */
 	oct->sriov_info.pf_srn = epf_srn + (vf_rings * oct->sriov_info.num_vfs);
-	oct->sriov_info.rings_per_pf =
-	    epf_trs - (vf_rings * oct->sriov_info.num_vfs);
+	oct->sriov_info.rings_per_pf = num_rings_per_pf;
 
 	oct->sriov_info.sriov_enabled = 0;
 
