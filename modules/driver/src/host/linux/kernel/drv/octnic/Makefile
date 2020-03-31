@@ -102,6 +102,7 @@ OBJS += octeon_netmain.o   \
         ../../../../osi/octeon_nic.o
 
 OBJNAME := octnic
+OBJDBG  := octdbg
 
 default: check_cnnic check all 
 
@@ -149,8 +150,9 @@ OBJNAME := oct_vf_nic
 endif
 
 # The driver object file
-obj-m         :=  $(OBJNAME).o
+obj-m         :=  $(OBJNAME).o $(OBJDBG).o
 $(OBJNAME)-y  :=  $(OBJS)
+$(OBJDBG)-y   :=  octeon_debug.o
 
 
 check:
@@ -168,12 +170,13 @@ check:
 all: check_cnnic
 	$(MAKE) -C $(kernel_source) SUBDIRS=`pwd`  modules; 
 	@rm -f $(BINDIR) 2> /dev/null; mkdir -p $(BINDIR);
-	@rm -f $(BINDIR)/$(OBJNAME).ko; 
+	@rm -f $(BINDIR)/$(OBJNAME).ko $(BINDIR)/$(OBJDBG).ko; 
 	@ln -s `pwd`/$(OBJNAME).ko $(BINDIR) ; 
+	@ln -s `pwd`/$(OBJDBG).ko $(BINDIR) ; 
 
 
 clean: check_cnnic
-	rm -rf $(OBJS) $(BINDIR)/$(OBJNAME).ko *.ko .*.cmd *.mod.* *.o *~ .tmp_versions .cache.mk .*.o.d
+	rm -rf $(OBJS) $(BINDIR)/$(OBJNAME).ko $(BINDIR)/$(OBJDBG).ko *.ko .*.cmd *.mod.* *.o *~ .tmp_versions .cache.mk .*.o.d
 	rm -f modules.order Module.symvers *.ko.unsigned *.ur-safe
 
 
