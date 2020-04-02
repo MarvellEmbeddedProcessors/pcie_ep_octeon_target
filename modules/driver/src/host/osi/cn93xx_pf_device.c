@@ -5,6 +5,7 @@
 #include "octeon_macros.h"
 #include "octeon-pci.h"
 
+extern void mv_facility_irq_handler(uint64_t event_word);
 extern int cn93xx_droq_intr_handler(octeon_ioq_vector_t * ioq_vector);
 
 extern int num_rings_per_pf;
@@ -776,9 +777,9 @@ cvm_intr_return_t cn93xx_interrupt_handler(void *dev)
 	/* Check for OEI INTR */
 	reg_val = octeon_read_csr64(oct, CN93XX_SDP_EPF_OEI_RINT);
 	if (reg_val) {
-		cavium_print_msg("received OEI_RINT intr: 0x%016llx\n",
-				 reg_val);
 		octeon_write_csr64(oct, CN93XX_SDP_EPF_OEI_RINT, reg_val);
+		/* used by facility */
+		mv_facility_irq_handler(reg_val);
 		goto irq_handled;
 	}
 
