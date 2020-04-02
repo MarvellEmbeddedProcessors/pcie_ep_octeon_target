@@ -743,7 +743,10 @@ octnet_setup_nic_device(int octeon_id, oct_link_info_t * link_info, int ifidx)
 
 	OCTNET_IFSTATE_SET(priv, OCT_NIC_IFSTATE_REGISTERED);
 
+#ifdef OCTNIC_CTRL
+	/* Define OCTNIC_CTRL if octeon supports NIC control commands */
 	octnet_send_rx_ctrl_cmd(priv, 1);
+#endif
 
 	octnet_print_link_info(pndev);
 
