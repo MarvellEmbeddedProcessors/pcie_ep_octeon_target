@@ -450,7 +450,7 @@ int do_dma_sync_dpi(local_dma_addr_t local_dma_addr, host_dma_addr_t host_addr,
 	int i;
 	int  ret = 0;
 
-	comp_data = dma_pool_alloc(comp_buf_pool, GFP_KERNEL, &comp_iova);
+	comp_data = dma_pool_alloc(comp_buf_pool, GFP_ATOMIC, &comp_iova);
 	if (comp_data == NULL) {
 		printk("dpi_dma: dma alloc errr\n");
 		return -1;
