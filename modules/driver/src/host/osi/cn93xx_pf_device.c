@@ -4,6 +4,7 @@
 #include "cn93xx_pf_device.h"
 #include "octeon_macros.h"
 #include "octeon-pci.h"
+#include <linux/log2.h>
 
 extern void mv_facility_irq_handler(uint64_t event_word);
 extern int cn93xx_droq_intr_handler(octeon_ioq_vector_t * ioq_vector);
@@ -1193,12 +1194,12 @@ int setup_cn93xx_octeon_pf_device(octeon_device_t * oct)
 	   it assigns it to PF */
 	if(oct->sriov_info.num_vfs) {
 		/* VF is enabled, Assign ring to VF */
-		npfs = 8;
+		npfs = 1;
 		pf_srn = 0;
-		rppf = 0;
+		rppf = num_rings_per_pf;
 		nvfs = oct->sriov_info.num_vfs;
-		rpvf = 1;
-		vf_srn = 0;
+		rpvf = num_rings_per_vf;
+		vf_srn = pf_srn + (npfs * roundup_pow_of_two(num_rings_per_pf));
 	} else {
 		/* No VF enabled, Assign ring to PF */
 		npfs = 1;

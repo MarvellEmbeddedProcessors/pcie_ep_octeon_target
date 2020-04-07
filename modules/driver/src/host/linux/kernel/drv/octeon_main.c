@@ -954,9 +954,6 @@ int octeon_device_init(octeon_device_t * octeon_dev)
 		return 0;
 	}
 #else
-	/* Don't start poll thread if vfs are enabled for 96xx */
-	if((octeon_dev->chip_id == OCTEON_CN93XX_PF) && num_vfs)
-		return 0;
 
 	if(octeon_dev->chip_id == OCTEON_CN83XX_PF ||
 	   octeon_dev->chip_id == OCTEON_CN93XX_PF) {

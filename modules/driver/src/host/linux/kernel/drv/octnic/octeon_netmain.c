@@ -288,7 +288,7 @@ octnet_get_runtime_link_status(void            *oct,
 {
 	int                          ifidx;
 	struct octdev_props_t       *props;
-	oct_link_status_resp_t      *ls, tmp_status;
+	oct_link_status_resp_t      *ls, *tmp_status;
 
 
 	props = (struct octdev_props_t  *)props_ptr;
@@ -303,9 +303,10 @@ octnet_get_runtime_link_status(void            *oct,
 	/* Store the status and read it back. 
 	 * If there is a change in the status take the recent status */
 	ls->status = COMPLETION_WORD_INIT;
-	cavium_memcpy(&tmp_status, ls, sizeof(oct_link_status_resp_t));
+	tmp_status = cavium_alloc_virt(sizeof(oct_link_status_resp_t));
+	cavium_memcpy(tmp_status, ls, sizeof(oct_link_status_resp_t));
 	if(ls->status == COMPLETION_WORD_INIT)
-   		cavium_memcpy(ls, &tmp_status, sizeof(oct_link_status_resp_t));
+   		cavium_memcpy(ls, tmp_status, sizeof(oct_link_status_resp_t));
 	else
         	ls->status = COMPLETION_WORD_INIT;
 	/* The link count should be swapped on little endian systems. */
@@ -323,7 +324,7 @@ octnet_get_runtime_link_status(void            *oct,
 		octnet_update_link_status(props->pndev[ifidx],
 		                          &ls->link_info[ifidx].link);
 	}
-
+	cavium_free_virt(tmp_status);
 	return OCT_POLL_FN_CONTINUE;
 }
 // *INDENT-ON*
@@ -1415,7 +1416,7 @@ int octnet_wait_for_oq_pkts(octeon_device_t * octeon_dev,
 int octnet_stop_nic_module(int octeon_id, void *oct)
 {
 	int i, j;
-	oct_link_status_resp_t ls_resp;
+	oct_link_status_resp_t *ls_resp;
 	octeon_device_t *octeon_dev = (octeon_device_t *) oct;
 #if !defined(ETHERPCI)
 	octeon_config_t *conf;
@@ -1435,11 +1436,12 @@ int octnet_stop_nic_module(int octeon_id, void *oct)
 			     octeon_id);
 		return 1;
 	}
+	ls_resp = cavium_alloc_virt(sizeof(oct_link_status_resp_t));
 #if !defined(ETHERPCI)
 	octeon_unregister_poll_fn(octeon_id, octnet_get_runtime_link_status,
 				  (unsigned long)octprops[octeon_id]);
 
-	cavium_memset(&ls_resp, 0, OCT_LINK_STATUS_RESP_SIZE);
+	cavium_memset(ls_resp, 0, OCT_LINK_STATUS_RESP_SIZE);
 	conf = octeon_dev_conf(octeon_dev);
 
 	num_intf = octnet_get_num_intf(octeon_dev);
@@ -1474,11 +1476,11 @@ int octnet_stop_nic_module(int octeon_id, void *oct)
 	}
 #else
 // *INDENT-OFF*
-	cavium_memcpy(&ls_resp, octprops[octeon_id]->ls, OCT_LINK_STATUS_RESP_SIZE);
-    for(i = 0; i < ls_resp.link_count; i++)
+	cavium_memcpy(ls_resp, octprops[octeon_id]->ls, OCT_LINK_STATUS_RESP_SIZE);
+    for(i = 0; i < ls_resp->link_count; i++)
 	{
-		for (j = 0; j < ls_resp.link_info[i].num_rxpciq; j++){
-			octeon_unregister_droq_ops(octeon_id, ls_resp.link_info[i].rxpciq[j]);
+		for (j = 0; j < ls_resp->link_info[i].num_rxpciq; j++){
+			octeon_unregister_droq_ops(octeon_id, ls_resp->link_info[i].rxpciq[j]);
 		}
 	}
 // *INDENT-ON*
@@ -1496,26 +1498,26 @@ int octnet_stop_nic_module(int octeon_id, void *oct)
 #if !defined(ETHERPCI)
 	cavium_print(PRINT_DEBUG, "wait for pending instructions\n");
 
-	if (octnet_wait_for_pending_requests(octeon_dev, &ls_resp)) {
+	if (octnet_wait_for_pending_requests(octeon_dev, ls_resp)) {
 		cavium_error("OCTEON[%d]: NIC has pending requests.\n",
 			     octeon_dev->octeon_id);
 	}
 
 	cavium_print(PRINT_DEBUG, "wait for instr fetch\n");
-	if (octnet_wait_for_instr_fetch(octeon_dev, &ls_resp)) {
+	if (octnet_wait_for_instr_fetch(octeon_dev, ls_resp)) {
 		cavium_error("OCTEON[%d]: IQ had pending instructions\n",
 			     octeon_dev->octeon_id);
 	}
 
 	cavium_print(PRINT_DEBUG, "wait for oq pkts\n");
-	if (octnet_wait_for_oq_pkts(octeon_dev, &ls_resp)) {
+	if (octnet_wait_for_oq_pkts(octeon_dev, ls_resp)) {
 		cavium_error("OCTEON[%d]: OQ had pending packets\n",
 			     octeon_dev->octeon_id);
 	}
 #endif
 	cavium_print(PRINT_DEBUG, "waited for all ioqs. disabling the ioq queues\n");
 	/* disable NIC IOQs */
-	octnet_disable_io_queues(octeon_dev, &ls_resp);
+	octnet_disable_io_queues(octeon_dev, ls_resp);
 #if 0
 	printk("disabled the io queues. destroying the io queues\n");
 	/* Clean up the NIC IOQs. */
@@ -1530,7 +1532,7 @@ int octnet_stop_nic_module(int octeon_id, void *oct)
 
 	cavium_print(PRINT_DEBUG, "disabled the io queues. destroying the io queues\n");
 	/* Clean up the NIC IOQs. */
-	octnet_destroy_io_queues(octeon_dev, &ls_resp);
+	octnet_destroy_io_queues(octeon_dev, ls_resp);
 
 	/* Free the link status buffer allocated for this Octeon device. */
 	if (octprops[octeon_id]->ls) {
@@ -1548,6 +1550,7 @@ int octnet_stop_nic_module(int octeon_id, void *oct)
 
 	octprops[octeon_id] = NULL;
 
+	cavium_free_virt(ls_resp);
 	cavium_print_msg("OCTNIC: Network interfaces stopped for Octeon %d\n",
 			 octeon_id);
 	return 0;

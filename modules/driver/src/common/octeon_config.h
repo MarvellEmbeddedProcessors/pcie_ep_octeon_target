@@ -245,8 +245,7 @@
 #define MAX_FPA3_AURAS			1024
 
 /* Max IOQs per OCTEON Link */
-#define MAX_IOQS_PER_NICIF		8
-
+#define MAX_IOQS_PER_NICIF		64
 /* For 78XX EVB Max SGMII ports can be 16 (4 XAUI modules, each having 4 SGMII ports)*/
 #define MAX_OCTEON_NICIF		16
 
