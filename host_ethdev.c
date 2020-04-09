@@ -45,6 +45,10 @@
 #define HOST_MBOX_MSG_REG(mdev, i)    \
 	(mdev->bar_map + OTXMN_HOST_MBOX_OFFSET + (i * 8))
 
+static struct workqueue_struct *mgmt_init_wq;
+static struct delayed_work mgmt_init_task;
+#define MGMT_INIT_WQ_DELAY (1 * HZ)
+
 static struct otxmn_dev *gmdev;
 static int mgmt_net_napi_poll(struct napi_struct *napi, int budget);
 static int mgmt_net_intr_hndlr(void *arg);
@@ -988,7 +992,7 @@ static void mgmt_net_task(struct work_struct *work)
 			   usecs_to_jiffies(OTXMN_SERVICE_TASK_US));
 }
 
-static int __init mgmt_init(void)
+static void mgmt_init_work(struct work_struct *work)
 {
 	uint32_t *tq_cons_shdw_vaddr, *rq_cons_shdw_vaddr;
 	dma_addr_t tq_cons_shdw_dma, rq_cons_shdw_dma;
@@ -997,17 +1001,31 @@ static int __init mgmt_init(void)
 	struct net_device *ndev;
 	struct otxmn_dev *mdev;
 
-	if (mv_get_facility_conf(MV_FACILITY_MGMT_NETDEV, &conf)) {
-		printk(KERN_ERR "mgmt_net:get_facility_conf failed\n");
-		return -ENODEV;
+	ret =  mv_get_facility_conf(MV_FACILITY_MGMT_NETDEV, &conf);
+	if (ret == -ENOENT) {
+		printk(KERN_ERR
+		       "mgmt_net: failed to get facility config; Error: Unsupported facility\n");
+		ret = -ENODEV;
+		goto conf_err;
 	}
+	if (ret == -EAGAIN) {
+		printk_once(KERN_INFO
+		       "mgmt_net: Waiting for facility config availability\n");
+		queue_delayed_work(mgmt_init_wq, &mgmt_init_task,
+				   MGMT_INIT_WQ_DELAY);
+		return;
+	}
+	printk(KERN_INFO "mgmt_net: Got the facility config\n");
+
 	if (conf.memsize < OTXMN_BAR_SIZE) {
 		printk(KERN_ERR "mgmt_net:bar size less %d\n", conf.memsize);
-		return -ENODEV;
+		ret = -ENODEV;
+		goto conf_err;
 	}
 	if (conf.num_h2t_dbells < 1) {
 		printk(KERN_ERR "mgmt_net:need at least 1 h2t dbell %d\n", conf.num_h2t_dbells);
-		return -ENODEV;
+		ret = -ENODEV;
+		goto conf_err;
 	}
 	printk(KERN_DEBUG "mgmt_net:conf.map_addr.bar_map %p\n",
 	       conf.memmap.host_addr);
@@ -1021,7 +1039,8 @@ static int __init mgmt_init(void)
 						GFP_KERNEL);
 	if (tq_cons_shdw_vaddr == NULL) {
 		printk(KERN_ERR "mgmt_net: dma_alloc_coherent tq failed\n");
-		return  -ENOMEM;
+		ret = -ENOMEM;
+		goto conf_err;
 	}
 	rq_cons_shdw_vaddr = dma_alloc_coherent(conf.dma_dev.host_ep_dev,
 						(sizeof(uint32_t) * num_rxq),
@@ -1099,7 +1118,8 @@ static int __init mgmt_init(void)
 	queue_delayed_work(mdev->mgmt_wq, &mdev->service_task,
 			   usecs_to_jiffies(OTXMN_SERVICE_TASK_US));
 	gmdev = mdev;
-	return 0;
+	return;
+
 destroy_mutex:
 	mutex_destroy(&mdev->mbox_lock);
 	destroy_workqueue(mdev->mgmt_wq);
@@ -1119,7 +1139,20 @@ tq_dma_free:
 			  (sizeof(uint32_t) * num_txq),
 			  tq_cons_shdw_vaddr,
 			  tq_cons_shdw_dma);
-	return ret;
+conf_err:
+	printk(KERN_ERR "mgmt_net: init failed; error = %d\n", ret);
+	return;
+}
+
+static int __init mgmt_init(void)
+{
+	mgmt_init_wq = create_singlethread_workqueue("mv_mgmt");
+	if (!mgmt_init_wq)
+		return -ENOMEM;
+
+	INIT_DELAYED_WORK(&mgmt_init_task, mgmt_init_work);
+	queue_delayed_work(mgmt_init_wq, &mgmt_init_task, 0);
+	return 0;
 }
 
 static void teardown_mdev_resources(struct otxmn_dev *mdev)
@@ -1137,6 +1170,10 @@ static void teardown_mdev_resources(struct otxmn_dev *mdev)
 static void __exit mgmt_exit(void)
 {
 	struct otxmn_dev *mdev;
+
+	cancel_delayed_work_sync(&mgmt_init_task);
+	flush_workqueue(mgmt_init_wq);
+	destroy_workqueue(mgmt_init_wq);
 
 	if (!gmdev)
 		return;
