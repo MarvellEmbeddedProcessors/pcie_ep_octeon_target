@@ -17,6 +17,8 @@ mv_facility_conf_t facility_conf[MV_FACILITY_COUNT];
 /* TODO: should make it use dynamic alloc memory ?? */
 mv_facility_event_cb_t facility_handler[MV_FACILITY_COUNT];
 
+static bool facility_conf_init_done = false;
+
 void mv_facility_conf_init(octeon_device_t *oct)
 {
 	void *bar1_addr;
@@ -78,6 +80,8 @@ void mv_facility_conf_init(octeon_device_t *oct)
 	facility_conf[MV_FACILITY_RPC].num_t2h_dbells = 0;
 	strncpy(facility_conf[MV_FACILITY_RPC].name,
 		MV_FACILITY_NAME_RPC, FACILITY_NAME_LEN-1);
+
+	facility_conf_init_done = true;
 }
 
 /* returns facility configuration structure filled up */
@@ -85,8 +89,13 @@ int mv_get_facility_conf(int type, mv_facility_conf_t *conf)
 {
 	if (!is_facility_valid(type)) {
 		printk("%s: Invalid facility type %d\n", __func__, type);
-		return -EINVAL;
+		return -ENOENT;
 	}
+
+	/* Inform caller to try again, if facility conf is not initialized */
+	if (!facility_conf_init_done)
+		return -EAGAIN;
+
 	memcpy(conf, &facility_conf[type], sizeof(mv_facility_conf_t));
 	return 0;
 }

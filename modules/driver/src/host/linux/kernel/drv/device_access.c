@@ -19,15 +19,21 @@
 
 mv_facility_conf_t rpc_facility_conf;
 mv_facility_conf_t nwa_facility_conf;
+static bool init_done = false;
 
 int mv_get_facility_handle(char *name)
 {
+	if (strcmp(name, MV_FACILITY_NAME_RPC) &&
+	    strcmp(name, MV_FACILITY_NAME_NETWORK_AGENT))
+		return -ENOENT;
+
+	if (!init_done)
+		return -EAGAIN;
+
 	if (!strcmp(name, MV_FACILITY_NAME_RPC))
 		return rpc_facility_conf.type;
-	else if (!strcmp(name, MV_FACILITY_NAME_NETWORK_AGENT))
-		return nwa_facility_conf.type;
 	else
-		return -ENOENT;
+		return nwa_facility_conf.type;
 }
 EXPORT_SYMBOL(mv_get_facility_handle);
 
@@ -119,5 +125,6 @@ int host_device_access_init(void)
 		 (u64)nwa_facility_conf.memmap.host_addr,
 		 nwa_facility_conf.memsize,
 		 nwa_facility_conf.num_h2t_dbells);
+	init_done = true;
 	return ret;
 }
