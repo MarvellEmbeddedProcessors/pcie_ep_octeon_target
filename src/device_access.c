@@ -21,15 +21,21 @@ mv_facility_conf_t conf;
 mv_facility_conf_t nwa_conf;
 extern int irq_list[];
 extern struct device *plat_dev;
+static bool init_done = false;
 
 int mv_get_facility_handle(char *name)
 {
+	if (strcmp(name, MV_FACILITY_NAME_RPC) &&
+	    strcmp(name, MV_FACILITY_NAME_NETWORK_AGENT))
+		return -ENOENT;
+
+	if (!init_done)
+		return -EAGAIN;
+
 	if (!strcmp(name, MV_FACILITY_NAME_RPC))
 		return conf.type;
-	if (!strcmp(name, MV_FACILITY_NAME_NETWORK_AGENT))
-		return nwa_conf.type;
 	else
-		return -ENOENT;
+		return nwa_conf.type;
 }
 EXPORT_SYMBOL(mv_get_facility_handle);
 
@@ -156,5 +162,6 @@ int npu_device_access_init(void)
 	       "Doorbell count = %d\n",
 	       nwa_conf.name, nwa_conf.type, (u64)nwa_conf.memmap.target_addr,
 	       nwa_conf.memsize, nwa_conf.num_h2t_dbells);
+	init_done = true;
 	return ret;
 }
