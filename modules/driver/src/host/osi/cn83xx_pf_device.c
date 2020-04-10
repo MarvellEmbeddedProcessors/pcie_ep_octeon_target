@@ -1122,6 +1122,8 @@ static inline int lowerpow2roundup(int x)
 	return x - (x >> 1);
 }
 
+#define CN83XX_MAX_VF 15
+
 int setup_cn83xx_octeon_pf_device(octeon_device_t * oct)
 {
 	uint64_t epf_rinfo = 0;
@@ -1214,6 +1216,17 @@ int setup_cn83xx_octeon_pf_device(octeon_device_t * oct)
 			     oct->sriov_info.num_vfs);
 			goto free_barx;
 		}
+		/* NPU kernel supports 8 queues per PF, to support > 8
+		 * fix kernel then remove below condition
+		 */
+		if (num_rings_per_pf > CN83XX_MAX_RINGS_PER_VF) {
+			num_rings_per_pf = CN83XX_MAX_RINGS_PER_VF;
+		}
+		if (oct->sriov_info.num_vfs > CN83XX_MAX_VF) {
+			cavium_error("OTX kernel supports upto %d VFs\n",
+					CN83XX_MAX_VF);
+			oct->sriov_info.num_vfs = CN83XX_MAX_VF;
+		}
 
 		vf_rings = num_rings_per_vf;
 
@@ -1221,16 +1234,22 @@ int setup_cn83xx_octeon_pf_device(octeon_device_t * oct)
 		if (vf_rings > CN83XX_MAX_RINGS_PER_VF)
 			vf_rings = CN83XX_MAX_RINGS_PER_VF;
 
-		/** RPVF should be a power of 2, supported values are 0,1,2,4,8 */
-		if (vf_rings & (vf_rings - 1)) {
-			vf_rings = lowerpow2roundup(vf_rings);
-		}
+		do {
+			/** RPVF should be a power of 2, supported values are 0,1,2,4,8 */
+			if (vf_rings & (vf_rings - 1)) {
+				vf_rings = lowerpow2roundup(vf_rings);
+			}
 
-		if ((vf_rings * oct->sriov_info.num_vfs) > epf_trs) {
-			cavium_error
-			    ("%s Required queue number exceeds total rings\n",
-			     __FUNCTION__);
-		}
+			if ((vf_rings * oct->sriov_info.num_vfs) >
+			    (epf_trs - num_rings_per_pf)) {
+				cavium_error
+				    ("%s Required queue number exceeds total rings\n",
+				     __FUNCTION__);
+				vf_rings -= 1;
+				continue;
+			}
+			break;
+		} while (1);
 	}
 
 	oct->sriov_info.rings_per_vf = vf_rings;
