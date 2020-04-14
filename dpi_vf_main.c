@@ -202,6 +202,7 @@ static int dpi_dma_queue_write(struct dpivf_t *dpi_vf, u16 qid, u16 cmd_count,
 {
 	struct device *dev = &dpi_vf->pdev->dev;
 	struct dma_queue_ctx *qctx;
+	unsigned long flags;
 
 	if ((cmd_count < 1) || (cmd_count > 64)) {
 		dev_err(dev, "%s invalid cmdcount %d\n", __func__, cmd_count);
@@ -221,7 +222,7 @@ static int dpi_dma_queue_write(struct dpivf_t *dpi_vf, u16 qid, u16 cmd_count,
 	/* Normally there is plenty of
 	 * room in the current buffer for the command
 	 */
-	spin_lock_bh(&qctx->queue_lock);
+	spin_lock_irqsave(&qctx->queue_lock, flags);
 	if (qctx->index + cmd_count < qctx->pool_size_m1) {
 		u64 *ptr = qctx->dpi_buf_ptr;
 
@@ -247,7 +248,7 @@ static int dpi_dma_queue_write(struct dpivf_t *dpi_vf, u16 qid, u16 cmd_count,
 			dpi_buf = npa_alloc_buf();
 
 		if (!dpi_buf) {
-			spin_unlock_bh(&qctx->queue_lock);
+			spin_unlock_irqrestore(&qctx->queue_lock, flags);
 			dev_err(dev, "Failed to allocate");
 			return -ENODEV;
 		}
@@ -290,7 +291,7 @@ static int dpi_dma_queue_write(struct dpivf_t *dpi_vf, u16 qid, u16 cmd_count,
 			else
 				dpi_buf = npa_alloc_buf();
 			if (!dpi_buf) {
-				spin_unlock_bh(&qctx->queue_lock);
+				spin_unlock_irqrestore(&qctx->queue_lock, flags);
 				dev_err(dev, "Failed to allocate");
 				return -ENODEV;
 			}
@@ -308,7 +309,7 @@ static int dpi_dma_queue_write(struct dpivf_t *dpi_vf, u16 qid, u16 cmd_count,
 			qctx->index = 0;
 		}
 	}
-	spin_unlock_bh(&qctx->queue_lock);
+	spin_unlock_irqrestore(&qctx->queue_lock, flags);
 
 	return 0;
 }
@@ -326,7 +327,7 @@ int do_dma_sync(local_dma_addr_t local_dma_addr, host_dma_addr_t host_dma_addr,
 		void *local_virt_addr, int len,	host_dma_dir_t dir)
 {
 	/* Use DMA if the length is 64 bytes or more */
-	if (len >= 64)
+	if (len >= 64 || in_interrupt())
 		return do_dma_sync_dpi(local_dma_addr, host_dma_addr, NULL,
 				       len, dir);
 	else
