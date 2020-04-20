@@ -253,7 +253,7 @@ int octnet_get_inittime_link_status(void *oct, void *props_ptr)
 	 *  hence hardcoding link_info details here in the host driver itself. */
 	if ((oct_dev->chip_id == OCTEON_CN83XX_PF)
 	    || (oct_dev->chip_id == OCTEON_CN83XX_VF))
-		num_q = 8;
+		num_q = octnet_get_num_ioqs(oct_dev);
 	else if (oct_dev->chip_id == OCTEON_CN93XX_PF)
 		num_q = octnet_get_num_ioqs(oct_dev);
 
