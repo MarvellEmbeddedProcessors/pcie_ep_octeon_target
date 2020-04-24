@@ -291,7 +291,6 @@ struct cavium_wk {
 	void *ctxptr;
 	u64 ctxul;
 };  
-
 struct cavium_wq {
 	struct workqueue_struct *wq;
 	struct cavium_wk wk;
@@ -518,6 +517,7 @@ struct _OCTEON_DEVICE {
 	cavium_spinlock_t mbox_lock;
 	cvm_kthread_t mbox_id;
 	void *mbox_cmd_queue;
+	struct cavium_wq sdp_wq;
 
 };
 

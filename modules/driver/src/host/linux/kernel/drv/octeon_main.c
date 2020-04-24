@@ -51,7 +51,7 @@ uint32_t num_vfs = 0;
 module_param(num_vfs, int, 0);
 MODULE_PARM_DESC(num_vfs, "Number of Virtual Functions");
 
-int octeon_device_init(octeon_device_t *);
+int octeon_device_init(octeon_device_t *, int);
 void octeon_remove(struct pci_dev *pdev);
 
 extern int octeon_setup_poll_fn_list(octeon_device_t * oct);
@@ -549,7 +549,7 @@ int octeon_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	/* set linux specific device pointer */
 	oct_dev->pci_dev = (void *)pdev;
 
-	if (octeon_device_init(oct_dev)) {
+	if (octeon_device_init(oct_dev, 0)) {
 		octeon_remove(pdev);
 		return -ENOMEM;
 	}
@@ -636,8 +636,11 @@ void octeon_destroy_resources(octeon_device_t * oct_dev)
 	case OCT_DEV_PCI_MAP_DONE:
 		octeon_unmap_pci_barx(oct_dev, 0);
 		octeon_unmap_pci_barx(oct_dev, 1);
-		if (oct_dev->chip_id == OCTEON_CN93XX_PF)
+		if (oct_dev->chip_id == OCTEON_CN93XX_PF) {
+			flush_workqueue(oct_dev->sdp_wq.wq);
+			destroy_workqueue(oct_dev->sdp_wq.wq);
 			octeon_unmap_pci_barx(oct_dev, 2);
+		}
 
 		cavium_print_msg("OCTEON[%d]: BAR unmapped.\n",
 				 oct_dev->octeon_id);
@@ -721,7 +724,7 @@ int octeon_release(struct inode *inode UNUSED, struct file *file UNUSED)
 }
 
 /* Routine to identify the Octeon device and to map the BAR address space */
-static int octeon_chip_specific_setup(octeon_device_t * oct)
+enum setup_stage octeon_chip_specific_setup(octeon_device_t * oct)
 {
 	uint32_t dev_id, rev_id;
 
@@ -748,7 +751,6 @@ static int octeon_chip_specific_setup(octeon_device_t * oct)
 			oct->chip_id = OCTEON_CN83XX_PF;
 
 			return setup_cn83xx_octeon_pf_device(oct);
-		
 		case OCTEON_CN93XX_PCIID_PF:
 			cavium_print_msg("OCTEON[%d]: CN93XX PASS%d.%d\n",
 					 oct->octeon_id, OCTEON_MAJOR_REV(oct),
@@ -772,7 +774,7 @@ static int octeon_chip_specific_setup(octeon_device_t * oct)
 			     dev_id);
 	}
 
-	return 1;
+	return SETUP_FAIL;
 }
 
 /* OS-specific initialization for each Octeon device. */
@@ -835,10 +837,14 @@ int octeon_setup_droq(int oct_id, int q_no, void *app_ctx)
 }
 
 /* Device initialization for each Octeon device. */
-int octeon_device_init(octeon_device_t * octeon_dev)
+int octeon_device_init(octeon_device_t * octeon_dev, int resume)
 {
 	int ret;
+	enum setup_stage stage;
 	octeon_poll_ops_t poll_ops;
+
+	if (resume)
+		goto resume_device_init;
 
 	cavium_atomic_set(&octeon_dev->status, OCT_DEV_BEGIN_STATE);
 
@@ -847,16 +853,21 @@ int octeon_device_init(octeon_device_t * octeon_dev)
 	if (octeon_pci_os_setup(octeon_dev))
 		return 1;
 
+	stage = octeon_chip_specific_setup(octeon_dev);
 	/* Identify the Octeon type and map the BAR address space. */
-	if (octeon_chip_specific_setup(octeon_dev)) {
+	if (stage == SETUP_FAIL) {
 #ifndef ETHERPCI
 		cavium_error("OCTEON: Chip specific setup failed\n");
 #endif
 		return 1;
+	} else if (stage == SETUP_IN_PROGRESS) {
+    		cavium_print_msg(" Chip specific setup inprogress\n");
+		return 0;
 	}
 
     cavium_print_msg(" Chip specific setup completed\n");
 
+resume_device_init:
 	if (octeon_msix)
 		octeon_dev->drv_flags |= OCTEON_MSIX_CAPABLE;
 

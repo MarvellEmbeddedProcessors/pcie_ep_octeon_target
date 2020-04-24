@@ -31,6 +31,7 @@
 extern int octeon_msix;
 extern int cn83xx_pf_setup_global_oq_reg(octeon_device_t *, int);
 extern int cn83xx_pf_setup_global_iq_reg(octeon_device_t *, int);
+extern int g_app_mode;
 
 char oct_dev_state_str[OCT_DEV_STATES + 1][32] = {
 	"BEGIN", "PCI-MAP-DONE", "DISPATCH-INIT-DONE",
@@ -1727,9 +1728,9 @@ octeon_get_app_mode(void *octptr, unsigned long arg UNUSED)
  
     if(octeon_dev->chip_id == OCTEON_CN93XX_PF) {
 	//octeon_dev->app_mode = CVM_DRV_BASE_APP;
-	reg_val = octeon_read_csr64(octeon_dev, CN93XX_SDP_EPF_SCRATCH);
-        if(((reg_val & 0xffff) != CVM_DRV_BASE_APP) && 
-            ((reg_val & 0xffff) != CVM_DRV_NIC_APP)) {
+	reg_val = 0;
+        if(((g_app_mode & 0xffff) != CVM_DRV_BASE_APP) && 
+            ((g_app_mode & 0xffff) != CVM_DRV_NIC_APP)) {
 		return OCT_POLL_FN_CONTINUE;
 	}
 	octeon_dev->app_mode = CVM_DRV_NIC_APP;

@@ -265,6 +265,8 @@ static void oct_process_poll_list(octeon_device_t * oct)
 	oct->stats.poll_count++;
 
 	poll_list = (octeon_poll_fn_node_t *) oct->poll_list;
+	if (poll_list == NULL)
+		return;
 
 	cavium_spin_lock(&oct->poll_lock);
 

@@ -1123,8 +1123,8 @@ static inline int lowerpow2roundup(int x)
 }
 
 #define CN83XX_MAX_VF 15
-
-int setup_cn83xx_octeon_pf_device(octeon_device_t * oct)
+enum setup_stage
+setup_cn83xx_octeon_pf_device(octeon_device_t * oct)
 {
 	uint64_t epf_rinfo = 0;
 	int epf_trs = 0, epf_srn = 0;
@@ -1136,12 +1136,12 @@ int setup_cn83xx_octeon_pf_device(octeon_device_t * oct)
 	cn83xx->oct = oct;
 
 	if (octeon_map_pci_barx(oct, 0, 0))
-		return 1;
+		return SETUP_FAIL;
 
 	if (octeon_map_pci_barx(oct, 1, MAX_BAR1_IOREMAP_SIZE)) {
 		cavium_error("%s CN83XX BAR1 map failed\n", __FUNCTION__);
 		octeon_unmap_pci_barx(oct, 0);
-		return 1;
+		return SETUP_FAIL;
 	}
 
 	cn83xx->conf = (cn83xx_pf_config_t *) oct_get_config_info(oct);
@@ -1149,7 +1149,7 @@ int setup_cn83xx_octeon_pf_device(octeon_device_t * oct)
 		cavium_error("%s No Config found for CN83XX\n", __FUNCTION__);
 		octeon_unmap_pci_barx(oct, 0);
 		octeon_unmap_pci_barx(oct, 1);
-		return 1;
+		return SETUP_FAIL;
 	}
 #ifdef IOQ_PERF_MODE_O3
 	/* NOTE: MAC credit register not accessible through Host. */
@@ -1295,12 +1295,12 @@ int setup_cn83xx_octeon_pf_device(octeon_device_t * oct)
 	cavium_print_msg(" PF[%d] RINGS PER VF:%u \n", oct->pf_num,
 			 oct->sriov_info.rings_per_vf);
 
-	return 0;
+	return SETUP_SUCCESS;
 
 free_barx:
 	octeon_unmap_pci_barx(oct, 0);
 	octeon_unmap_pci_barx(oct, 1);
-	return 1;
+	return SETUP_FAIL;
 
 }
 
