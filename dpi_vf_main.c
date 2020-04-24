@@ -36,6 +36,9 @@
 #define FPA_NUM_VFS 1
 #define DPI_DMA_CMDX_SIZE 64
 
+#define FPA_PF_ID 0
+#define DPI_PF_ID 0
+
 
 static unsigned int pem_num = 0;
 module_param(pem_num, uint, 0644);
@@ -46,16 +49,12 @@ static int lport[MAX_PEM] = { 0, -1, 1, -1 };
 
 static struct fpapf_com_s *fpapf;
 static struct fpavf_com_s *fpavf;
+
 u8 *local_ptr;
 u64 local_iova;
 unsigned long part_num;
 
-struct dma_pool *comp_buf_pool;
-//struct dpipf_com_s *dpipf_com_ptr;
-struct dpipf *dpi_pf;
-struct dpivf_t *dpi_vf;
-struct dpipf_com_s *dpipf;
-static struct fpavf *fpa;
+static struct dpipf_com_s *dpipf;
 
 extern struct dpipf_com_s dpipf_com;
 struct dpipf_com_s {
@@ -91,7 +90,11 @@ struct dpivf_t {
 	u16 vf_id;
 	u16 domain;
 	int id;
+	struct fpavf *fpa;
+	struct dma_pool *comp_buf_pool;
 };
+
+DEFINE_PER_CPU(struct dpivf_t*, cpu_dpi_vf);
 
 static const struct pci_device_id dpi_id_table[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_CAVIUM, PCI_DEVICE_ID_OCTEONTX_DPI_VF_83XX) },
@@ -110,7 +113,7 @@ int dpivf_master_send_message(struct mbox_hdr *hdr,
 
 	if (hdr->coproc == FPA_COPROC) {
 		ret = fpapf->receive_message(
-			dpi_vf->vf_id, dpi_vf->domain,
+			FPA_PF_ID, dpi_vf->domain,
 			hdr, req, resp, add_data);
 	} else {
 		dev_err(&dpi_vf->pdev->dev, "SSO message dispatch, wrong VF type\n");
@@ -126,75 +129,56 @@ static struct octeontx_master_com_t dpi_master_com = {
 
 static int dpivf_pre_setup(struct dpivf_t *dpi_vf)
 {
+	int err;
 	struct device *dev = &dpi_vf->pdev->dev;
-	int err = -ENODEV;
+	char kobj_name[16];
+	u64 mask;
 
-	/*TODO: handle -ve cases */
-	dpipf = try_then_request_module(symbol_get(dpipf_com), "dpipf");
-	if (dpipf == NULL) {
-		dev_err(dev, "Load DPI PF module\n");
-		return err;
-	}
-
-	fpapf = try_then_request_module(symbol_get(fpapf_com), "fpapf");
-	if (fpapf == NULL) {
-		dev_err(dev, "Load FPA PF module\n");
-		goto put_1_dep;
-	}
-
-	fpavf = try_then_request_module(symbol_get(fpavf_com), "fpavf");
-	if (fpavf == NULL) {
-		dev_err(dev, "Load FPA VF module\n");
-		goto put_2_deps;
-	}
-
-	dpi_vf->kobj = kobject_create_and_add("dpi_kobj", NULL);
+	sprintf(kobj_name, "dpi_kobj_%d", dpi_vf->domain);
+	dpi_vf->kobj = kobject_create_and_add(kobj_name, NULL);
 	if (!dpi_vf->kobj) {
-		err = -ENOMEM;
-		goto put_2_deps;
+		printk("Failed to create Kobject\n");
+		goto kobj_fail;
 	}
 
-	err = fpapf->create_domain(dpi_vf->vf_id, dpi_vf->domain,
-			FPA_NUM_VFS, dpi_vf->kobj);
-	if (!err) {
-		dev_err(dev, "Failed to create DPI_XAQ_DOMAIN\n");
-		err = -ENODEV;
-		goto put_3_deps;
+	mask = dpipf->create_domain(DPI_PF_ID, dpi_vf->domain, DPI_NUM_VFS,
+								NULL, NULL, dpi_vf->kobj);
+	if (!mask) {
+		printk("Failed to create DPI domain\n");
+		goto dpi_domain_fail;
 	}
 
-	err = dpipf->create_domain(dpi_vf->vf_id, dpi_vf->domain, DPI_NUM_VFS,
-			NULL, NULL, dpi_vf->kobj);
-	if (!err) {
-		dev_err(dev, "Failed to create DPI domain\n");
-		err = -ENODEV;
-		goto put_3_deps;
+	mask = fpapf->create_domain(FPA_PF_ID, dpi_vf->domain, FPA_NUM_VFS, dpi_vf->kobj);
+	if (!mask) {
+		printk("Failed to create FPA domain\n");
+		goto fpa_domain_fail;
 	}
 
-	fpa = fpavf->get(dpi_vf->domain, 0, &dpi_master_com, dpi_vf);
-	if (fpa == NULL) {
+	dpi_vf->fpa = fpavf->get(dpi_vf->domain, 0, &dpi_master_com, dpi_vf);
+	if (dpi_vf->fpa == NULL) {
 		dev_err(dev, "Failed to get fpavf\n");
-		err = -ENODEV;
-		goto put_3_deps;
+		goto fpavf_fail;
 	}
 
-	err = fpavf->setup(fpa, DPI_NB_CHUNKS, DPI_CHUNK_SIZE,
-			   dev);
+	err = fpavf->setup(dpi_vf->fpa, DPI_NB_CHUNKS, DPI_CHUNK_SIZE, dev);
 	if (err) {
 		dev_err(dev, "FPA setup failed\n");
-		err = -ENODEV;
-		goto put_3_deps;
+		goto fpavf_setup_fail;
 	}
 
 	return 0;
 
-put_3_deps:
-	symbol_put(fpavf_com);
-put_2_deps:
-	symbol_put(fpapf_com);
-put_1_dep:
-	symbol_put(dpipf_com);
+fpavf_setup_fail:
+	fpavf->put(dpi_vf->fpa);
+fpavf_fail:
+	fpapf->destroy_domain(FPA_PF_ID, dpi_vf->domain, dpi_vf->kobj);
+fpa_domain_fail:
+	dpipf->destroy_domain(DPI_PF_ID, dpi_vf->domain, dpi_vf->kobj);
+dpi_domain_fail:
+	kobject_del(dpi_vf->kobj);
+kobj_fail:
 
-	return err;
+	return -ENODEV;
 }
 
 static int dpi_dma_queue_write(struct dpivf_t *dpi_vf, u16 qid, u16 cmd_count,
@@ -243,7 +227,7 @@ static int dpi_dma_queue_write(struct dpivf_t *dpi_vf, u16 qid, u16 cmd_count,
 		//		__func__, __LINE__);
 
 		if (part_num == CAVIUM_CPU_PART_T83)
-			dpi_buf = fpavf->alloc(fpa, DPI_AURA);
+			dpi_buf = fpavf->alloc(dpi_vf->fpa, DPI_AURA);
 		else
 			dpi_buf = npa_alloc_buf();
 
@@ -287,7 +271,7 @@ static int dpi_dma_queue_write(struct dpivf_t *dpi_vf, u16 qid, u16 cmd_count,
 		/* queue index may greater than pool size */
 		if (qctx->index >= qctx->pool_size_m1) {
 			if (part_num == CAVIUM_CPU_PART_T83)
-				dpi_buf = fpavf->alloc(fpa, DPI_AURA);
+				dpi_buf = fpavf->alloc(dpi_vf->fpa, DPI_AURA);
 			else
 				dpi_buf = npa_alloc_buf();
 			if (!dpi_buf) {
@@ -338,11 +322,8 @@ EXPORT_SYMBOL(do_dma_sync);
 
 struct device *get_dpi_dma_dev(void)
 {
-
-	if (dpi_vf)
-		return &dpi_vf->pdev->dev;
-	else
-		return NULL;
+	struct dpivf_t* dpi_vf = __this_cpu_read(cpu_dpi_vf);
+	return (dpi_vf) ? &dpi_vf->pdev->dev : NULL;
 }
 EXPORT_SYMBOL(get_dpi_dma_dev);
 
@@ -360,6 +341,7 @@ int do_dma_async_dpi_vector(local_dma_addr_t *local_addr, host_dma_addr_t *host_
 	u8 nfst, nlst;
 	u16 index = 0;
 	int i;
+	struct dpivf_t* dpi_vf = __this_cpu_read(cpu_dpi_vf);
 
 
 	/* TODO check Sum(len[i]) < 64K */
@@ -436,8 +418,9 @@ EXPORT_SYMBOL(do_dma_async_dpi_vector);
 int do_dma_sync_dpi(local_dma_addr_t local_dma_addr, host_dma_addr_t host_addr,
 		    void *local_ptr, int len, host_dma_dir_t dir)
 {
+	struct dpivf_t* dpi_vf = __this_cpu_read(cpu_dpi_vf);
 	struct device *dev = &dpi_vf->pdev->dev;
-	u64  *comp_data = NULL;
+	u8  *comp_data = NULL;
 	dpi_dma_buf_ptr_t cmd = {0};
 	dpi_dma_ptr_t lptr = {0};
 	dpi_dma_ptr_t hptr = {0};
@@ -451,7 +434,7 @@ int do_dma_sync_dpi(local_dma_addr_t local_dma_addr, host_dma_addr_t host_addr,
 	int i;
 	int  ret = 0;
 
-	comp_data = dma_pool_alloc(comp_buf_pool, GFP_ATOMIC, &comp_iova);
+	comp_data = dma_pool_alloc(dpi_vf->comp_buf_pool, GFP_ATOMIC, &comp_iova);
 	if (comp_data == NULL) {
 		printk("dpi_dma: dma alloc errr\n");
 		return -1;
@@ -555,7 +538,7 @@ err:
 		dev_err(dev, "DMA failed with err %llx\n", *comp_data);
 		ret = -1;
 	}
-	dma_pool_free(comp_buf_pool, comp_data, comp_iova);
+	dma_pool_free(dpi_vf->comp_buf_pool, comp_data, comp_iova);
 	return ret;
 }
 EXPORT_SYMBOL(do_dma_sync_dpi);
@@ -567,13 +550,17 @@ int dpi_vf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	union mbox_data resp;
 	struct mbox_hdr hdr;
 	struct mbox_dpi_cfg cfg;
-	int err, vfid;
+	int err, cpu;
 #ifdef TEST_DPI_DMA_API
 	struct page *p, *p1;
 	u64 iova1;
 	u8 *fptr, *fptr1;
 #endif
-	u64 val, *dpi_buf_ptr, dpi_buf, dpi_buf_phys;
+	u64 *dpi_buf_ptr, dpi_buf, dpi_buf_phys, val;
+	struct dpivf_t* dpi_vf;
+	char comp_pool_name[16];
+	static unsigned int domain = FPA_DPI_XAQ_GMID;
+	static unsigned int num_vfs = 0;
 
 	part_num = read_cpuid_part_number();
 	if ((part_num != CAVIUM_CPU_PART_T83) &&
@@ -615,21 +602,18 @@ int dpi_vf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	writeq_relaxed(0x0, dpi_vf->reg_base + DPI_VDMA_EN);
 	writeq_relaxed(0x0, dpi_vf->reg_base + DPI_VDMA_REQQ_CTL);
+	dpi_vf->domain = domain++;
 	if (part_num == CAVIUM_CPU_PART_T83) {
-		val = readq_relaxed(dpi_vf->reg_base + DPI_VDMA_SADDR);
-		dpi_vf->vf_id = (val >> 24) & 0xffff;
-		dpi_vf->domain = FPA_DPI_XAQ_GMID;
-
-		err = dpivf_pre_setup(dpi_vf);
+			err = dpivf_pre_setup(dpi_vf);
 		if (err) {
 			dev_err(dev, "Pre-requisites failed");
 			return -ENODEV;
 		}
+		val = readq_relaxed(dpi_vf->reg_base + DPI_VDMA_SADDR);
+		dpi_vf->vf_id = (val >> 24) & 0xffff;
 
-		dpi_buf = fpavf->alloc(fpa, DPI_AURA);
+		dpi_buf = fpavf->alloc(dpi_vf->fpa, DPI_AURA);
 		if (!dpi_buf) {
-			symbol_put(fpapf_com);
-			symbol_put(fpavf_com);
 			dev_err(dev, "Failed to allocate");
 			return -ENODEV;
 		}
@@ -648,13 +632,17 @@ int dpi_vf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		hdr.msg = DPI_QUEUE_OPEN;
 		hdr.vfid = dpi_vf->vf_id;
 		/* Opening DPI queue */
-		dpipf->receive_message(dpi_vf->vf_id, dpi_vf->domain, &hdr, &req,
-				&resp, &cfg);
+		err = dpipf->receive_message(DPI_PF_ID, dpi_vf->domain, &hdr, &req,
+								&resp, &cfg);
+		if (err) {
+			dev_err(dev, "%d: Failed to allocate dpi queue %d:%d:%d", err,
+					0, dpi_vf->domain, hdr.vfid);
+			return err;
+		}
 	} else {
 		npa_aura_pool_init(DPI_NB_CHUNKS, DPI_CHUNK_SIZE,
 				   &dpi_vf->pdev->dev);
 
-		vfid = pdev->devfn - 1;
 		dpi_buf = npa_alloc_buf();
 		if (!dpi_buf) {
 			dev_err(dev, "Failed to allocate");
@@ -679,12 +667,30 @@ int dpi_vf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	dpi_vf->qctx[0].dpi_buf = dpi_buf;
 	spin_lock_init(&dpi_vf->qctx[0].queue_lock);
 
-	comp_buf_pool = dma_pool_create("comp_buf_pool", dev, 10 * 128, 128, 0);
-	if (!comp_buf_pool) {
+	sprintf(comp_pool_name, "comp_buf_pool_%d_%d",
+			dpi_vf->domain, dpi_vf->vf_id);
+	dpi_vf->comp_buf_pool = dma_pool_create(comp_pool_name, dev,
+								10 * 128, 128, 0);
+	if (!dpi_vf->comp_buf_pool) {
 		pr_err("ERROR: Cannot allocate DMA buffer pool\n");
 		return -ENOMEM;
 	}
 
+	if (num_vfs == 0) {
+		/* core0 and cores which cannot get dedicated vf share vf[0] */
+		for_each_online_cpu(cpu)
+			per_cpu(cpu_dpi_vf, cpu) = dpi_vf;
+	} else {
+		/* cores 1 onwards get dedicated vf's until we run out of vf's */
+		int ncpu = num_vfs;
+		for_each_online_cpu(cpu) {
+			if (ncpu == 0)
+				per_cpu(cpu_dpi_vf, cpu) = dpi_vf;
+
+			ncpu--;
+		}
+	}
+	num_vfs++;
 	/* Enabling DMA Engine */
 	writeq_relaxed(0x1, dpi_vf->reg_base + DPI_VDMA_EN);
 
@@ -720,26 +726,18 @@ static void dpivf_pre_setup_undo(struct dpivf_t *dpi_vf)
 	int err;
 
 	/* TODO: Need to check the response */
-	fpavf->free(fpa, DPI_AURA, dpi_vf->qctx[0].dpi_buf, 0);
-	err = fpavf->teardown(fpa);
+	fpavf->free(dpi_vf->fpa, DPI_AURA, dpi_vf->qctx[0].dpi_buf, 0);
+	err = fpavf->teardown(dpi_vf->fpa);
 	if (err)
 		dev_err(dev, "FPA teardown failed\n");
 
-	fpavf->put(fpa);
-	err = fpapf->destroy_domain(dpi_vf->vf_id, dpi_vf->domain, dpi_vf->kobj);
-	if (err)
-		dev_err(dev, "FPA PF destroy domain failed\n");
+	fpavf->put(dpi_vf->fpa);
 
-	err = dpipf->destroy_domain(dpi_vf->vf_id, dpi_vf->domain, dpi_vf->kobj);
-	if (err)
-		dev_err(dev, "DPI PF destroy domain failed\n");
+	fpapf->destroy_domain(FPA_PF_ID, dpi_vf->domain, dpi_vf->kobj);
 
-	if (dpi_vf->kobj)
-		kobject_del(dpi_vf->kobj);
+	dpipf->destroy_domain(DPI_PF_ID, dpi_vf->domain, dpi_vf->kobj);
 
-	symbol_put(fpavf_com);
-	symbol_put(fpapf_com);
-	symbol_put(dpipf_com);
+	kobject_del(dpi_vf->kobj);
 }
 
 static void dpi_remove(struct pci_dev *pdev)
@@ -764,14 +762,13 @@ static void dpi_remove(struct pci_dev *pdev)
 		hdr.vfid = dpi_vf->vf_id;
 		resp.data = 0xff;
 		/* Closing DPI queue */
-		dpipf->receive_message(dpi_vf->vf_id, dpi_vf->domain, &hdr, &req,
-				       &resp, NULL);
+		dpipf->receive_message(DPI_PF_ID, dpi_vf->domain, &hdr, &req, &resp, NULL);
 
 		dpivf_pre_setup_undo(dpi_vf);
 	}
 
-	if (comp_buf_pool)
-		dma_pool_destroy(comp_buf_pool);
+	if (dpi_vf->comp_buf_pool)
+		dma_pool_destroy(dpi_vf->comp_buf_pool);
 }
 
 static struct pci_driver dpi_vf_driver = {
@@ -784,11 +781,40 @@ static struct pci_driver dpi_vf_driver = {
 
 int dpi_vf_init(void)
 {
+	/*TODO: handle -ve cases */
+	dpipf = try_then_request_module(symbol_get(dpipf_com), "dpipf");
+	if (dpipf == NULL) {
+		printk("Load DPI PF module\n");
+		return -ENOMEM;
+	}
+
+	fpapf = try_then_request_module(symbol_get(fpapf_com), "fpapf");
+	if (fpapf == NULL) {
+		printk("Load FPA PF module\n");
+		goto fpapf_fail;
+	}
+
+	fpavf = try_then_request_module(symbol_get(fpavf_com), "fpavf");
+	if (fpavf == NULL) {
+		printk("Load FPA VF module\n");
+		goto fpavf_fail;
+	}
 	return pci_register_driver(&dpi_vf_driver);
+
+fpavf_fail:
+	symbol_put(fpapf_com);
+fpapf_fail:
+	symbol_put(dpipf_com);
+
+	return -ENOMEM;
 }
 
 void dpi_vf_cleanup(void)
 {
+	symbol_put(fpavf_com);
+	symbol_put(fpapf_com);
+	symbol_put(dpipf_com);
+
 	pci_unregister_driver(&dpi_vf_driver);
 }
 
