@@ -265,7 +265,7 @@ int octnet_get_inittime_link_status(void *oct, void *props_ptr)
 //        ls->link_info[0].hw_addr = 0x000FB71188BC;
         ls->link_info[0].num_rxpciq = num_q;
         ls->link_info[0].num_txpciq = num_q;
-        ls->link_info[0].link.s.mtu = 9000;
+        ls->link_info[0].link.s.mtu = 10018;
         ls->link_info[0].link.s.status = 1;
         ls->link_info[0].link.s.speed = 10000;
         ls->link_info[0].link.s.duplex = 1;
@@ -620,6 +620,8 @@ octnet_setup_nic_device(int octeon_id, oct_link_info_t * link_info, int ifidx)
 	pndev->tx_timeout = octnet_tx_timeout;
 	pndev->change_mtu = octnet_change_mtu;
 #endif
+	pndev->max_mtu = 10000;
+	pndev->mtu  = 10000;
 
 	/* Register ethtool support to OCTNIC */
 	oct_set_ethtool_ops(pndev);
