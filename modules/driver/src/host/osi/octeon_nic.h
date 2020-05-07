@@ -32,6 +32,9 @@
 #include "cavium-list.h"
 #include "octeon_device.h"
 #include "octeon-nic-common.h"
+#ifdef CONFIG_PPORT
+#include "if_pport.h"
+#endif
 
 /* Maximum of 1 8-byte words can be sent in a NIC control message.
    There is support for upto 7 in the control command sent to Octeon but we
@@ -181,7 +184,7 @@ octnet_prepare_pci_cmd(octeon_device_t * oct,
 			//pki_ih3.qpg = oct->pkind * 32;	/* PKI will use the defualt sttings */
 
 			pki_ih3.pm = 0x0;	/* 0x0 - meant for Parse starting at LA (L2) */
-			pki_ih3.sl = 32;	/* sl will be sizeof(pki_ih3) */
+			pki_ih3.sl = 32 + TOTAL_TAG_LEN;	/* sl will be sizeof(pki_ih3) */
 		}
 		o3_cmd.ih3 = *((uint64_t *) & ihx);
 		o3tx_cmd.ih3 = *((uint64_t *) & ihx);

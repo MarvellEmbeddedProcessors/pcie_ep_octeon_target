@@ -656,7 +656,8 @@ int octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 
 	if ((is_ipv4(skb) && !is_ip_fragmented(skb) && is_tcpudp(skb)) ||
 	    (is_ipv6(skb) && is_wo_extn_hdr(skb))) {
-		cmdsetup.s.cksum_offset = sizeof(struct ethhdr) + 1;
+		cmdsetup.s.cksum_offset = TOTAL_TAG_LEN +
+						sizeof(struct ethhdr) + 1;
 	}
 
 	if (skb_shinfo(skb)->nr_frags == 0) {
