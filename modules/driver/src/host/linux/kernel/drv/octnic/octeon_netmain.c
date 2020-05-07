@@ -479,7 +479,7 @@ void octnet_send_rx_ctrl_cmd(octnet_priv_t * priv, int start_stop)
 	nctrl.netpndev = (unsigned long)priv->pndev;
 
 	nparams.resp_order = OCTEON_RESP_NORESPONSE;
-#if  !defined(ETHERPCI)
+#if !defined(ETHERPCI) && defined(OCTNIC_CTRL)
 	if (octnet_send_nic_ctrl_pkt(priv->oct_dev, &nctrl, nparams) < 0) {
 		cavium_error("OCTNIC: Failed to send RX Control message\n");
 	}

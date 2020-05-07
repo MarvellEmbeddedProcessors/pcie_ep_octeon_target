@@ -281,8 +281,7 @@ void octnet_set_mcast_list(octnet_os_devptr_t * pndev)
 
 	nparams.resp_order = OCTEON_RESP_NORESPONSE;
 
-#if !defined(ETHERPCI)
-
+#if !defined(ETHERPCI) && defined(OCTNIC_CTRL)
 	ret = octnet_send_nic_ctrl_pkt(priv->oct_dev, &nctrl, nparams);
 	if (ret < 0) {
 		cavium_error
@@ -298,7 +297,7 @@ void octnet_set_mcast_list(octnet_os_devptr_t * pndev)
 /* Net device set_mac_address */
 int octnet_set_mac(struct net_device *pndev, void *addr)
 {
-#if  !defined(ETHERPCI)
+#if !defined(ETHERPCI) && defined(OCTNIC_CTRL)
 	int ret = 0;
 #endif
 	octnet_priv_t *priv;
@@ -323,7 +322,7 @@ int octnet_set_mac(struct net_device *pndev, void *addr)
 		      ETH_ALEN);
 
 	nparams.resp_order = OCTEON_RESP_ORDERED;
-#if  !defined(ETHERPCI)
+#if !defined(ETHERPCI) && defined(OCTNIC_CTRL)
 	ret = octnet_send_nic_ctrl_pkt(priv->oct_dev, &nctrl, nparams);
 	if (ret < 0) {
 		cavium_error("OCTNIC: MAC Address change failed\n");
@@ -1129,7 +1128,7 @@ static int oct_set_settings(struct net_device *netdev, struct ethtool_cmd *ecmd)
 	oct_link_info_t *linfo;
 	octnic_ctrl_pkt_t nctrl;
 	octnic_ctrl_params_t nparams;
-#if !defined(ETHERPCI)
+#if !defined(ETHERPCI) && defined(OCTNIC_CTRL)
 	int ret = 0;
 #endif
 
@@ -1181,7 +1180,7 @@ static int oct_set_settings(struct net_device *netdev, struct ethtool_cmd *ecmd)
 	}
 
 	nparams.resp_order = OCTEON_RESP_ORDERED;
-#if  !defined(ETHERPCI)
+#if !defined(ETHERPCI) && defined(OCTNIC_CTRL)
 	ret = octnet_send_nic_ctrl_pkt(priv->oct_dev, &nctrl, nparams);
 	if (ret < 0) {
 		cavium_error("OCTNIC: Failed to set settings\n");
