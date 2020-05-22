@@ -1225,13 +1225,16 @@ octeon_droq_fast_process_packets(octeon_device_t * oct,
 #if !(defined(ETHERPCI) & !defined(BUFPTR_ONLY_MODE))
 				uint8_t *data;
 #endif
+				copy_len = ((pkt_len + droq->buffer_size) >
+					    info->length) ?
+					    (info->length - pkt_len) :
+					    droq->buffer_size;
 				if(cavium_likely(nicbuf)) {
 					octeon_pci_unmap_single(oct->pci_dev, (unsigned long)droq->desc_ring[droq->host_read_index].buffer_ptr, droq->buffer_size, CAVIUM_PCI_DMA_FROMDEVICE);
 
 
 
 #if (defined(ETHERPCI) & !defined(BUFPTR_ONLY_MODE))
-				copy_len = ((pkt_len + droq->buffer_size) > info->length)?(info->length - pkt_len):droq->buffer_size;
 					if(pkt_len >= droq->buffer_size) {
 						/* copy the next buffer bytes from (buf->data + 8) 
                          * offset instead from buf->data offset
@@ -1240,8 +1243,6 @@ octeon_droq_fast_process_packets(octeon_device_t * oct,
 					                     ((get_recv_buffer_data(droq->recv_buf_list[droq->host_read_index].buffer, droq->app_ctx)) + 8),
                                                              copy_len);
 						recv_buf_put(nicbuf, copy_len);
-//}
-
 					} else {
 						/* Since 1st buffer has size = (droq->buffer_size + 8), so 
  						 * adjusting copy_len for this extra 8 bytes in ETHERPCI mode. 
@@ -1277,7 +1278,8 @@ octeon_droq_fast_process_packets(octeon_device_t * oct,
 					droq->desc_ring[droq->host_read_index].buffer_ptr = (uint64_t)cnnic_pci_map_single(oct->pci_dev, data, droq->buffer_size, CAVIUM_PCI_DMA_FROMDEVICE, droq->app_ctx);
 
 #endif /* ETHERPCI */
-
+				} else {
+					droq->stats.dropped_nomem++;
 				}
 
 				pkt_len += copy_len;
