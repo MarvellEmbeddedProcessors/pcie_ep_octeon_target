@@ -437,11 +437,11 @@ static inline u64 otx2_npa_aura_allocptr(struct npa_dev_t *pfvf, int aura)
 	return otx2_atomic64_add(incr, ptr);
 }
 
-u64 npa_alloc_buf(void)
+u64 npa_alloc_buf(int aura)
 {
 	u64 iova;
 
-	iova = otx2_npa_aura_allocptr(gnpa_pf_dev, 0);
+	iova = otx2_npa_aura_allocptr(gnpa_pf_dev, aura);
 	return iova;
 }
 EXPORT_SYMBOL(npa_alloc_buf);
@@ -461,6 +461,12 @@ static inline void otx2_npa_aura_freeptr(struct npa_dev_t *pfvf,
 	reg_addr = reg_addr + otx2_npa_blk_offset(NPA_LF_AURA_OP_FREE0);
         otx2_write128((u64)buf, (u64)aura | BIT_ULL(63), reg_addr);
 }
+
+void npa_free_buf(int aura, u64 buf)
+{
+	otx2_npa_aura_freeptr(gnpa_pf_dev, aura, buf);
+}
+EXPORT_SYMBOL(npa_free_buf);
 
 void otx2_npa_aura_pool_free(struct npa_dev_t *pfvf)
 {
