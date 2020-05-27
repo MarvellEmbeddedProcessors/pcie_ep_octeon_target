@@ -85,6 +85,12 @@ void cn83xx_enable_error_reporting(octeon_device_t * oct)
 	uint32_t regval;
 
 	OCTEON_READ_PCI_CONFIG(oct, CN83XX_CONFIG_PCIE_DEVCTL, &regval);
+	/* clear any old link error bits */
+	OCTEON_WRITE_PCI_CONFIG(oct, CN83XX_CONFIG_PCIE_DEVCTL, regval);
+
+	/* read again to see if new bits are set */
+	msleep(1);
+	OCTEON_READ_PCI_CONFIG(oct, CN83XX_CONFIG_PCIE_DEVCTL, &regval);
 	if (regval & 0x000f0000) {
 		cavium_error("PCI-E Link error detected: 0x%08x\n",
 			     regval & 0x000f0000);
