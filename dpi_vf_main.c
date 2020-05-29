@@ -31,7 +31,6 @@
 #define DPI_MAX_QUEUES 8
 #define DPI_NB_CHUNKS 4096
 #define FPA_DPI_XAQ_GMID 0x5
-#define DPI_AURA 0
 #define DPI_NUM_VFS 1
 #define FPA_NUM_VFS 1
 #define DPI_DMA_CMDX_SIZE 64
@@ -57,6 +56,7 @@ unsigned long part_num;
 static struct dpipf_com_s *dpipf;
 
 extern struct dpipf_com_s dpipf_com;
+
 struct dpipf_com_s {
         u64 (*create_domain)(u32 id, u16 domain_id, u32 num_vfs,
                              void *master, void *master_data,
@@ -96,6 +96,9 @@ struct dpivf_t {
 	int id;
 	struct fpavf *fpa;
 	struct dma_pool *comp_buf_pool;
+	u16 aura;
+	u8 *host_writel_ptr;
+	u64 host_writel_iova;
 };
 
 DEFINE_PER_CPU(struct dpivf_t*, cpu_dpi_vf);
@@ -231,9 +234,9 @@ static int dpi_dma_queue_write(struct dpivf_t *dpi_vf, u16 qid, u16 cmd_count,
 		//		__func__, __LINE__);
 
 		if (part_num == CAVIUM_CPU_PART_T83)
-			dpi_buf = fpavf->alloc(dpi_vf->fpa, DPI_AURA);
+			dpi_buf = fpavf->alloc(dpi_vf->fpa, dpi_vf->aura);
 		else
-			dpi_buf = npa_alloc_buf(DPI_AURA);
+			dpi_buf = npa_alloc_buf(dpi_vf->aura);
 
 		if (!dpi_buf) {
 			spin_unlock_irqrestore(&qctx->queue_lock, flags);
@@ -275,9 +278,10 @@ static int dpi_dma_queue_write(struct dpivf_t *dpi_vf, u16 qid, u16 cmd_count,
 		/* queue index may greater than pool size */
 		if (qctx->index >= qctx->pool_size_m1) {
 			if (part_num == CAVIUM_CPU_PART_T83)
-				dpi_buf = fpavf->alloc(dpi_vf->fpa, DPI_AURA);
+				dpi_buf = fpavf->alloc(dpi_vf->fpa, dpi_vf->aura);
 			else
-				dpi_buf = npa_alloc_buf(DPI_AURA);
+				dpi_buf = npa_alloc_buf(dpi_vf->aura);
+
 			if (!dpi_buf) {
 				spin_unlock_irqrestore(&qctx->queue_lock, flags);
 				dev_err(dev, "Failed to allocate");
@@ -318,18 +322,29 @@ int do_dma_sync(local_dma_addr_t local_dma_addr, host_dma_addr_t host_dma_addr,
 }
 EXPORT_SYMBOL(do_dma_sync);
 
-struct device *get_dpi_dma_dev(void)
+struct device *get_dpi_dma_dev(int handle)
 {
-	struct dpivf_t* dpi_vf = __this_cpu_read(cpu_dpi_vf);
+	struct dpivf_t* dpi_vf = NULL;
+
+	if (handle == HANDLE_TYPE_RPC) {
+		/* return high priority core specific device */
+		dpi_vf = __this_cpu_read(cpu_dpi_vf);
+	} else {
+		/* return common device shared between multiple cores */
+		dpi_vf = per_cpu(cpu_dpi_vf, 0);
+	}
+
 	return (dpi_vf) ? &dpi_vf->pdev->dev : NULL;
 }
 EXPORT_SYMBOL(get_dpi_dma_dev);
 
-/* caller needs to provide iova addrs, and completion_word, caller needs to poll completion word 
- * we use only the common fields in hdr for 8xxx and 9xxx hence dont differentiate
+/* caller needs to provide iova addrs, and completion_word,
+ * caller needs to poll completion word we use only the common fields in hdr
+ * for 8xxx and 9xxx hence dont differentiate
  */
-int do_dma_async_dpi_vector(local_dma_addr_t *local_addr, host_dma_addr_t *host_addr,
-			    int *len, int num_ptrs, host_dma_dir_t dir, local_dma_addr_t comp_iova)
+int do_dma_async_dpi_vector(struct device* dev, local_dma_addr_t *local_addr,
+							host_dma_addr_t *host_addr, int *len, int num_ptrs,
+							host_dma_dir_t dir, local_dma_addr_t comp_iova)
 {
 	dpi_dma_buf_ptr_t cmd = {0};
 	dpi_dma_ptr_t lptr[DPI_MAX_PTR] = {0};
@@ -339,8 +354,8 @@ int do_dma_async_dpi_vector(local_dma_addr_t *local_addr, host_dma_addr_t *host_
 	u8 nfst, nlst;
 	u16 index = 0;
 	int i;
-	struct dpivf_t* dpi_vf = __this_cpu_read(cpu_dpi_vf);
-
+	struct pci_dev* pdev = to_pci_dev(dev);
+	struct dpivf_t* dpi_vf = (struct dpivf_t *)pci_get_drvdata(pdev);
 
 	/* TODO check Sum(len[i]) < 64K */
 	if (num_ptrs > DPI_MAX_PTR || num_ptrs < 1)
@@ -541,6 +556,16 @@ err:
 }
 EXPORT_SYMBOL(do_dma_sync_dpi);
 
+int do_dma_to_host(uint32_t val, host_dma_addr_t host_addr)
+{
+	struct dpivf_t* dpi_vf = __this_cpu_read(cpu_dpi_vf);
+	u32 *lva = (u32 *)dpi_vf->host_writel_ptr;
+
+	WRITE_ONCE(*lva, val);
+	return do_dma_sync_dpi(dpi_vf->host_writel_iova, host_addr, lva,
+				sizeof(u32), DMA_TO_HOST);
+}
+
 int dpi_vf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 {
 	struct device *dev = &pdev->dev;
@@ -603,22 +628,22 @@ int dpi_vf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	writeq_relaxed(0x0, dpi_vf->reg_base + DPI_VDMA_REQQ_CTL);
 	dpi_vf->domain = domain++;
 	if (part_num == CAVIUM_CPU_PART_T83) {
-			err = dpivf_pre_setup(dpi_vf);
+		err = dpivf_pre_setup(dpi_vf);
 		if (err) {
 			dev_err(dev, "Pre-requisites failed");
 			return -ENODEV;
 		}
 		val = readq_relaxed(dpi_vf->reg_base + DPI_VDMA_SADDR);
 		dpi_vf->vf_id = (val >> 24) & 0xffff;
-
-		dpi_buf = fpavf->alloc(dpi_vf->fpa, DPI_AURA);
+		dpi_vf->aura = 0;
+		dpi_buf = fpavf->alloc(dpi_vf->fpa, dpi_vf->aura);
 		if (!dpi_buf) {
 			dev_err(dev, "Failed to allocate");
 			return -ENODEV;
 		}
 
 		cfg.buf_size = DPI_CHUNK_SIZE;
-		cfg.inst_aura = DPI_AURA;
+		cfg.inst_aura = dpi_vf->aura;
 
 		hdr.coproc = DPI_COPROC;
 		hdr.msg = DPI_QUEUE_OPEN;
@@ -647,8 +672,9 @@ int dpi_vf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		}
 
 		dpi_vf->vf_id = pdev->devfn - 1;
-		npa_aura_pool_init(DPI_NB_CHUNKS, DPI_CHUNK_SIZE, &dpi_vf->pdev->dev);
-		dpi_buf = npa_alloc_buf(DPI_AURA);
+		dpi_vf->aura = npa_aura_pool_init(DPI_NB_CHUNKS, DPI_CHUNK_SIZE,
+								&dpi_vf->pdev->dev);
+		dpi_buf = npa_alloc_buf(dpi_vf->aura);
 		if (!dpi_buf) {
 			dev_err(dev, "Failed to allocate");
 			return -ENOMEM;
@@ -657,7 +683,7 @@ int dpi_vf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		otx2_mbox_msg.s.cmd = DPI_QUEUE_OPEN;
 		otx2_mbox_msg.s.vfid = dpi_vf->vf_id;
 		otx2_mbox_msg.s.csize = DPI_CHUNK_SIZE;
-		otx2_mbox_msg.s.aura = DPI_AURA;
+		otx2_mbox_msg.s.aura = dpi_vf->aura;
 		otx2_mbox_msg.s.sso_pf_func = 0;
 		otx2_mbox_msg.s.npa_pf_func = npa_pf_func();
 
@@ -669,11 +695,8 @@ int dpi_vf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 			return err;
 		}
 
-		/*This memory is used for host_writel API */
-		local_ptr = dma_alloc_coherent(dev,
-				(num_online_cpus() * sizeof(u64)),
-				&local_iova, GFP_ATOMIC);
-		init_percpu_vars(local_ptr, local_iova);
+		dpi_vf->host_writel_ptr = dma_alloc_coherent(dev, sizeof(u64),
+									&dpi_vf->host_writel_iova, GFP_ATOMIC);
 	}
 
 	dpi_vf->iommu_domain = iommu_get_domain_for_dev(dev);
@@ -749,7 +772,7 @@ static void dpivf_pre_setup_undo(struct dpivf_t *dpi_vf)
 	int err;
 
 	/* TODO: Need to check the response */
-	fpavf->free(dpi_vf->fpa, DPI_AURA, dpi_vf->qctx[0].dpi_buf, 0);
+	fpavf->free(dpi_vf->fpa, dpi_vf->aura, dpi_vf->qctx[0].dpi_buf, 0);
 	err = fpavf->teardown(dpi_vf->fpa);
 	if (err)
 		dev_err(dev, "FPA teardown failed\n");
@@ -767,10 +790,6 @@ static void dpi_remove(struct pci_dev *pdev)
 {
 	struct dpivf_t *dpi_vf;
 	u64 val;
-
-	if (part_num == MRVL_CPU_PART_OCTEONTX2_96XX)
-		dma_free_coherent(&pdev->dev, (num_online_cpus() * sizeof(u64)),
-				local_ptr, local_iova);
 
 	dpi_vf = pci_get_drvdata(pdev);
 	/* Disable Engine */
@@ -797,12 +816,14 @@ static void dpi_remove(struct pci_dev *pdev)
 
 		/* Closing DPI queue */
 		otx2_dpipf->queue_config(otx2_dpi_pfdev, &otx2_mbox_msg);
-
 		do {
 			val = readq_relaxed(dpi_vf->reg_base + DPI_VDMA_SADDR);
 		} while (!(val & (0x1ull << 63)));
 
-		npa_free_buf(DPI_AURA, dpi_vf->qctx[0].dpi_buf);
+		npa_free_buf(dpi_vf->aura, dpi_vf->qctx[0].dpi_buf);
+
+		dma_free_coherent(&pdev->dev, sizeof(u64), dpi_vf->host_writel_ptr,
+				dpi_vf->host_writel_iova);
 	}
 
 	if (dpi_vf->comp_buf_pool)

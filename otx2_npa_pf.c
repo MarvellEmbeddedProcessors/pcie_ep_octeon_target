@@ -23,6 +23,7 @@
 #define REG_BAR 2
 #define MBOX_BAR 4
 #define NPA_MEM_REGIONS 5
+#define NPA_MAX_AURAS	8
 
 /* Supported devices */
 static const struct pci_device_id otx2_npa_pf_id_table[] = {
@@ -55,13 +56,14 @@ struct npa_dev_t {
 	u32 hwcap;
 	u32 stack_pg_ptrs;  /* No of ptrs per stack page */
 	u32 stack_pg_bytes; /* Size of stack page */
-	u16 iommu_domain_type;
-	void *iommu_domain;
-	struct otx2_pool *pool;
+	u16 next_aura;
 	struct workqueue_struct *mbox_wq;
 	struct pci_dev *pdev;
 	struct mbox mbox;
 	octeon_mmio mmio[NPA_MEM_REGIONS];
+	struct otx2_pool *pools[NPA_MAX_AURAS];
+	u64* alloc_reg_ptr;
+	void __iomem *free_reg_addr;
 };
 
 static void otx2_pfaf_mbox_up_handler(struct work_struct *work)
@@ -324,7 +326,7 @@ static int otx2_npa_aura_init(struct npa_dev_t *pfvf, int aura_id,
 	struct device *dev;
 	int err;
 
-	pool = pfvf->pool;
+	pool = pfvf->pools[aura_id];
 	dev = &pfvf->pdev->dev;
 
 	/* Allocate memory for HW to update Aura count.
@@ -377,10 +379,10 @@ static int otx2_npa_pool_init(struct npa_dev_t *pfvf, u16 pool_id,
 	int err;
 
 	dev = &pfvf->pdev->dev;
-	pool = pfvf->pool;
+	pool = pfvf->pools[pool_id];
+
 	/* Alloc memory for stack which is used to store buffer pointers */
-	err = qmem_alloc(dev, &pool->stack,
-			stack_pages, pfvf->stack_pg_bytes);
+	err = qmem_alloc(dev, &pool->stack, stack_pages, pfvf->stack_pg_bytes);
 	if (err)
 		return err;
 
@@ -427,22 +429,10 @@ static inline u64 otx2_npa_blk_offset(u64 offset)
 	return offset;
 }
 
-/* Alloc pointer from pool/aura */
-static inline u64 otx2_npa_aura_allocptr(struct npa_dev_t *pfvf, int aura)
-{
-	void __iomem *reg_addr = pfvf->mmio[REG_BAR].hw_addr;
-	u64 *ptr = (u64 *)(reg_addr + otx2_npa_blk_offset(NPA_LF_AURA_OP_ALLOCX(0)));
-	u64 incr = (u64)aura | BIT_ULL(63);
-
-	return otx2_atomic64_add(incr, ptr);
-}
-
 u64 npa_alloc_buf(int aura)
 {
-	u64 iova;
-
-	iova = otx2_npa_aura_allocptr(gnpa_pf_dev, aura);
-	return iova;
+	return otx2_atomic64_add((u64)aura | BIT_ULL(63),
+				gnpa_pf_dev->alloc_reg_ptr);
 }
 EXPORT_SYMBOL(npa_alloc_buf);
 
@@ -456,10 +446,8 @@ EXPORT_SYMBOL(npa_pf_func);
 static inline void otx2_npa_aura_freeptr(struct npa_dev_t *pfvf,
                                      int aura, s64 buf)
 {
-	void __iomem *reg_addr = pfvf->mmio[REG_BAR].hw_addr;
-
-	reg_addr = reg_addr + otx2_npa_blk_offset(NPA_LF_AURA_OP_FREE0);
-        otx2_write128((u64)buf, (u64)aura | BIT_ULL(63), reg_addr);
+	otx2_write128((u64)buf, (u64)aura | BIT_ULL(63),
+				gnpa_pf_dev->free_reg_addr);
 }
 
 void npa_free_buf(int aura, u64 buf)
@@ -468,85 +456,64 @@ void npa_free_buf(int aura, u64 buf)
 }
 EXPORT_SYMBOL(npa_free_buf);
 
-void otx2_npa_aura_pool_free(struct npa_dev_t *pfvf)
-{
-        struct otx2_pool *pool;
-	struct device *dev;
-
-        if (!pfvf->pool)
-                return;
-
-	dev = &pfvf->pdev->dev;
-        pool = pfvf->pool;
-        qmem_free(dev, pool->stack);
-        qmem_free(dev, pool->fc_addr);
-        devm_kfree(dev, pfvf->pool);
-}
-
 static int otx2_npa_aura_pool_init(struct npa_dev_t *pfvf, struct device *owner,
-				int num_pools, int num_ptrs, int buf_size)
+				int num_ptrs, int buf_size)
 {
-        struct otx2_pool *pool;
+	struct otx2_pool *pool;
 	struct device *dev;
-	struct npa_lf_alloc_req  *npalf;
-        int stack_pages, pool_id;
-        int aura_cnt, err, ptr;
-        s64 bufptr;
+	int stack_pages;
+	int err, ptr, aura;
+	s64 bufptr;
 
 	dev = &pfvf->pdev->dev;
-	pfvf->pool = devm_kzalloc(dev, sizeof(struct otx2_pool) * 1, GFP_KERNEL);
+	if (pfvf->next_aura >= NPA_MAX_AURAS) {
+		dev_err(owner, "Max aura limit reached : %d\n", pfvf->next_aura);
+		return -ENOMEM;
+	}
+	aura = pfvf->next_aura;
 
-	npalf = otx2_mbox_alloc_msg_npa_lf_alloc(&pfvf->mbox);
-        if (!npalf)
-                return -ENOMEM;
+	pool = devm_kzalloc(dev, sizeof(struct otx2_pool), GFP_KERNEL);
+	if (!pool)
+		return -ENOMEM;
 
-        /* Set aura and pool counts */
-        npalf->nr_pools = num_pools; /*TODO: should come as an srgument*/
-        aura_cnt = ilog2(roundup_pow_of_two(npalf->nr_pools));
-        npalf->aura_sz = (aura_cnt >= ilog2(128)) ? (aura_cnt - 6) : 1;
+	pfvf->pools[aura] = pool;
+	/* Initialize aura context */
+	err = otx2_npa_aura_init(pfvf, aura, aura, num_ptrs);
+	if (err)
+		goto fail;
 
-        err = otx2_sync_mbox_msg(&pfvf->mbox);
-        if (err)
-                return err;
+	stack_pages = (num_ptrs + pfvf->stack_pg_ptrs - 1) / pfvf->stack_pg_ptrs;
+	err = otx2_npa_pool_init(pfvf, aura, stack_pages, num_ptrs, buf_size);
+	if (err)
+		goto fail;
 
-        stack_pages =
-                (num_ptrs + pfvf->stack_pg_ptrs - 1) / pfvf->stack_pg_ptrs;
+	/* Flush accumulated messages */
+	err = otx2_sync_mbox_msg(&pfvf->mbox);
+	if (err)
+		goto fail;
 
-        pool_id = 0;
-        /* Initialize aura context */
-        err = otx2_npa_aura_init(pfvf, pool_id, pool_id, num_ptrs);
-        if (err)
-                goto fail;
-        err = otx2_npa_pool_init(pfvf, pool_id, stack_pages,
-                             num_ptrs, buf_size);
-        if (err)
-                goto fail;
+	/* Allocate pointers and free them to aura/pool */
+	for (ptr = 0; ptr < num_ptrs; ptr++) {
+		bufptr = otx2_alloc_npa_buf(pfvf, pool, GFP_KERNEL, owner);
+		if (bufptr <= 0)
+			return bufptr;
+		otx2_npa_aura_freeptr(pfvf, aura, bufptr);
+	}
+	otx2_get_page(pool);
+	pfvf->next_aura++;
+	return aura;
 
-        /* Flush accumulated messages */
-        err = otx2_sync_mbox_msg(&pfvf->mbox);
-        if (err)
-                goto fail;
-
-        /* Allocate pointers and free them to aura/pool */
-        pool = pfvf->pool;
-        for (ptr = 0; ptr < num_ptrs; ptr++) {
-                bufptr = otx2_alloc_npa_buf(pfvf, pool, GFP_KERNEL, owner);
-                if (bufptr <= 0)
-                        return bufptr;
-                otx2_npa_aura_freeptr(pfvf, pool_id, bufptr);
-        }
-        otx2_get_page(pool);
-
-        return 0;
 fail:
-        otx2_mbox_reset(&pfvf->mbox.mbox, 0);
-        otx2_npa_aura_pool_free(pfvf);
-        return err;
+	otx2_mbox_reset(&pfvf->mbox.mbox, 0);
+	qmem_free(dev, pool->stack);
+	qmem_free(dev, pool->fc_addr);
+	devm_kfree(dev, pool);
+	return err;
 }
 
 int npa_aura_pool_init(int pool_size, int buf_size, struct device *owner)
 {
-	return otx2_npa_aura_pool_init(gnpa_pf_dev, owner, 1, pool_size, buf_size);
+	return otx2_npa_aura_pool_init(gnpa_pf_dev, owner, pool_size, buf_size);
 }
 EXPORT_SYMBOL(npa_aura_pool_init);
 
@@ -643,6 +610,42 @@ static void otx2_pfaf_mbox_destroy(struct npa_dev_t *npa_pf_dev)
         otx2_mbox_destroy(&mbox->mbox_up);
 }
 
+static void otx2_set_reg_ptrs(struct npa_dev_t *npa_pf_dev)
+{
+	void __iomem *reg_addr = npa_pf_dev->mmio[REG_BAR].hw_addr;
+	u64 offset = NPA_LF_AURA_OP_ALLOCX(0);
+
+	offset &= ~(RVU_FUNC_BLKADDR_MASK << RVU_FUNC_BLKADDR_SHIFT);
+	offset |= (BLKADDR_NPA << RVU_FUNC_BLKADDR_SHIFT);
+	npa_pf_dev->alloc_reg_ptr = (u64 *)(reg_addr + offset);
+
+	offset = NPA_LF_AURA_OP_FREE0;
+	offset &= ~(RVU_FUNC_BLKADDR_MASK << RVU_FUNC_BLKADDR_SHIFT);
+	offset |= (BLKADDR_NPA << RVU_FUNC_BLKADDR_SHIFT);
+	npa_pf_dev->free_reg_addr = (reg_addr + offset);
+}
+
+static int otx2_npa_lf_alloc(struct npa_dev_t *pfvf)
+{
+	struct npa_lf_alloc_req *npalf;
+	int err, aura_cnt;
+
+	npalf = otx2_mbox_alloc_msg_npa_lf_alloc(&pfvf->mbox);
+	if (!npalf)
+		return -ENOMEM;
+
+	/* Set aura and pool counts */
+	npalf->nr_pools = NPA_MAX_AURAS;
+	aura_cnt = ilog2(roundup_pow_of_two(npalf->nr_pools));
+	npalf->aura_sz = (aura_cnt >= ilog2(128)) ? (aura_cnt - 6) : 1;
+
+	err = otx2_sync_mbox_msg(&pfvf->mbox);
+	if (err)
+		return err;
+
+	return 0;
+}
+
 static int otx2_npa_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 {
 	struct npa_dev_t *npa_pf_dev;
@@ -664,7 +667,7 @@ static int otx2_npa_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 
 	pci_set_master(pdev);
 
-	npa_pf_dev = vmalloc(sizeof(struct npa_dev_t));
+	npa_pf_dev = vzalloc(sizeof(struct npa_dev_t));
 	if (npa_pf_dev == NULL) {
 		printk("Device allocation failed\n");
 		goto err_release_regions;
@@ -716,15 +719,11 @@ static int otx2_npa_probe(struct pci_dev *pdev, const struct pci_device_id *id)
 		dev_err(&pdev->dev, "Registering MBOX interrupt failed\n");
                 goto err_mbox_destroy;
 	}
-
-	npa_pf_dev->iommu_domain = iommu_get_domain_for_dev(dev);
-        if (npa_pf_dev->iommu_domain)
-                npa_pf_dev->iommu_domain_type =
-                        ((struct iommu_domain *)npa_pf_dev->iommu_domain)->type;
-
 	pci_read_config_dword(pdev, PCI_DEVID_OCTEONTX2_RVU_NPA_PF, &val);
 	npa_pf_dev->hwcap = val;
 
+	otx2_npa_lf_alloc(npa_pf_dev);
+	otx2_set_reg_ptrs(npa_pf_dev);
 	return 0;
 err_mbox_destroy:
         otx2_pfaf_mbox_destroy(npa_pf_dev);
@@ -747,14 +746,24 @@ static int otx2_npa_sriov_configure(struct pci_dev *pdev, int numvfs)
 
 static void otx2_npa_remove(struct pci_dev *pdev)
 {
+	struct device *dev = &pdev->dev;
 	struct npa_dev_t *npa_pf_dev;
+	int i;
 
 	npa_pf_dev = pci_get_drvdata(pdev);
-	pci_set_drvdata(pdev, NULL);
-	otx2_detach_resources(&npa_pf_dev->mbox);
+
+	for (i = 0; i < npa_pf_dev->next_aura; i++) {
+		qmem_free(dev, npa_pf_dev->pools[i]->stack);
+		qmem_free(dev, npa_pf_dev->pools[i]->fc_addr);
+		devm_kfree(dev, npa_pf_dev->pools[i]);
+	}
+
 	otx2_disable_mbox_intr(npa_pf_dev);
+	otx2_detach_resources(&npa_pf_dev->mbox);
 	otx2_pfaf_mbox_destroy(npa_pf_dev);
+
 	pci_free_irq_vectors(pdev);
+	pci_set_drvdata(pdev, NULL);
 	vfree(npa_pf_dev);
 
 	pci_release_regions(pdev);

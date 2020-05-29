@@ -59,19 +59,6 @@ union sli0_s2m_regx_acc {
 	} s;
 } __packed;
 
-DEFINE_PER_CPU(u64, cpu_lptr);
-DEFINE_PER_CPU(u64, cpu_iova);
-void init_percpu_vars(u8 *local_ptr, u64 local_iova)
-{
-	int cpu;
-
-	/* modify the cpuvar value */
-	for_each_online_cpu(cpu) {
-		per_cpu(cpu_lptr, cpu) = (u64)(local_ptr + (cpu * sizeof(u32)));
-		per_cpu(cpu_iova, cpu) = local_iova + (cpu * sizeof(u32));
-	}
-}
-
 static void setup_s2m_regx_acc(void)
 {
 	union sli0_s2m_regx_acc  reg0_acc;
@@ -152,19 +139,10 @@ EXPORT_SYMBOL(host_map_writel);
 
 void host_writel(uint32_t val,  void __iomem *host_addr)
 {
-	host_dma_addr_t riova, liova;
-	u32 *lva;
-
 	if (part_num == CAVIUM_CPU_PART_T83) {
 		writel(val, host_addr);
 	} else {
-		riova = (host_dma_addr_t)host_addr;
-		liova = get_cpu_var(cpu_iova);
-		lva = (u32 *)get_cpu_var(cpu_lptr);
-		WRITE_ONCE(*lva, val);
-		do_dma_sync_dpi(liova, riova, lva, sizeof(u32), DMA_TO_HOST);
-		put_cpu_var(cpu_iova);
-		put_cpu_var(cpu_lptr);
+		do_dma_to_host(val, (host_dma_addr_t)host_addr);
 	}
 }
 EXPORT_SYMBOL(host_writel);
