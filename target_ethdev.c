@@ -691,12 +691,13 @@ netdev_tx_t mgmt_tx(struct sk_buff *skb, struct net_device *dev)
 	if (!count) {
 		/* send any pending skbs */
 		if (tq->pending) {
-			do_dma_async_dpi_vector(tq->cmd_list[cmd_idx].local_addr, 
-						tq->cmd_list[cmd_idx].host_addr, 
-						tq->cmd_list[cmd_idx].len, 
-						tq->pending, 
-						DMA_TO_HOST, 
-						tq->cmd_list[cmd_idx].comp_iova); 	
+			do_dma_async_dpi_vector(mdev->dma_dev,
+						tq->cmd_list[cmd_idx].local_addr,
+						tq->cmd_list[cmd_idx].host_addr,
+						tq->cmd_list[cmd_idx].len,
+						tq->pending,
+						DMA_TO_HOST,
+						tq->cmd_list[cmd_idx].comp_iova);
 			tq->cmd_list[cmd_idx].start_time = jiffies;
 			tq->pending = 0;
 			tq->cmd_idx = otxmn_circq_inc(tq->cmd_idx, mask);
@@ -756,12 +757,12 @@ netdev_tx_t mgmt_tx(struct sk_buff *skb, struct net_device *dev)
 	if (xmit_more && tq->pending < DPIX_MAX_PTR)
 		return NETDEV_TX_OK;
 	
-	do_dma_async_dpi_vector(tq->cmd_list[cmd_idx].local_addr, 
-				tq->cmd_list[cmd_idx].host_addr, 
-				tq->cmd_list[cmd_idx].len, 
-				tq->pending, 
-				DMA_TO_HOST, 
-				tq->cmd_list[cmd_idx].comp_iova); 	
+	do_dma_async_dpi_vector(mdev->dma_dev, tq->cmd_list[cmd_idx].local_addr,
+				tq->cmd_list[cmd_idx].host_addr,
+				tq->cmd_list[cmd_idx].len,
+				tq->pending,
+				DMA_TO_HOST,
+				tq->cmd_list[cmd_idx].comp_iova);
 	tq->cmd_list[cmd_idx].start_time = jiffies;
 	tq->pending = 0;
 	tq->cmd_idx = otxmn_circq_inc(tq->cmd_idx, mask);
@@ -911,7 +912,13 @@ static bool __handle_rxq(struct otxmn_dev *mdev, int q_idx, int budget)
 		if (i == (DPIX_MAX_PTR - 1) || i == (count - 1)) {
 			comp_iova = rq->cmd_list[cmd_idx].comp_iova;
 			wmb();
-			do_dma_async_dpi_vector(rq->cmd_list[cmd_idx].local_addr, rq->cmd_list[cmd_idx].host_addr, rq->cmd_list[cmd_idx].len, i + 1, DMA_FROM_HOST, comp_iova);
+			do_dma_async_dpi_vector(mdev->dma_dev,
+						rq->cmd_list[cmd_idx].local_addr,
+						rq->cmd_list[cmd_idx].host_addr,
+						rq->cmd_list[cmd_idx].len,
+						i + 1,
+						DMA_FROM_HOST,
+						comp_iova);
 			rq->cmd_list[cmd_idx].start_time = jiffies;
 			rq->cmd_idx = otxmn_circq_inc(rq->cmd_idx, mask);
 		}
@@ -1192,7 +1199,7 @@ static void mgmt_init_work(struct work_struct *work)
 	eth_hw_addr_random(ndev);
 	mdev = netdev_priv(ndev);
 	mdev->ndev = ndev;
-	mdev->dma_dev = get_dpi_dma_dev();
+	mdev->dma_dev = get_dpi_dma_dev(HANDLE_TYPE_MGMT_NETDEV);
 	if (mdev->dma_dev == NULL) {
 		printk(KERN_ERR "no dma device\n");
 		ret = -ENODEV;
