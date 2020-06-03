@@ -47,6 +47,19 @@ static struct {
 	"tx_dropped"}, {
 "rx_dropped"},};
 
+static const char oct_iq_stats_strings[][ETH_GSTRING_LEN] = {
+	"packets",
+	"bytes",
+	"dropped",
+};
+
+/* statistics of host rx queue */
+static const char oct_droq_stats_strings[][ETH_GSTRING_LEN] = {
+	"packets",
+	"bytes",
+	"dropped",
+};
+
 #define OCT_NIC_TX_OK     NETDEV_TX_OK
 #define OCT_NIC_TX_BUSY   NETDEV_TX_BUSY
 
@@ -1094,33 +1107,92 @@ oct_get_ethtool_stats(struct net_device *netdev,
 		      struct ethtool_stats *stats, u64 * data)
 {
 	octnet_priv_t *priv = GET_NETDEV_PRIV(netdev);
+	octeon_device_t *oct_dev = priv->oct_dev;
+	octeon_droq_t *droq;
+	octeon_instr_queue_t *instr_queue;
+	int i, cnt, total_rings;
 
-	data[0] = priv->stats.tx_packets;
-	data[1] = priv->stats.tx_bytes;
-	data[2] = priv->stats.rx_packets;
-	data[3] = priv->stats.rx_bytes;
-	data[4] = priv->stats.tx_errors;
-	data[5] = priv->stats.tx_dropped;
-	data[6] = priv->stats.rx_dropped;
+	cnt = 0;
+	data[cnt++] = priv->stats.tx_packets;
+	data[cnt++] = priv->stats.tx_bytes;
+	data[cnt++] = priv->stats.rx_packets;
+	data[cnt++] = priv->stats.rx_bytes;
+	data[cnt++] = priv->stats.tx_errors;
+	data[cnt++] = priv->stats.tx_dropped;
+	data[cnt++] = priv->stats.rx_dropped;
+
+	total_rings = oct_dev->sriov_info.rings_per_pf;
+	for (i = 0; i < total_rings; i++) {
+		instr_queue =  oct_dev->instr_queue[i];
+		data[cnt++] = instr_queue->stats.instr_processed;
+		data[cnt++] = instr_queue->stats.bytes_sent;
+		data[cnt++] = instr_queue->stats.instr_dropped;
+	}
+
+	for (i = 0; i < total_rings; i++) {
+		droq = oct_dev->droq[i];
+		data[cnt++] = droq->stats.pkts_received;
+		data[cnt++] = droq->stats.bytes_received;
+		data[cnt++] = droq->stats.dropped_nodispatch +
+			droq->stats.dropped_nomem +
+			droq->stats.dropped_toomany;
+	}
 }
 
 static void oct_get_strings(struct net_device *netdev, u32 stringset, u8 * data)
 {
-	memcpy(data, ethtool_stats_keys, sizeof(ethtool_stats_keys));
+	int i, j, num_stats, total_rings;
+	octnet_priv_t *priv = GET_NETDEV_PRIV(netdev);
+	octeon_device_t *oct_dev = priv->oct_dev;
+
+	num_stats = ARRAY_LENGTH(ethtool_stats_keys);
+	for (j = 0; j < num_stats; j++) {
+		sprintf(data, "%s", ethtool_stats_keys[j].str);
+		data += ETH_GSTRING_LEN;
+	}
+
+	total_rings = oct_dev->sriov_info.rings_per_pf;
+	num_stats = ARRAY_LENGTH(oct_iq_stats_strings);
+	for (i = 0; i < total_rings; i++) {
+		for (j = 0; j < num_stats; j++) {
+			sprintf(data, "tx-%d-%s", i, oct_iq_stats_strings[j]);
+			data += ETH_GSTRING_LEN;
+		}
+	}
+
+	num_stats = ARRAY_LENGTH(oct_droq_stats_strings);
+	for (i = 0; i < total_rings; i++) {
+		for (j = 0; j < num_stats; j++) {
+			sprintf(data, "rx-%d-%s", i, oct_droq_stats_strings[j]);
+			data += ETH_GSTRING_LEN;
+		}
+	}
 }
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,24)
 static int oct_get_sset_count(struct net_device *netdev, int sset)
 {
-	return ARRAY_LENGTH(ethtool_stats_keys);
-}
+	int total_rings;
+	octnet_priv_t *priv = GET_NETDEV_PRIV(netdev);
+	octeon_device_t *oct_dev = priv->oct_dev;
 
+	total_rings = oct_dev->sriov_info.rings_per_pf;
+	return ARRAY_LENGTH(ethtool_stats_keys) +
+		(total_rings * ARRAY_LENGTH(oct_iq_stats_strings)) +
+		(total_rings * ARRAY_LENGTH(oct_droq_stats_strings));
+}
 #else
 static int oct_get_stats_count(struct net_device *netdev)
 {
-	return ARRAY_LENGTH(ethtool_stats_keys);
-}
+	int total_rings;
+	octnet_priv_t *priv = GET_NETDEV_PRIV(netdev);
+	octeon_device_t *oct_dev = priv->oct_dev;
 
+	total_rings = oct_dev->sriov_info.rings_per_pf;
+	return ARRAY_LENGTH(ethtool_stats_keys) +
+		(total_rings * ARRAY_LENGTH(oct_iq_stats_strings)) +
+		(total_rings * ARRAY_LENGTH(oct_droq_stats_strings));
+}
 #endif
 
 static int oct_set_settings(struct net_device *netdev, struct ethtool_cmd *ecmd)

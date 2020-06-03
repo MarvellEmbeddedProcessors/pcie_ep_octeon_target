@@ -384,20 +384,77 @@ void octeon_disable_msix_interrupts(octeon_device_t * oct_dev)
 	}
 }
 
+static char octtx_intr_names[][INTRNAMSIZ] = {
+	"octeontx_epf_irerr_rint",
+	"octeontx_epf_orerr_rint",
+	"octeontx_epf_mbox_rint",
+	"octeontx_epf_oei_rint",
+	"octeontx_epf_dma_rint",
+	"octeontx_epf_misc_rint",
+	"octeontx_epf_pp_vf_rint",
+	"octeontx_epf_dma_vf_rint",
+	"octeontx_epf_rsvd_int0",
+	"octeontx_epf_rsvd_int1",
+	"octeontx_epf_rsvd_int2",
+	"octeontx_epf_rsvd_int3",
+	"octeontx_epf_rsvd_int4",
+	"octeontx_epf_rsvd_int5",
+	"octeontx_epf_rsvd_int6",
+	"octeontx_epf_rsvd_int7",
+	/* IOQ interrupt */
+	"octeontx"
+};
+
+static char octtx2_intr_names[][INTRNAMSIZ] = {
+	"octeontx2_epf_ire_rint",
+	"octeontx2_epf_ore_rint",
+	"octeontx2_epf_vfire_rint0",
+	"octeontx2_epf_vfire_rint1",
+	"octeontx2_epf_vfore_rint0",
+	"octeontx2_epf_vfore_rint1",
+	"octeontx2_epf_mbox_rint0",
+	"octeontx2_epf_mbox_rint1",
+	"octeontx2_epf_oei_rint",
+	"octeontx2_epf_dma_rint",
+	"octeontx2_epf_dma_vf_rint0",
+	"octeontx2_epf_dma_vf_rint1",
+	"octeontx2_epf_pp_vf_rint0",
+	"octeontx2_epf_pp_vf_rint1",
+	"octeontx2_epf_misc_rint",
+	"octeontx2_epf_rsvd",
+	/* IOQ interrupt */
+	"octeontx2"
+};
+
 int octeon_tx_enable_msix_interrupts(octeon_device_t * oct)
 {
 	int irqret, num_ioq_vectors, i = 0, srn = 0, ret = 0;
 	int failed_non_irq_index = 0, failed_irq_index = 0;
 	int non_ioq_intrs = 0;
+	char *oct_irq_names = NULL, *irq_names, *ioq_irq_name;
 
 	num_ioq_vectors = oct->num_oqs;
 
-	if(oct->chip_id == OCTEON_CN83XX_PF)
+	if (oct->chip_id == OCTEON_CN83XX_PF) {
 		non_ioq_intrs = OCTEON_NUM_NON_IOQ_INTR;
-	else if(oct->chip_id == OCTEON_CN93XX_PF)
+		oct_irq_names = octtx_intr_names[0];
+	} else if (oct->chip_id == OCTEON_CN93XX_PF) {
 		non_ioq_intrs = OCTEONTX2_NUM_NON_IOQ_INTR;
+		oct_irq_names = octtx2_intr_names[0];
+	}
 
 	oct->num_irqs = num_ioq_vectors + non_ioq_intrs;
+	/* allocate storage for the names assigned to each irq */
+	oct->irq_name_storage =
+		devm_kzalloc(&oct->pci_dev->dev,
+			     (oct->num_irqs * INTRNAMSIZ), GFP_KERNEL);
+	if (!oct->irq_name_storage) {
+		cavium_error("Irq name storage alloc failed...\n");
+		return 1;
+	}
+	irq_names = oct->irq_name_storage;
+	memcpy(irq_names, oct_irq_names, (non_ioq_intrs * INTRNAMSIZ));
+
 	oct->msix_entries =
 	    cavium_alloc_virt(oct->num_irqs * sizeof(cavium_msix_entry_t));
 
@@ -429,7 +486,8 @@ int octeon_tx_enable_msix_interrupts(octeon_device_t * oct)
 	/** For 83XX/93XX, there is OCTEON_NUM_NON_IOQ_INTR non-ioq interrupts */
 	for (i = 0; i < non_ioq_intrs; i++) {
 		irqret = request_irq(oct->msix_entries[i].vector,
-				     octeon_intr_handler, 0, "octeon", oct);
+				     octeon_intr_handler, 0,
+				     &irq_names[IRQ_NAME_OFF(i)], oct);
 		if (irqret) {
 			failed_non_irq_index = i;
 			cavium_error
@@ -442,9 +500,16 @@ int octeon_tx_enable_msix_interrupts(octeon_device_t * oct)
 	failed_non_irq_index = non_ioq_intrs;
 
 	for (i = 0; i < num_ioq_vectors; i++) {
+		ioq_irq_name = &irq_names[IRQ_NAME_OFF(i + non_ioq_intrs)];
+		snprintf(ioq_irq_name, INTRNAMSIZ,
+				"%s-pf%u-ioq%d",
+				&oct_irq_names[IRQ_NAME_OFF(non_ioq_intrs)],
+				oct->pf_num, i);
+
 		irqret = request_irq(oct->msix_entries[i + non_ioq_intrs].vector,
 				     octeon_msix_intr_handler, 0,
-				     "octeon", oct->ioq_vector[i]);
+				     ioq_irq_name,
+				     oct->ioq_vector[i]);
 		if (irqret) {
 			failed_irq_index = i;
 			cavium_error
@@ -453,7 +518,8 @@ int octeon_tx_enable_msix_interrupts(octeon_device_t * oct)
 
 			goto free_irq_entries;
 		}
-        oct->droq[i]->irq_num = oct->msix_entries[i + non_ioq_intrs].vector;
+		oct->droq[i]->irq_num =
+			oct->msix_entries[i + non_ioq_intrs].vector;
 	}
 
 	oct->msix_on = 1;

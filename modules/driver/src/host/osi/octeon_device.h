@@ -468,6 +468,11 @@ struct _OCTEON_DEVICE {
 
 	cavium_msix_entry_t *msix_entries;
 
+	/* when requesting IRQs, the names are stored here */
+	void *irq_name_storage;
+#define INTRNAMSIZ (32)
+#define IRQ_NAME_OFF(i) ((i) * INTRNAMSIZ)
+
    /** PF device's sr-iov information.  */
 	octeon_sriov_info_t sriov_info;
 
