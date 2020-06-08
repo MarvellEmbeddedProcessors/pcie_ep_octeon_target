@@ -58,7 +58,7 @@ EXPORT_SYMBOL(mv_get_bar_mem_map);
 int mv_pci_get_dma_dev(int handle, struct device **dev)
 {
 	if (handle == MV_FACILITY_RPC)
-		*dev = get_dpi_dma_dev();
+		*dev = get_dpi_dma_dev(handle);
 	else
 		return -ENOENT;
 

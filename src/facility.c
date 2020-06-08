@@ -45,7 +45,6 @@ void mv_dump_facility_conf(int type)
 void mv_facility_conf_init(struct device *dev, void *mapaddr, struct npu_bar_map *bar_map)
 {
 	struct facility_bar_map *facility_map;
-	struct device *dma_dev = get_dpi_dma_dev();
 
 	memset(&facility_conf, 0,
 	       sizeof(mv_facility_conf_t) * MV_FACILITY_COUNT);
@@ -53,7 +52,8 @@ void mv_facility_conf_init(struct device *dev, void *mapaddr, struct npu_bar_map
 	/* TODO: set name for all facility names */
 	facility_map = &bar_map->facility_map[MV_FACILITY_CONTROL];
 	facility_conf[MV_FACILITY_CONTROL].type = MV_FACILITY_CONTROL;
-	facility_conf[MV_FACILITY_CONTROL].dma_dev.target_dma_dev = dma_dev;
+	facility_conf[MV_FACILITY_CONTROL].dma_dev.target_dma_dev =
+			get_dpi_dma_dev(HANDLE_TYPE_CONTROL);
 	facility_conf[MV_FACILITY_CONTROL].memmap.target_addr =
 				mapaddr + facility_map->offset -
 				NPU_BARMAP_FIREWALL_OFFSET;
@@ -66,7 +66,8 @@ void mv_facility_conf_init(struct device *dev, void *mapaddr, struct npu_bar_map
 
 	facility_map = &bar_map->facility_map[MV_FACILITY_MGMT_NETDEV];
 	facility_conf[MV_FACILITY_MGMT_NETDEV].type = MV_FACILITY_MGMT_NETDEV;
-	facility_conf[MV_FACILITY_MGMT_NETDEV].dma_dev.target_dma_dev = dma_dev;
+	facility_conf[MV_FACILITY_MGMT_NETDEV].dma_dev.target_dma_dev =
+			get_dpi_dma_dev(HANDLE_TYPE_MGMT_NETDEV);
 	facility_conf[MV_FACILITY_MGMT_NETDEV].memmap.target_addr =
 				mapaddr + facility_map->offset -
 				NPU_BARMAP_FIREWALL_OFFSET;
@@ -80,7 +81,8 @@ void mv_facility_conf_init(struct device *dev, void *mapaddr, struct npu_bar_map
 
 	facility_map = &bar_map->facility_map[MV_FACILITY_NW_AGENT];
 	facility_conf[MV_FACILITY_NW_AGENT].type = MV_FACILITY_NW_AGENT;
-	facility_conf[MV_FACILITY_NW_AGENT].dma_dev.target_dma_dev = dma_dev;
+	facility_conf[MV_FACILITY_NW_AGENT].dma_dev.target_dma_dev =
+			get_dpi_dma_dev(HANDLE_TYPE_NW_AGENT);
 	facility_conf[MV_FACILITY_NW_AGENT].memmap.target_addr =
 				mapaddr + facility_map->offset -
 				NPU_BARMAP_FIREWALL_OFFSET;
@@ -94,7 +96,8 @@ void mv_facility_conf_init(struct device *dev, void *mapaddr, struct npu_bar_map
 
 	facility_map = &bar_map->facility_map[MV_FACILITY_RPC];
 	facility_conf[MV_FACILITY_RPC].type = MV_FACILITY_RPC;
-	facility_conf[MV_FACILITY_RPC].dma_dev.target_dma_dev = dma_dev;
+	facility_conf[MV_FACILITY_RPC].dma_dev.target_dma_dev =
+			get_dpi_dma_dev(HANDLE_TYPE_RPC);
 	facility_conf[MV_FACILITY_RPC].memmap.target_addr =
 				mapaddr + facility_map->offset -
 				NPU_BARMAP_FIREWALL_OFFSET;
