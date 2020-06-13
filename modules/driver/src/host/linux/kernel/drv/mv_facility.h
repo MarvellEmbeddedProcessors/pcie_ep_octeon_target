@@ -4,11 +4,12 @@
  *
  * Facility is a mechanism provided through which host and target
  * modules (implementing the functionality of facilities) communicate
- * via OcteonTX memory made accessible to Host through OcteonTX BAR1
+ * via memory made accessible to Host through platform BAR(s).
  */
  
 #ifndef _MV_FACILITY_H_
 #define _MV_FACILITY_H_
+#include <linux/interrupt.h>
 
 /**
  * @brief facility memory address
@@ -39,9 +40,14 @@ typedef struct {
 
 typedef u64 host_dma_addr_t;
 
+enum mv_dma_dir {
+	MV_DMA_TO_HOST = 0,
+	MV_DMA_FROM_HOST = 1,
+};
+
 enum mv_target {
-	TARGET_HOST = 0,
-	TARGET_EP = 1,
+	MV_TARGET_HOST = 0,
+	MV_TARGET_EP = 1,
 };
 
 /**
@@ -68,6 +74,29 @@ int mv_pci_get_dma_dev(
 	struct device		**dev);
 
 /**
+ * @brief Perform DMA operation
+ *
+ * Performs a DMA operation on a DMA assigned to a facility
+ * @param handle	Facility handle
+ * @param host_addr	dma address in host system
+ * @param ep_addr	virtual address in target system
+ * @param dma_ep_addr	dma address in target system
+ * @param dir		direction of dma transaction
+ * @param size		transaction size in bytes
+ *
+ * @return 0, on success and standard error numbers on failure.
+ */
+#ifdef CONFIG_MV_FACILITY_DMA_API
+int mv_pci_sync_dma(
+	int			handle,
+	host_dma_addr_t		host_addr,
+	void			*ep_addr,
+	dma_addr_t		dma_ep_addr,
+	enum mv_dma_dir		dir,
+	u32			size);
+#endif
+
+/**
  * @brief Return the facility doorbells number
  *
  * Returns the number of doorbells configured for the facility
@@ -81,6 +110,41 @@ int mv_get_num_dbell(
 	int			handle,
 	enum mv_target		target,
 	uint32_t		*num_dbells);
+
+/**
+ * @brief Request Facility IRQ
+ *
+ * Register Facility handler for a doorbell interrupt
+ * doorbell interrupts start disabled.
+ * @param handle	Facility handle
+ * @param dbell		the doorbell to use
+ * @param handler	function be invoked upon doorbell interrupt
+ * @param arg		this is passed as "dev" parameter to request_irq().
+ *			so this argument is passed to the handler
+ *			upon invocation.
+ *
+ * @return 0, on success and standard error numbers on failure.
+ */
+int mv_request_dbell_irq(
+	int			handle,
+	uint32_t		dbell,
+	irq_handler_t		handler,
+	void			*arg);
+
+/**
+ * @brief Free Facility IRQ
+ *
+ * Unregister Facility handler for a doorbell interrupt
+ * @param handle	Facility handle
+ * @param dbell		the doorbell to use
+ * @param arg		argument passed to mv_request_dbell_irq().
+ *
+ * @return 0, on success and standard error numbers on failure.
+ */
+int mv_free_dbell_irq(
+	int			handle,
+	uint32_t		dbell,
+	void			*arg);
 
 /**
  * @brief Send doorbell interrupt to remote Facility

@@ -21,6 +21,8 @@ mv_facility_conf_t rpc_facility_conf;
 mv_facility_conf_t nwa_facility_conf;
 static bool init_done = false;
 
+#define UNUSED  __attribute__((unused))
+
 int mv_get_facility_handle(char *name)
 {
 	if (strcmp(name, MV_FACILITY_NAME_RPC) &&
@@ -66,7 +68,7 @@ EXPORT_SYMBOL(mv_pci_get_dma_dev);
 
 int mv_get_num_dbell(int handle, enum mv_target target, uint32_t *num_dbells)
 {
-	if (handle == MV_FACILITY_RPC && target == TARGET_EP) {
+	if (handle == MV_FACILITY_RPC && target == MV_TARGET_EP) {
 		*num_dbells = rpc_facility_conf.num_h2t_dbells;
 	} else {
 		return -ENOENT;
@@ -75,6 +77,25 @@ int mv_get_num_dbell(int handle, enum mv_target target, uint32_t *num_dbells)
 	return 0;
 }
 EXPORT_SYMBOL(mv_get_num_dbell);
+
+int mv_request_dbell_irq(
+	int handle UNUSED,
+	uint32_t dbell UNUSED,
+	irq_handler_t handler UNUSED,
+	void *arg UNUSED)
+{
+	return -ENOTSUPP;
+}
+EXPORT_SYMBOL(mv_request_dbell_irq);
+
+int mv_free_dbell_irq(
+	int handle UNUSED,
+	uint32_t dbell UNUSED,
+	void *arg UNUSED)
+{
+	return -ENOTSUPP;
+}
+EXPORT_SYMBOL(mv_free_dbell_irq);
 
 int mv_send_dbell(int handle, uint32_t dbell)
 {
