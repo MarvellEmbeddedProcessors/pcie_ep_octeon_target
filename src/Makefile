@@ -2,7 +2,7 @@ CROSS_COMPILE=aarch64-marvell-linux-gnu-
 ARCH ?= arm64
 KERNEL_DIR ?= ${OCTEONTX_ROOT}/linux/kernel/linux
 DMA_API_DIR?=$(src)/../../dpi_dma
-ccflags-y +=-I$(DMA_API_DIR)
+ccflags-y +=-I$(DMA_API_DIR) -DCONFIG_MV_FACILITY_DMA_API
 
 OBJS += ep_base.o
 OBJS += facility.o device_access.o

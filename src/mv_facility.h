@@ -4,7 +4,7 @@
  *
  * Facility is a mechanism provided through which host and target
  * modules (implementing the functionality of facilities) communicate
- * via OcteonTX memory made accessible to Host through OcteonTX BAR1
+ * via memory made accessible to Host through platform BAR(s).
  */
  
 #ifndef _MV_FACILITY_H_
@@ -46,8 +46,8 @@ enum mv_dma_dir {
 };
 
 enum mv_target {
-	TARGET_HOST = 0,
-	TARGET_EP = 1,
+	MV_TARGET_HOST = 0,
+	MV_TARGET_EP = 1,
 };
 
 /**
@@ -86,6 +86,7 @@ int mv_pci_get_dma_dev(
  *
  * @return 0, on success and standard error numbers on failure.
  */
+#ifdef CONFIG_MV_FACILITY_DMA_API
 int mv_pci_sync_dma(
 	int			handle,
 	host_dma_addr_t		host_addr,
@@ -93,6 +94,7 @@ int mv_pci_sync_dma(
 	dma_addr_t		dma_ep_addr,
 	enum mv_dma_dir		dir,
 	u32			size);
+#endif
 
 /**
  * @brief Return the facility doorbells number
@@ -113,6 +115,7 @@ int mv_get_num_dbell(
  * @brief Request Facility IRQ
  *
  * Register Facility handler for a doorbell interrupt
+ * doorbell interrupts start disabled.
  * @param handle	Facility handle
  * @param dbell		the doorbell to use
  * @param handler	function be invoked upon doorbell interrupt
@@ -142,6 +145,20 @@ int mv_free_dbell_irq(
 	int			handle,
 	uint32_t		dbell,
 	void			*arg);
+
+/**
+ * @brief Send doorbell interrupt to remote Facility
+ *
+ * Send doorbell to counterpart of the Facility, host calls this to
+ * interrupt Facility on target and vice-versa.
+ * @param handle	Facility handle
+ * @param dbell		the doorbell to use
+ *
+ * @return 0, on success and standard error numbers on failure.
+ */
+int mv_send_dbell(
+	int			handle,
+	uint32_t		dbell);
 
 /**
  * @brief Returns the Facility bar map
