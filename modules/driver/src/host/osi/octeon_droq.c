@@ -69,8 +69,10 @@ int octeon_droq_check_hw_for_pkts(octeon_device_t * oct, octeon_droq_t * droq)
 			OCTEON_WRITE32(droq->pkts_sent_reg, pkt_count);
 		}
 #ifdef OCT_NIC_USE_NAPI
-		else
+		else {
 			OCTEON_WRITE32(droq->pkts_sent_reg, pkt_count);
+			OCTEON_READ32(droq->pkts_sent_reg);
+		}
 #endif
 	}
 
