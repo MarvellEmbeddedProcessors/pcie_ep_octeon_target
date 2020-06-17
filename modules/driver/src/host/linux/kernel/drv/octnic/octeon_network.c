@@ -404,17 +404,6 @@ int octnet_change_mtu(struct net_device *pndev, int new_mtu)
 	return 0;
 }
 
-#ifdef CONFIG_PPORT
-static int octeon_tag_size(struct sk_buff *skb)
-{
-	/* Update l3_offset to be relative to original packet. */
-	u16 tag_size;
-
-        tag_size = *(u16 *)(&skb->cb[SKB_CB_PPORT_TAG_SZ_OFFSET]);
-        return tag_size;
-}
-#endif
-
 /** Routine to push packets arriving on Octeon interface upto network layer.
   * @param octeon_id  - pointer to octeon device.
   * @param skbuff     - skbuff struct to be passed to network layer.
@@ -612,12 +601,6 @@ int octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 		     SKB_CB_PPORT_MAGIC_U32)) {
 		cavium_print(PRINT_ERROR,
 			     "pport mode - can't send packets from Linux stack\n");
-		goto oct_xmit_failed;
-	}
-
-	if (unlikely((skb_network_offset(skb) - octeon_tag_size(skb)) <
-		     ETH_HLEN)) {
-		cavium_print(PRINT_ERROR, "Illegal skb network offset\n");
 		goto oct_xmit_failed;
 	}
 #endif
