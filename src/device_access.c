@@ -105,6 +105,24 @@ int mv_request_dbell_irq(int handle, u32 dbell, irq_handler_t irq_handler,
 }
 EXPORT_SYMBOL(mv_request_dbell_irq);
 
+int mv_dbell_enable(int handle, uint32_t dbell)
+{
+	return 0;
+}
+EXPORT_SYMBOL_GPL(mv_dbell_enable);
+
+int mv_dbell_disable(int handle, uint32_t dbell)
+{
+	return 0;
+}
+EXPORT_SYMBOL_GPL(mv_dbell_disable);
+
+int mv_dbell_disable_nosync(int handle, uint32_t dbell)
+{
+	return 0;
+}
+EXPORT_SYMBOL_GPL(mv_dbell_disable_nosync);
+
 int mv_free_dbell_irq(int handle, uint32_t dbell, void *arg)
 {
 	struct device *dev = plat_dev;

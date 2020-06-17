@@ -86,7 +86,7 @@ typedef struct {
         uint64_t flags;
 
         /* address of OcteonTX BAR1 memory assigned to the facility */
-        mv_facility_map_addr_t memmap;
+        mv_bar_map_addr_t memmap;
         uint32_t memsize;
 
         /* Number of doorbells assigned to facility for host to
