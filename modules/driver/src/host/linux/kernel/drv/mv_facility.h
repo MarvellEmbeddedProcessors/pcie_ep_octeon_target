@@ -6,7 +6,7 @@
  * modules (implementing the functionality of facilities) communicate
  * via memory made accessible to Host through platform BAR(s).
  */
- 
+
 #ifndef _MV_FACILITY_H_
 #define _MV_FACILITY_H_
 #include <linux/interrupt.h>
@@ -19,14 +19,12 @@
 typedef union {
 	uint64_t u64;
 
-	/* Host IO remapped address of facility memory inside BAR1 */
+	/* Host IO remapped address of mapped memory */
 	void __iomem *host_addr;
 
-	/* Target virtual address of facility memory mapped to BAR1 */
+	/* Target virtual address of mapped memory */
 	void *target_addr;
-} mv_facility_map_addr_t;
-
-typedef mv_facility_map_addr_t mv_bar_map_addr_t;
+} mv_bar_map_addr_t;
 
 /**
  * @brief facility bar mapped memory
@@ -49,6 +47,7 @@ enum mv_target {
 	MV_TARGET_HOST = 0,
 	MV_TARGET_EP = 1,
 };
+
 
 /**
  * @brief Get Facility handle
@@ -145,6 +144,46 @@ int mv_free_dbell_irq(
 	int			handle,
 	uint32_t		dbell,
 	void			*arg);
+
+/**
+ * @brief Enable doorbell IRQ
+ *
+ * Enables the Facility doorbell IRQ
+ * @param handle	Facility handle
+ * @param dbell		the doorbell to use
+ *
+ * @return 0, on success and standard error numbers on failure.
+ */
+int mv_dbell_enable(
+	int			handle,
+	uint32_t		dbell);
+
+/**
+ * @brief Disable doorbell IRQ
+ *
+ * Disables the Facility doorbell IRQ
+ * @param handle	Facility handle
+ * @param dbell		the doorbell to use
+ *
+ * @return 0, on success and standard error numbers on failure.
+ */
+int mv_dbell_disable(
+	int			handle,
+	uint32_t		dbell);
+
+/**
+ * @brief Disable doorbell IRQ without waiting
+ *
+ * Disables the Facility doorbell IRQ, does not ensure existing instances
+ * of the IRQ handler have completed before returning
+ * @param handle	Facility handle
+ * @param dbell		the doorbell to use
+ *
+ * @return 0, on success and standard error numbers on failure.
+ */
+int mv_dbell_disable_nosync(
+	int			handle,
+	uint32_t		dbell);
 
 /**
  * @brief Send doorbell interrupt to remote Facility

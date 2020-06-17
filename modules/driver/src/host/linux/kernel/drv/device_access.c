@@ -88,6 +88,30 @@ int mv_request_dbell_irq(
 }
 EXPORT_SYMBOL(mv_request_dbell_irq);
 
+int mv_dbell_enable(
+	int handle UNUSED,
+	uint32_t dbell UNUSED)
+{
+	return -ENOTSUPP;
+}
+EXPORT_SYMBOL(mv_dbell_enable);
+
+int mv_dbell_disable(
+	int handle UNUSED,
+	uint32_t dbell UNUSED)
+{
+	return -ENOTSUPP;
+}
+EXPORT_SYMBOL(mv_dbell_disable);
+
+int mv_dbell_disable_nosync(
+	int handle UNUSED,
+	uint32_t dbell UNUSED)
+{
+	return -ENOTSUPP;
+}
+EXPORT_SYMBOL(mv_dbell_disable_nosync);
+
 int mv_free_dbell_irq(
 	int handle UNUSED,
 	uint32_t dbell UNUSED,
