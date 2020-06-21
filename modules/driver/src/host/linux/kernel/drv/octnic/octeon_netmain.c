@@ -627,8 +627,7 @@ octnet_setup_nic_device(int octeon_id, oct_link_info_t * link_info, int ifidx)
 	oct_set_ethtool_ops(pndev);
 
 #if !defined(ETHERPCI)
-	pndev->hw_features = NETIF_F_HW_CSUM;
-	pndev->hw_features |= NETIF_F_SG;
+	pndev->hw_features = NETIF_F_SG;
 #if 0
 	/* Notify the n/w stack regarding TSO capability feature */
 	if ((oct->chip_id == OCTEON_CN83XX_PF)
