@@ -44,8 +44,6 @@ module_param(num_rings_per_pf, int, 0);
 MODULE_PARM_DESC(num_rings_per_pf, "Number of rings per PF");
 
 uint32_t num_rings_per_vf = 1;
-module_param(num_rings_per_vf, int, 0);
-MODULE_PARM_DESC(num_rings_per_vf, "Number of rings per VF");
 
 uint32_t num_vfs = 0;
 module_param(num_vfs, int, 0);

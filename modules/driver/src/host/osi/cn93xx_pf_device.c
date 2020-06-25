@@ -763,7 +763,7 @@ cvm_intr_return_t cn93xx_interrupt_handler(void *dev)
         for (i = 0 ; i < 64; i++) {
                reg_val = octeon_read_csr64(oct, CN93XX_SDP_R_ERR_TYPE(i));
             if(reg_val) {
-                       cavium_print_msg("received err type on input ring [%d]: 0x%016llx\n", i, reg_val);
+                       cavium_print_msg("received err type on output ring [%d]: 0x%016llx\n", i, reg_val);
                    octeon_write_csr64(oct, CN93XX_SDP_R_ERR_TYPE(i), reg_val);
             }
         }

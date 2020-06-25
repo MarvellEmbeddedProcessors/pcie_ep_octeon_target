@@ -805,7 +805,7 @@ cvm_intr_return_t cn83xx_interrupt_handler(void *dev)
                reg_val = octeon_read_csr64(oct,
                                    CN83XX_SDP_EPF_R_ERR_TYPE(oct->epf_num, i));
             if(reg_val) {
-                       cavium_print_msg("received err type on input ring [%d]: 0x%016llx\n", i, reg_val);
+                       cavium_print_msg("received err type on output ring [%d]: 0x%016llx\n", i, reg_val);
                    octeon_write_csr64(oct, CN83XX_SDP_EPF_R_ERR_TYPE(oct->epf_num, i), reg_val);
             }
         }
