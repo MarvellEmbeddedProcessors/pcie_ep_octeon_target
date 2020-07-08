@@ -40,7 +40,6 @@ union sli_s2m_op_s {
 #define RWTYPE_RELAXED_ORDER 0
 #define RWTYPE_NO_SNOOP      1
 
-extern u64 *local_ptr, local_iova;
 extern unsigned long part_num;
 
 union sli0_s2m_regx_acc {

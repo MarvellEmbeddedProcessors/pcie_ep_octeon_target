@@ -102,6 +102,8 @@ struct dpivf_t {
 };
 
 DEFINE_PER_CPU(struct dpivf_t*, cpu_dpi_vf);
+DEFINE_PER_CPU(u32*, cpu_lptr);
+DEFINE_PER_CPU(u64, cpu_iova);
 
 static const struct pci_device_id dpi_id_table[] = {
 	{ PCI_DEVICE(PCI_VENDOR_ID_CAVIUM, PCI_DEVICE_ID_OCTEONTX_DPI_VF_83XX) },
@@ -558,12 +560,15 @@ EXPORT_SYMBOL(do_dma_sync_dpi);
 
 int do_dma_to_host(uint32_t val, host_dma_addr_t host_addr)
 {
-	struct dpivf_t* dpi_vf = __this_cpu_read(cpu_dpi_vf);
-	u32 *lva = (u32 *)dpi_vf->host_writel_ptr;
+	host_dma_addr_t liova = get_cpu_var(cpu_iova);
+	u32 *lva = get_cpu_var(cpu_lptr);
 
 	WRITE_ONCE(*lva, val);
-	return do_dma_sync_dpi(dpi_vf->host_writel_iova, host_addr, lva,
-				sizeof(u32), DMA_TO_HOST);
+	do_dma_sync_dpi(liova, host_addr, lva, sizeof(u32), DMA_TO_HOST);
+	put_cpu_var(cpu_iova);
+	put_cpu_var(cpu_lptr);
+
+	return 0;
 }
 
 int dpi_vf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
@@ -695,8 +700,24 @@ int dpi_vf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 			return err;
 		}
 
-		dpi_vf->host_writel_ptr = dma_alloc_coherent(dev, sizeof(u64),
-									&dpi_vf->host_writel_iova, GFP_ATOMIC);
+		if (num_vfs == 0) {
+			u8 *local_ptr;
+			u64 local_iova;
+
+			/* This vf is shared between multiple cores and is used mainly
+			 * by mgmt_net. So this vf will create a dma memory to be used
+			 * for host_writel API, This api is executed on multiple cores
+			 */
+			local_ptr = dma_alloc_coherent(dev,
+							(num_online_cpus() * sizeof(u64)),
+							&local_iova, GFP_ATOMIC);
+			for_each_online_cpu(cpu) {
+				per_cpu(cpu_lptr, cpu) = (u32*)(local_ptr + (cpu * sizeof(u64)));
+				per_cpu(cpu_iova, cpu) = local_iova + (cpu * sizeof(u64));
+			}
+			dpi_vf->host_writel_ptr = local_ptr;
+			dpi_vf->host_writel_iova = local_iova;
+		}
 	}
 
 	dpi_vf->iommu_domain = iommu_get_domain_for_dev(dev);
@@ -822,8 +843,9 @@ static void dpi_remove(struct pci_dev *pdev)
 
 		npa_free_buf(dpi_vf->aura, dpi_vf->qctx[0].dpi_buf);
 
-		dma_free_coherent(&pdev->dev, sizeof(u64), dpi_vf->host_writel_ptr,
-				dpi_vf->host_writel_iova);
+		if (dpi_vf->host_writel_ptr)
+			dma_free_coherent(&pdev->dev, (num_online_cpus() * sizeof(u64)),
+				dpi_vf->host_writel_ptr, dpi_vf->host_writel_iova);
 	}
 
 	if (dpi_vf->comp_buf_pool)
