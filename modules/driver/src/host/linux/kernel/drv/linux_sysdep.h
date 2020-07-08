@@ -627,6 +627,8 @@ static inline void *cav_net_buff_rx_alloc(uint32_t size, void *ctx UNUSED)
 					SKB_ADJUST - ((unsigned long)skb->data & SKB_ADJUST_MASK);
 				skb_reserve(skb, r);
 			}
+			/* clear info structure at the head of data */
+			memset(skb->data, 0, 16);
 	}
 	/*if( (unsigned long)skb->data & SKB_ADJUST_MASK) {
 	   printk("skb->data @ %p\n", skb->data);

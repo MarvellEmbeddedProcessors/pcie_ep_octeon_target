@@ -90,8 +90,8 @@
 /* NIC mode performance tuning: increased from 128 to 1024 */
 #define   CN83XX_OQ_REFIL_THRESHOLD     1024
 
-#define   CN83XX_OQ_INTR_PKT            1
-#define   CN83XX_OQ_INTR_TIME           1
+#define   CN83XX_OQ_INTR_PKT            8
+#define   CN83XX_OQ_INTR_TIME           2
 
 #define   CN83XX_CFG_IO_QUEUES          64
 #define   CN83XX_MAX_MACS               4	/* PEMs count */

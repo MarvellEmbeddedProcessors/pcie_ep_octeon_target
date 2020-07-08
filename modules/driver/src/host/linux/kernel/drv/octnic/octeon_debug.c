@@ -20,6 +20,7 @@ static void octeon_debug_dump(struct net_device *dev)
 	octeon_instr_queue_t *iq;
 	octeon_droq_t *oq;
 	int q;
+	uint64_t total_rx;
 
 	priv = GET_NETDEV_PRIV(dev);
 	oct = (octeon_device_t *)priv->oct_dev;
@@ -44,6 +45,8 @@ static void octeon_debug_dump(struct net_device *dev)
 	}
 
 	netdev_info(dev, "#######  Output Queue Info #######");
+	netdev_info(dev, "Buffer size = %u\n", oct->droq[0]->buffer_size);
+	total_rx = 0;
 	for (q = 0; q < oct->num_oqs; q++) {
 		netdev_info(dev, "======== OQ %d ========\n", q);
 		oq = oct->droq[q];
@@ -51,6 +54,7 @@ static void octeon_debug_dump(struct net_device *dev)
 			netdev_info(dev, "Queue not used\n");
 			continue;
 		}
+		total_rx += oq->stats.pkts_received;
 
 		netdev_info(dev, "host_read_index    = %u\n", oq->host_read_index);
 		netdev_info(dev, "octeon_write_index = %u\n", oq->octeon_write_index);
@@ -58,7 +62,14 @@ static void octeon_debug_dump(struct net_device *dev)
 		netdev_info(dev, "pkts_pending       = %u\n", cavium_atomic_read(&oq->pkts_pending));
 		netdev_info(dev, "refill_count       = %u\n", oq->refill_count);
 		netdev_info(dev, "max_count          = %u\n", oq->max_count);
+		netdev_info(dev, "pkts_received      = %llu\n", oq->stats.pkts_received);
+		netdev_info(dev, "dropped_nodispatch = %llu\n", oq->stats.dropped_nodispatch);
+		netdev_info(dev, "dropped_nomem      = %llu\n", oq->stats.dropped_nomem);
+		netdev_info(dev, "dropped_toomany    = %llu\n", oq->stats.dropped_toomany);
+		netdev_info(dev, "dropped_zlp        = %llu\n", oq->stats.dropped_zlp);
+		netdev_info(dev, "pkts_delayed_data  = %llu\n", oq->stats.pkts_delayed_data);
 	}
+	netdev_info(dev, "Total Rx    = %llu\n", total_rx);
 }
 
 

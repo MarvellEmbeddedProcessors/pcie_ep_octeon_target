@@ -105,6 +105,10 @@ typedef struct {
 			      /**< Packets dropped due to large number of pkts to process. */
 	uint64_t lastbytes_received;
 				 /**< packets received through this queue at last proc display */
+	uint64_t pkts_delayed_data;
+				 /**< packets with data got ready after interrupt arrived */
+	uint64_t dropped_zlp;
+				 /**< packets dropped due to zero length */
 } oct_droq_stats_t;
 
 #define OCT_DROQ_STATS_SIZE   (sizeof(oct_droq_stats_t))

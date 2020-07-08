@@ -52,6 +52,7 @@
 #define   cnnic_malloc_irq(size, flags)  cavium_malloc_dma(size, flags)
 #define   cnnic_free_irq(buf)            cavium_free_dma(buf)
 #define   octeon_free_recv_info(buf)     cnnic_free_irq(buf)
+#define   octeon_dma_rmb()               dma_rmb()
 
 #define   cavium_alloc_virt(size)        vmalloc((size))
 #define   cavium_free_virt(ptr)          vfree((ptr))
@@ -92,6 +93,7 @@
 
 #define   CAVIUM_PCI_DMA_FROMDEVICE      PCI_DMA_FROMDEVICE
 #define   CAVIUM_PCI_DMA_TODEVICE        PCI_DMA_TODEVICE
+#define   CAVIUM_PCI_DMA_BIDIRECTIONAL   PCI_DMA_BIDIRECTIONAL
 
 #define   free_recv_buffer(skb)          dev_kfree_skb_any((skb))
 #define   recv_buf_put(skb, len)         skb_put((skb), (len))

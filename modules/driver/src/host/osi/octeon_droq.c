@@ -1148,7 +1148,37 @@ octeon_droq_fast_process_packets(octeon_device_t * oct,
 #ifndef BUFPTR_ONLY_MODE
 		info = &(droq->info_list[droq->host_read_index]);
 #else
+		cnnic_pci_dma_sync_single_for_cpu(oct->pci_dev,
+			droq->desc_ring[droq->host_read_index].buffer_ptr,
+			droq->buffer_size, CAVIUM_PCI_DMA_BIDIRECTIONAL);
 		info = (octeon_droq_info_t *)(droq->recv_buf_list[droq->host_read_index].data);
+		if(cavium_unlikely(!((volatile octeon_droq_info_t *)info->length))) {
+			int retry = 10;
+
+			cavium_print(PRINT_DEBUG,
+				     "OCTEON DROQ[%d]: host_read_idx: %d; Data not ready yet, "
+				     "Retry; pkt=%u, pkt_count=%u, pending=%u\n",
+				     droq->q_no, droq->host_read_index,
+				     pkt, pkt_count,
+				     cavium_atomic_read(&droq->pkts_pending));
+			droq->stats.pkts_delayed_data++;
+			while (retry-- && cavium_unlikely(
+				!(volatile octeon_droq_info_t *)info->length));
+			if (!retry && cavium_unlikely(!info->length)) {
+				cavium_error("OCTEON DROQ[%d]: host_read_idx: %d; Retry failed !!",
+					     droq->q_no, droq->host_read_index);
+				/* May be zero length packet; drop it */
+				octeon_pci_unmap_single(oct->pci_dev,
+					(unsigned long)droq->desc_ring[droq->host_read_index].buffer_ptr,
+					droq->buffer_size, CAVIUM_PCI_DMA_FROMDEVICE);
+				nicbuf = droq->recv_buf_list[droq->host_read_index].buffer;
+				free_recv_buffer(nicbuf);
+				droq->recv_buf_list[droq->host_read_index].buffer = 0;
+				INCR_INDEX_BY1(droq->host_read_index, droq->max_count);
+				droq->stats.dropped_zlp++;
+				continue;
+			}
+		}
 #endif
 
 #if (defined(ETHERPCI) & !defined(BUFPTR_ONLY_MODE))
@@ -1163,15 +1193,6 @@ octeon_droq_fast_process_packets(octeon_device_t * oct,
 		if (oct->chip_id == OCTEON_CN83XX_PF || oct->chip_id == OCTEON_CN93XX_PF)
 			octeon_swap_8B_data((uint64_t *) &(info->length), 1);
 #endif
-
-		if(cavium_unlikely(!info->length))  {
-			cavium_error("OCTEON:DROQ[%d] idx: %d len:0, pkt_cnt: %d \n",
-			             droq->q_no, droq->host_read_index, pkt_count);
-			cavium_error_print_data((uint8_t *)info, OCT_DROQ_INFO_SIZE);
-			pkt++;
-
-			break;
-		}
 
 #ifdef ETHERPCI
 		resp_hdr = (octeon_resp_hdr_t *)&etherpci_resp_hdr;

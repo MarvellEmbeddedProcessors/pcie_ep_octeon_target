@@ -251,7 +251,7 @@ int cn83xx_pf_setup_global_oq_reg(octeon_device_t * oct, int q_no)
 	volatile uint64_t reg_val = 0ULL;
 	q_no += oct->sriov_info.pf_srn;
 	reg_val =
-	    octeon_read_csr(oct,
+	    octeon_read_csr64(oct,
 			    CN83XX_SDP_EPF_R_OUT_CONTROL(oct->epf_num, q_no));
 
 #if (defined(IOQ_PERF_MODE_O3) | defined(BUFPTR_ONLY_MODE))
@@ -281,13 +281,15 @@ int cn83xx_pf_setup_global_oq_reg(octeon_device_t * oct, int q_no)
 	reg_val |= (CN83XX_R_OUT_CTL_ES_P);
 
 #ifdef IOQ_PERF_MODE_O3
+#error "############# PERF_MODE_O3 enabled"
 	/* Force NoSnoop to be enabled */
 	reg_val |= (CN83XX_R_OUT_CTL_NSR_I);
 	reg_val |= (CN83XX_R_OUT_CTL_NSR_D);
 #endif
 
+	printk("%s: epf-%u q-%d OUT_CONTROL=0x%llx\n", __func__, oct->epf_num, q_no, reg_val);
 	/* write all the selected settings */
-	octeon_write_csr(oct, CN83XX_SDP_EPF_R_OUT_CONTROL(oct->epf_num, q_no),
+	octeon_write_csr64(oct, CN83XX_SDP_EPF_R_OUT_CONTROL(oct->epf_num, q_no),
 			 reg_val);
 
 	return 0;
@@ -515,14 +517,15 @@ static void cn83xx_setup_oq_regs(octeon_device_t * oct, int oq_no)
 			   droq->max_count);
 
 	oq_ctl =
-	    octeon_read_csr(oct,
+	    octeon_read_csr64(oct,
 			    CN83XX_SDP_EPF_R_OUT_CONTROL(oct->epf_num, oq_no));
 	oq_ctl &= ~0x7fffffULL;	//clear the ISIZE and BSIZE (22-0)
 	oq_ctl |= (droq->buffer_size & 0xffff);	//populate the BSIZE (15-0)
 #ifndef BUFPTR_ONLY_MODE
 	oq_ctl |= ((OCT_RESP_HDR_SIZE << 16) & 0x7fffff);//populate ISIZE(22-16)
 #endif
-	octeon_write_csr(oct, CN83XX_SDP_EPF_R_OUT_CONTROL(oct->epf_num, oq_no),
+	printk("%s: q-%d oq_ctl=0x%llx\n", __func__, oq_no, oq_ctl);
+	octeon_write_csr64(oct, CN83XX_SDP_EPF_R_OUT_CONTROL(oct->epf_num, oq_no),
 			 oq_ctl);
 
 
@@ -1063,7 +1066,7 @@ static void cn83xx_get_pcie_qlmport(octeon_device_t * oct)
 
     /* EPF num should always be 0. */ 
 	oct->epf_num = 0;
-	oct->pcie_port = (octeon_read_csr(oct, CN83XX_SLI_MAC_NUMBER(oct->epf_num))) & 0xff;
+	oct->pcie_port = (octeon_read_csr64(oct, CN83XX_SLI_MAC_NUMBER(oct->epf_num))) & 0xff;
 
 	cavium_print_msg("OCTEON[%d]: CN83xx uses PCIE Port %d\n",
 			 oct->octeon_id, oct->pcie_port);
