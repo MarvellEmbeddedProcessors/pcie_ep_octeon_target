@@ -111,9 +111,6 @@ void cn93xx_dump_regs(octeon_device_t * oct, int qno)
  * TODO: Revisit this code */
 static int cn93xx_pf_soft_reset(octeon_device_t * oct)
 {
-	/* No soft reset, return for now */
-	return 0;
-
 	octeon_write_csr64(oct, CN93XX_SDP_WIN_WR_MASK_REG, 0xFF);
 
 	cavium_print_msg
