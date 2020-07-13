@@ -589,7 +589,7 @@ int dpi_vf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	char comp_pool_name[16];
 	static unsigned int domain = FPA_DPI_XAQ_GMID;
 	static unsigned int num_vfs = 0;
-	otx2_dpi_mbox_message_t otx2_mbox_msg;
+	union dpi_mbox_message_t otx2_mbox_msg;
 
 	part_num = read_cpuid_part_number();
 	if ((part_num != CAVIUM_CPU_PART_T83) &&
