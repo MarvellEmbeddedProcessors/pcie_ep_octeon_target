@@ -30,6 +30,7 @@ extern int cn93xx_droq_intr_handler(octeon_ioq_vector_t * ioq_vector);
 
 extern int num_rings_per_pf;
 extern int num_rings_per_vf;
+static int num_rings_per_pf_pt, num_rings_per_vf_pt;
 extern void cn93xx_iq_intr_handler(octeon_ioq_vector_t * ioq_vector);
 
 void cn93xx_dump_iq_regs(octeon_device_t * oct)
@@ -1097,10 +1098,10 @@ union ring {
         u64 u;
         struct {
                 u64 dir:2;
-                u64 rpvf:4;
-                u64 rppf:6;
+                u64 rpvf:8;
+                u64 rppf:8;
                 u64 numvf:8;
-                u64 rsvd:16;
+                u64 rsvd:10;
                 u64 raz:28;
         } s;
 };
@@ -1117,13 +1118,12 @@ static int resume_cn93xx_setup(octeon_device_t * oct)
 	octeon_cn93xx_pf_t *cn93xx = (octeon_cn93xx_pf_t *) oct->chip;
 
 	npfs = 1;
-	pf_srn = 0;
 	rppf = num_rings_per_pf;
 	rpvf = num_rings_per_vf;
 	if(oct->sriov_info.num_vfs) {
 		/* VF is enabled, Assign ring to VF */
 		nvfs = oct->sriov_info.num_vfs;
-		vf_srn = pf_srn + (npfs * num_rings_per_pf);
+		vf_srn = pf_srn + (npfs * num_rings_per_pf_pt);
 	} else {
 		/* No VF enabled, Assign ring to PF */
 		nvfs = 0;
@@ -1174,13 +1174,6 @@ static int resume_cn93xx_setup(octeon_device_t * oct)
 		oct->drv_flags |= OCTEON_SRIOV_MODE;
 		oct->drv_flags |= OCTEON_MBOX_CAPABLE;
 
-		vf_rings = rpvf;
-
-		/** RPVF should be a power of 2, supported values are 0,1,2,4,8 */
-		if (vf_rings & (vf_rings - 1)) {
-			vf_rings = lowerpow2roundup(vf_rings);
-		}
-
 		/* Program RINFO register */
 		regval = octeon_read_csr64(oct, CN93XX_SDP_EPF_RINFO);
 		cavium_print_msg("SDP_EPF_RINFO[0x%x]:0x%llx\n", CN93XX_SDP_EPF_RINFO, regval);
@@ -1197,7 +1190,7 @@ static int resume_cn93xx_setup(octeon_device_t * oct)
 
 		/* Assign ring0 to VF */
 		for (j = 0; j < nvfs; j++) {
-			srn = vf_srn + (j * rpvf);
+			srn = vf_srn + (j * num_rings_per_vf_pt);
 			for (i = 0; i < rpvf; i++) {
 				regval = octeon_read_csr64(oct, CN93XX_SDP_EPVF_RING(srn + i));
 				cavium_print_msg("SDP_EPVF_RING[0x%llx]:0x%llx\n",
@@ -1216,9 +1209,9 @@ static int resume_cn93xx_setup(octeon_device_t * oct)
 		}
 	}
 
-	oct->sriov_info.rings_per_vf = vf_rings;
+	oct->sriov_info.rings_per_vf = rpvf;
 	/** All the remaining queues are handled by Physical Function */
-	oct->sriov_info.pf_srn = oct->octeon_id * rppf;
+	oct->sriov_info.pf_srn = oct->octeon_id * num_rings_per_pf_pt;
 	oct->sriov_info.rings_per_pf = rppf;
 
 	oct->sriov_info.sriov_enabled = 0;
@@ -1265,22 +1258,24 @@ octeon_wait_fw_info(struct work_struct *work)
 			printk("rpf %d rvf %d nvf %d\n", rinfo.s.rppf,
 					rinfo.s.rpvf, rinfo.s.numvf);
 
-			if (num_rings_per_pf != 1)
-				num_rings_per_pf =
+			num_rings_per_pf_pt = num_rings_per_pf;
+			num_rings_per_vf_pt = num_rings_per_vf;
+			if (num_rings_per_pf_pt != 1)
+				num_rings_per_pf_pt =
 					roundup_pow_of_two(num_rings_per_pf);
-			if (num_rings_per_vf != 1)
-				num_rings_per_vf =
+			if (num_rings_per_vf_pt != 1)
+				num_rings_per_vf_pt =
 					roundup_pow_of_two(num_rings_per_vf);
 
-			if (num_rings_per_pf > rinfo.s.rppf)
-				num_rings_per_pf = rinfo.s.rppf;
-			if (num_rings_per_vf > rinfo.s.rpvf)
-				num_rings_per_vf = rinfo.s.rpvf;
+			if (num_rings_per_pf_pt > rinfo.s.rppf)
+				num_rings_per_pf_pt = rinfo.s.rppf;
+			if (num_rings_per_vf_pt > rinfo.s.rpvf)
+				num_rings_per_vf_pt = rinfo.s.rpvf;
 			if (oct->sriov_info.num_vfs > rinfo.s.numvf)
 				oct->sriov_info.num_vfs = rinfo.s.numvf;
 
-			rinfo.s.rppf = num_rings_per_pf;
-			rinfo.s.rpvf = num_rings_per_vf;
+			rinfo.s.rppf = num_rings_per_pf_pt;
+			rinfo.s.rpvf = num_rings_per_vf_pt;
 			rinfo.s.numvf = oct->sriov_info.num_vfs;
 			rinfo.s.dir = HOST_TO_FW;
 			octeon_write_csr64(oct, CN93XX_SDP_R_IN_PKT_CNT(0),
