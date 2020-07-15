@@ -17,11 +17,7 @@
 #define NPU_BASE_DRV_NAME  "npu_base"
 #define NPU_BASE_DEVICE_ID "NPU base driver"
 
-#define FIREWALL_FDT_NAME         "firewall-intr"
-//#define FIREWALL_FDT_NAME         "firewall-ctrl-intr"
-//#define FIREWALL_MGMT_NETDEV_FDT_NAME  "firewall-mgmt-netdev-intr"
-//#define FIREWALL_NW_AGENT_FDT_NAME     "firewall-network-agent-intr"
-//#define FIREWALL_RPC_FDT_NAME          "firewall-rpc-intr"
+#define FDT_NAME         "pcie-ep"
 static unsigned int  host_sid = 0x030000;
 module_param(host_sid, uint, 0644);
 MODULE_PARM_DESC(host_sid, "host stream id (((0x3 + PEM_NUM) << 16) + Host_requester id");
@@ -374,8 +370,7 @@ static int npu_base_probe(struct platform_device *pdev)
 		}
 	}
 
-	if (get_device_irq_info(FIREWALL_FDT_NAME,
-				&irq_count, &first_irq)) {
+	if (get_device_irq_info(FDT_NAME, &irq_count, &first_irq)) {
 		printk("get irq info failed\n");
 		return -1;
 	}
@@ -440,7 +435,8 @@ static const struct dev_pm_ops npu_base_pm_ops = {
 };
 
 static const struct of_device_id npu_base_off_match[] = {
-	{ .compatible = "cavium,firewall", },
+	{ .compatible = "marvell,octeontx-ep", },
+	{ .compatible = "marvell,octeontx2-ep", },
 	{},
 };
 MODULE_DEVICE_TABLE(of, npu_base_off_match);
