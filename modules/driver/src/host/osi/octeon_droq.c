@@ -1152,7 +1152,7 @@ octeon_droq_fast_process_packets(octeon_device_t * oct,
 			droq->desc_ring[droq->host_read_index].buffer_ptr,
 			droq->buffer_size, CAVIUM_PCI_DMA_BIDIRECTIONAL);
 		info = (octeon_droq_info_t *)(droq->recv_buf_list[droq->host_read_index].data);
-		if(cavium_unlikely(!((volatile octeon_droq_info_t *)info->length))) {
+		if(cavium_unlikely(*((volatile uint64_t *)&info->length) == 0)) {
 			int retry = 10;
 
 			cavium_print(PRINT_DEBUG,
@@ -1163,10 +1163,11 @@ octeon_droq_fast_process_packets(octeon_device_t * oct,
 				     cavium_atomic_read(&droq->pkts_pending));
 			droq->stats.pkts_delayed_data++;
 			while (retry-- && cavium_unlikely(
-				!(volatile octeon_droq_info_t *)info->length));
-			if (!retry && cavium_unlikely(!info->length)) {
-				cavium_error("OCTEON DROQ[%d]: host_read_idx: %d; Retry failed !!",
-					     droq->q_no, droq->host_read_index);
+				*((volatile uint64_t *)&info->length) == 0))
+				udelay(1);
+			if (cavium_unlikely(!info->length)) {
+				printk("OCTEON DROQ[%d]: host_read_idx: %d; Retry failed !!\n",
+				       droq->q_no, droq->host_read_index);
 				/* May be zero length packet; drop it */
 				octeon_pci_unmap_single(oct->pci_dev,
 					(unsigned long)droq->desc_ring[droq->host_read_index].buffer_ptr,
@@ -1175,6 +1176,7 @@ octeon_droq_fast_process_packets(octeon_device_t * oct,
 				free_recv_buffer(nicbuf);
 				droq->recv_buf_list[droq->host_read_index].buffer = 0;
 				INCR_INDEX_BY1(droq->host_read_index, droq->max_count);
+				bufs_used++;
 				droq->stats.dropped_zlp++;
 				continue;
 			}

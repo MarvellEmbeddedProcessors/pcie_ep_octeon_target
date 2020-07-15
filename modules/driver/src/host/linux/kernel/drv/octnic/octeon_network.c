@@ -1120,7 +1120,8 @@ oct_get_ethtool_stats(struct net_device *netdev,
 		data[cnt++] = droq->stats.bytes_received;
 		data[cnt++] = droq->stats.dropped_nodispatch +
 			droq->stats.dropped_nomem +
-			droq->stats.dropped_toomany;
+			droq->stats.dropped_toomany +
+			droq->stats.dropped_zlp;
 	}
 }
 

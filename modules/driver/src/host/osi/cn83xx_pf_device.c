@@ -281,7 +281,6 @@ int cn83xx_pf_setup_global_oq_reg(octeon_device_t * oct, int q_no)
 	reg_val |= (CN83XX_R_OUT_CTL_ES_P);
 
 #ifdef IOQ_PERF_MODE_O3
-#error "############# PERF_MODE_O3 enabled"
 	/* Force NoSnoop to be enabled */
 	reg_val |= (CN83XX_R_OUT_CTL_NSR_I);
 	reg_val |= (CN83XX_R_OUT_CTL_NSR_D);
@@ -524,7 +523,6 @@ static void cn83xx_setup_oq_regs(octeon_device_t * oct, int oq_no)
 #ifndef BUFPTR_ONLY_MODE
 	oq_ctl |= ((OCT_RESP_HDR_SIZE << 16) & 0x7fffff);//populate ISIZE(22-16)
 #endif
-	printk("%s: q-%d oq_ctl=0x%llx\n", __func__, oq_no, oq_ctl);
 	octeon_write_csr64(oct, CN83XX_SDP_EPF_R_OUT_CONTROL(oct->epf_num, oq_no),
 			 oq_ctl);
 
