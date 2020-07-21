@@ -705,6 +705,7 @@ octnet_setup_nic_device(int octeon_id, oct_link_info_t * link_info, int ifidx)
 	OCTNET_IFSTATE_SET(priv, OCT_NIC_IFSTATE_DROQ_OPS);
 
 	pndev->features |= pndev->hw_features;
+	pndev->features |= NETIF_F_HW_CSUM;
 
 	/* Register the network device with the OS */
 	if (register_netdev(pndev)) {
