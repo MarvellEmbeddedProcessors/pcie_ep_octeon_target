@@ -25,6 +25,7 @@
 #define PCI_VENDOR_ID_CAVIUM 0x177d
 #define PCI_DEVICE_ID_OCTEONTX_DPI_VF_83XX 0xA058
 #define PCI_DEVICE_ID_OCTEONTX_DPI_VF_93XX 0xA081
+#define PARTNUM_98XX_CPU	0x0B1
 
 #define DPI_CHUNK_SIZE 1024
 #define DPI_DMA_CMD_SIZE 64
@@ -593,7 +594,8 @@ int dpi_vf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	part_num = read_cpuid_part_number();
 	if ((part_num != CAVIUM_CPU_PART_T83) &&
-	    (part_num != MRVL_CPU_PART_OCTEONTX2_96XX)) {
+	    (part_num != MRVL_CPU_PART_OCTEONTX2_96XX) &&
+	    (part_num != PARTNUM_98XX_CPU)) {
 		printk("Unsupported CPU type\n");
 		return -EINVAL;
 	}
