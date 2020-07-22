@@ -16,6 +16,7 @@
 
 #define NPU_BASE_DRV_NAME  "npu_base"
 #define NPU_BASE_DEVICE_ID "NPU base driver"
+#define MRVL_CPU_PART_OCTEONTX2_98XX	0x0B1
 
 #define FDT_NAME         "pcie-ep"
 static unsigned int  host_sid = 0x030000;
@@ -183,7 +184,8 @@ static int npu_base_setup(struct npu_bar_map *bar_map)
 
 	part_num = read_cpuid_part_number();
 	if ((part_num != CAVIUM_CPU_PART_T83) &&
-	    (part_num != MRVL_CPU_PART_OCTEONTX2_96XX)) {
+	    (part_num != MRVL_CPU_PART_OCTEONTX2_96XX) &&
+	    (part_num != MRVL_CPU_PART_OCTEONTX2_98XX)) {
 		printk("Unsupported CPU type\n");
 		return -1;
 	}
@@ -216,7 +218,8 @@ static int npu_base_setup(struct npu_bar_map *bar_map)
 		phys_addr_i = barmap_mem_phys + (ii * NPU_BARMAP_ENTRY_SIZE);
 		if (part_num == CAVIUM_CPU_PART_T83)
 			bar_idx_addr = PEMX_REG_BASE_83XX(pem_num) + PEM_BAR1_INDEX_OFFSET(i);
-		else if (part_num == MRVL_CPU_PART_OCTEONTX2_96XX)
+		else if (part_num == MRVL_CPU_PART_OCTEONTX2_96XX ||
+			 part_num == MRVL_CPU_PART_OCTEONTX2_98XX)
 			bar_idx_addr = PEMX_REG_BASE_93XX(pem_num) + PEM_BAR4_INDEX_OFFSET(i);
 		else {
 			printk("Error: Invalid part_num = %lu\n", part_num);
@@ -233,7 +236,8 @@ static int npu_base_setup(struct npu_bar_map *bar_map)
 	 */
 	if (part_num == CAVIUM_CPU_PART_T83)
 		bar_idx_addr = PEMX_REG_BASE_83XX(pem_num) + PEM_BAR1_INDEX_OFFSET(15);
-	else if (part_num == MRVL_CPU_PART_OCTEONTX2_96XX)
+	else if (part_num == MRVL_CPU_PART_OCTEONTX2_96XX ||
+		 part_num == MRVL_CPU_PART_OCTEONTX2_98XX)
 		bar_idx_addr = PEMX_REG_BASE_93XX(pem_num)  + PEM_BAR4_INDEX_OFFSET(15);
 
 	bar_idx_val = ((NPU_GICD_BASE >> 22) << 4) | 1;
@@ -243,14 +247,16 @@ static int npu_base_setup(struct npu_bar_map *bar_map)
 
 	if (part_num == CAVIUM_CPU_PART_T83)
 		oei_trig_remap_addr = ioremap(CN83XX_SDP0_EPFX_OEI_TRIG_ADDR(epf_num), 8);
-	else if (part_num == MRVL_CPU_PART_OCTEONTX2_96XX)
+	else if (part_num == MRVL_CPU_PART_OCTEONTX2_96XX ||
+		 part_num == MRVL_CPU_PART_OCTEONTX2_98XX)
 		oei_trig_remap_addr = ioremap(CN93XX_SDP0_EPFX_OEI_TRIG_ADDR(epf_num), 8);
 
 	if (oei_trig_remap_addr == NULL) {
 		printk("Failed to ioremap oei_trig space\n");
 		return -1;
 	}
-	if (part_num == MRVL_CPU_PART_OCTEONTX2_96XX) {
+	if (part_num == MRVL_CPU_PART_OCTEONTX2_96XX ||
+	    part_num == MRVL_CPU_PART_OCTEONTX2_98XX) {
 		disport_addr = PEMX_REG_BASE_93XX(pem_num) + PEM_DIS_PORT_OFFSET;
 		npu_csr_write(disport_addr, 1);
 	}
@@ -268,7 +274,8 @@ static void npu_handshake_ready(struct npu_bar_map *bar_map)
 	part_num = read_cpuid_part_number();
 	if (part_num == CAVIUM_CPU_PART_T83)
 		scratch_addr = CN83xx_SDP_BASE + CN83XX_SDP0_SCRATCH_OFFSET(epf_num);
-	else if (part_num == MRVL_CPU_PART_OCTEONTX2_96XX)
+	else if (part_num == MRVL_CPU_PART_OCTEONTX2_96XX ||
+		 part_num == MRVL_CPU_PART_OCTEONTX2_98XX)
 		scratch_addr = CN93xx_SDP_BASE + CN93XX_SDP0_EPFX_SCRATCH_OFFSET(epf_num);
 	else
 		return;
@@ -296,7 +303,8 @@ static int npu_base_probe(struct platform_device *pdev)
 
 	part_num = read_cpuid_part_number();
 	printk("CPU Part: 0x%lx\n", part_num);
-	if (part_num == MRVL_CPU_PART_OCTEONTX2_96XX) {
+	if (part_num == MRVL_CPU_PART_OCTEONTX2_96XX ||
+	    part_num == MRVL_CPU_PART_OCTEONTX2_98XX) {
 		smmu_dev = bus_find_device_by_name(&platform_bus_type,
 						   NULL,
 						   "830000000000.smmu");
