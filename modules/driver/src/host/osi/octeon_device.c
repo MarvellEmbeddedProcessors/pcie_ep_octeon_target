@@ -1434,6 +1434,7 @@ int oct_stop_base_module(int octeon_id, void *octeon_dev)
 			octeon_delete_ioq_vector(oct_dev);
 		}
         cavium_print_msg("deleted the ioq vectors\n");
+		__attribute__((fallthrough));
 #ifdef PCIE_AER
 	case OCT_DEV_IN_RESET:
 #endif
@@ -1449,6 +1450,7 @@ int oct_stop_base_module(int octeon_id, void *octeon_dev)
 				 oct_dev->octeon_id);
 
        cavium_print_msg("deleted the droqs\n");
+		__attribute__((fallthrough));
 	case OCT_DEV_INSTR_QUEUE_INIT_DONE:
 
 		for (i = 0; i < oct_dev->num_iqs; i++) {
@@ -1459,6 +1461,7 @@ int oct_stop_base_module(int octeon_id, void *octeon_dev)
 				 oct_dev->octeon_id);
 
        cavium_print_msg("deleted the iqs\n");
+		__attribute__((fallthrough));
 	}
 	cavium_print_msg("OCTEON[%d]: Octeon is in %s state\n",
 			 oct_dev->octeon_id,
