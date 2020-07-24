@@ -254,7 +254,8 @@ int octnet_get_inittime_link_status(void *oct, void *props_ptr)
 	if ((oct_dev->chip_id == OCTEON_CN83XX_PF)
 	    || (oct_dev->chip_id == OCTEON_CN83XX_VF))
 		num_q = octnet_get_num_ioqs(oct_dev);
-	else if (oct_dev->chip_id == OCTEON_CN93XX_PF)
+	else if (oct_dev->chip_id == OCTEON_CN93XX_PF ||
+		 oct_dev->chip_id == OCTEON_CN98XX_PF)
 		num_q = octnet_get_num_ioqs(oct_dev);
 
         ls->status = 0;
@@ -774,6 +775,7 @@ octeon_config_t *octeon_dev_conf(octeon_device_t * oct)
 	case OCTEON_CN83XX_VF:
 		return ((octeon_cn83xx_vf_t *) (oct->chip))->conf;
 	case OCTEON_CN93XX_PF: 
+	case OCTEON_CN98XX_PF: 
 		return ((octeon_cn93xx_pf_t *) (oct->chip))->conf;
 
 	default:
@@ -805,7 +807,8 @@ static inline uint32_t octnet_get_num_ioqs(octeon_device_t * octeon_dev)
 	octeon_config_t *conf = octeon_dev_conf(octeon_dev);
 
 	if ((octeon_dev->chip_id == OCTEON_CN83XX_PF) ||
-	    (octeon_dev->chip_id == OCTEON_CN93XX_PF))	{
+	    (octeon_dev->chip_id == OCTEON_CN93XX_PF) ||
+	    (octeon_dev->chip_id == OCTEON_CN98XX_PF))	{
 
 		num_ioqs = octeon_dev->sriov_info.rings_per_pf;
 		vf_rings = octeon_dev->sriov_info.rings_per_vf;
@@ -1137,7 +1140,8 @@ int octnet_init_nic_module(int octeon_id, void *octeon_dev)
 		if (oct->chip_id == OCTEON_CN83XX_PF)
 			CFG_GET_OQ_MAX_BASE_Q(CHIP_FIELD(oct, cn83xx_pf, conf))
 			    = oct->sriov_info.rings_per_pf;
-		else if (oct->chip_id == OCTEON_CN93XX_PF)
+		else if (oct->chip_id == OCTEON_CN93XX_PF ||
+			 oct->chip_id == OCTEON_CN98XX_PF)
 			CFG_GET_OQ_MAX_BASE_Q(CHIP_FIELD(oct, cn93xx_pf, conf))
 			    = oct->sriov_info.rings_per_pf;
 #endif
@@ -1163,7 +1167,8 @@ int octnet_init_nic_module(int octeon_id, void *octeon_dev)
 
     if ((oct->chip_id == OCTEON_CN83XX_PF) || 
         (oct->chip_id == OCTEON_CN83XX_VF) ||
-	(oct->chip_id == OCTEON_CN93XX_PF)) 
+	(oct->chip_id == OCTEON_CN93XX_PF) ||
+	(oct->chip_id == OCTEON_CN98XX_PF)) 
         /* dbell needs to be programmed after enabling OQ. */
         for (j = 0; j < oct->num_oqs; j++) {
             OCTEON_WRITE32(oct->droq[j]->pkts_credit_reg,
@@ -1295,7 +1300,8 @@ octnet_init_failure:
 
 	if ((oct->chip_id == OCTEON_CN83XX_PF)
 	    || (oct->chip_id == OCTEON_CN83XX_VF)
-	    || (oct->chip_id == OCTEON_CN93XX_PF)) {
+	    || (oct->chip_id == OCTEON_CN93XX_PF) ||
+	    (oct->chip_id == OCTEON_CN98XX_PF)) {
 		/* Send short command to firmware to free these interface's PCAM entry */
 		octeon_send_short_command(oct, HOST_NW_STOP_OP, 0, NULL, 0);
 	}
@@ -1453,7 +1459,8 @@ int octnet_stop_nic_module(int octeon_id, void *oct)
 
 	if ((octeon_dev->chip_id == OCTEON_CN83XX_PF)
 	    || (octeon_dev->chip_id == OCTEON_CN83XX_VF)
-	    || (octeon_dev->chip_id == OCTEON_CN93XX_PF)) {
+	    || (octeon_dev->chip_id == OCTEON_CN93XX_PF)
+	    || (octeon_dev->chip_id == OCTEON_CN98XX_PF)) {
 		/* Send short command to firmware to free these interface's PCAM entry */
 		octeon_send_short_command(oct, HOST_NW_STOP_OP, 0, NULL, 0);
 	}

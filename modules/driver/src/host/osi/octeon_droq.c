@@ -282,7 +282,8 @@ int octeon_delete_droq(octeon_device_t * oct, uint32_t q_no)
 #endif
 
 #ifdef OCT_TX2_ISM_INT
-	if (oct->chip_id == OCTEON_CN93XX_PF) {
+	if (oct->chip_id == OCTEON_CN93XX_PF ||
+	    oct->chip_id == OCTEON_CN98XX_PF) {
 		if (droq->ism.pkt_cnt_addr)
 			octeon_pci_free_consistent(oct->pci_dev, 8,
 						   droq->ism.pkt_cnt_addr, droq->ism.pkt_cnt_dma,
@@ -340,7 +341,8 @@ int octeon_init_droq(octeon_device_t * oct, uint32_t q_no, void *app_ctx)
 		c_buf_size = CFG_GET_OQ_BUF_SIZE(conf83);
 		c_pkts_per_intr = CFG_GET_OQ_PKTS_PER_INTR(conf83);
 		c_refill_threshold = CFG_GET_OQ_REFILL_THRESHOLD(conf83);
-	} else if (oct->chip_id == OCTEON_CN93XX_PF) {
+	} else if (oct->chip_id == OCTEON_CN93XX_PF ||
+		   oct->chip_id == OCTEON_CN98XX_PF) {
 		cn93xx_pf_config_t *conf93 = CHIP_FIELD(oct, cn93xx_pf, conf);
 		c_num_descs = CFG_GET_OQ_NUM_DESC(conf93);
 		c_buf_size = CFG_GET_OQ_BUF_SIZE(conf93);
@@ -368,7 +370,8 @@ int octeon_init_droq(octeon_device_t * oct, uint32_t q_no, void *app_ctx)
 		     q_no, droq->max_count);
 
 #ifdef OCT_TX2_ISM_INT	
-	if (oct->chip_id == OCTEON_CN93XX_PF) {
+	if (oct->chip_id == OCTEON_CN93XX_PF ||
+	    oct->chip_id == OCTEON_CN98XX_PF) {
 		droq->ism.pkt_cnt_addr =
 		    octeon_pci_alloc_consistent(oct->pci_dev, 8,
 						&droq->ism.pkt_cnt_dma, droq->app_ctx);
@@ -1084,7 +1087,8 @@ static inline void octeon_droq_drop_packets(octeon_droq_t * droq, uint32_t cnt)
 		     *) (droq->recv_buf_list[droq->host_read_index].data);
 #endif
 		/* Swap length field on 83xx*/
-		if (oct->chip_id == OCTEON_CN83XX_PF || oct->chip_id == OCTEON_CN93XX_PF)
+		if (oct->chip_id == OCTEON_CN83XX_PF || oct->chip_id == OCTEON_CN93XX_PF ||
+		    oct->chip_id == OCTEON_CN98XX_PF)
 			octeon_swap_8B_data((uint64_t *) &(info->length), 1);
 
 		if (info->length) {
@@ -1192,7 +1196,8 @@ octeon_droq_fast_process_packets(octeon_device_t * oct,
 		octeon_swap_8B_data((uint64_t *)&info->length, 1);
 #else
 		/* Swap length field on 83xx*/
-		if (oct->chip_id == OCTEON_CN83XX_PF || oct->chip_id == OCTEON_CN93XX_PF)
+		if (oct->chip_id == OCTEON_CN83XX_PF || oct->chip_id == OCTEON_CN93XX_PF ||
+		    oct->chip_id == OCTEON_CN98XX_PF)
 			octeon_swap_8B_data((uint64_t *) &(info->length), 1);
 #endif
 
@@ -1373,7 +1378,8 @@ octeon_droq_fast_process_packets_reuse_bufs(octeon_device_t * oct,
 #endif        
 
 		/* Swap length field on 83xx*/
-		if (oct->chip_id == OCTEON_CN83XX_PF || oct->chip_id == OCTEON_CN93XX_PF)
+		if (oct->chip_id == OCTEON_CN83XX_PF || oct->chip_id == OCTEON_CN93XX_PF ||
+		    oct->chip_id == OCTEON_CN98XX_PF)
 			octeon_swap_8B_data((uint64_t *) &(info->length), 1);
 
 		if(cavium_unlikely(!info->length))  {
@@ -1545,7 +1551,8 @@ octeon_droq_slow_process_packets(octeon_device_t * oct,
 		resp_hdr = (octeon_resp_hdr_t *) & info->resp_hdr;
         
 		/* Swap length field on 83xx*/
-		if (oct->chip_id == OCTEON_CN83XX_PF || oct->chip_id == OCTEON_CN93XX_PF)
+		if (oct->chip_id == OCTEON_CN83XX_PF || oct->chip_id == OCTEON_CN93XX_PF ||
+		    oct->chip_id == OCTEON_CN98XX_PF)
 			octeon_swap_8B_data((uint64_t *) &(info->length), 1);
 		
 #if 0
@@ -1621,7 +1628,8 @@ octeon_droq_process_packets(octeon_device_t * oct, octeon_droq_t * droq)
 		     *) (droq->recv_buf_list[droq->host_read_index].data);
 #endif
 		/* Swap length field on 83xx*/
-		if (oct->chip_id == OCTEON_CN83XX_PF || oct->chip_id == OCTEON_CN93XX_PF)
+		if (oct->chip_id == OCTEON_CN83XX_PF || oct->chip_id == OCTEON_CN93XX_PF ||
+		    oct->chip_id == OCTEON_CN98XX_PF)
 			octeon_swap_8B_data((uint64_t *) &(info->length), 1);
 
 		buf_cnt = 0;
@@ -1902,7 +1910,8 @@ octeon_process_droq_poll_cmd(int oct_id, uint32_t q_no, int cmd, uint32_t arg)
 		switch (oct->chip_id) {
 
 		case OCTEON_CN83XX_PF:
-		case OCTEON_CN93XX_PF:{
+		case OCTEON_CN93XX_PF:
+		case OCTEON_CN98XX_PF:{
 #if 0
 				octeon_cn83xx_pf_t *cn83xx =
 				    (octeon_cn83xx_pf_t *) oct->chip;

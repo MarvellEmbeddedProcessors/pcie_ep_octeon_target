@@ -345,12 +345,14 @@ void octeon_disable_msix_interrupts(octeon_device_t * oct_dev)
 
 	if(oct_dev->chip_id == OCTEON_CN83XX_PF)
 		non_ioq_intrs = OCTEON_NUM_NON_IOQ_INTR;
-	else if(oct_dev->chip_id == OCTEON_CN93XX_PF)
+	else if(oct_dev->chip_id == OCTEON_CN93XX_PF ||
+		oct_dev->chip_id == OCTEON_CN98XX_PF)
 		non_ioq_intrs = OCTEONTX2_NUM_NON_IOQ_INTR;
 
 	if (oct_dev->num_irqs) {
 	    if (oct_dev->chip_id == OCTEON_CN83XX_PF ||
-		oct_dev->chip_id == OCTEON_CN93XX_PF) {
+		oct_dev->chip_id == OCTEON_CN93XX_PF ||
+		oct_dev->chip_id == OCTEON_CN98XX_PF) {
 
             for (i = 0; i < non_ioq_intrs; i++) {
 	    		/* Free non ioq MSI-X vector */
@@ -436,7 +438,8 @@ int octeon_tx_enable_msix_interrupts(octeon_device_t * oct)
 	if (oct->chip_id == OCTEON_CN83XX_PF) {
 		non_ioq_intrs = OCTEON_NUM_NON_IOQ_INTR;
 		oct_irq_names = octtx_intr_names[0];
-	} else if (oct->chip_id == OCTEON_CN93XX_PF) {
+	} else if (oct->chip_id == OCTEON_CN93XX_PF ||
+		   oct->chip_id == OCTEON_CN98XX_PF) {
 		non_ioq_intrs = OCTEONTX2_NUM_NON_IOQ_INTR;
 		oct_irq_names = octtx2_intr_names[0];
 	}
@@ -700,7 +703,8 @@ void octeon_destroy_resources(octeon_device_t * oct_dev)
 	case OCT_DEV_PCI_MAP_DONE:
 		octeon_unmap_pci_barx(oct_dev, 0);
 		octeon_unmap_pci_barx(oct_dev, 1);
-		if (oct_dev->chip_id == OCTEON_CN93XX_PF) {
+		if (oct_dev->chip_id == OCTEON_CN93XX_PF ||
+		    oct_dev->chip_id == OCTEON_CN98XX_PF) {
 			flush_workqueue(oct_dev->sdp_wq.wq);
 			destroy_workqueue(oct_dev->sdp_wq.wq);
 			octeon_unmap_pci_barx(oct_dev, 2);
@@ -832,7 +836,23 @@ enum setup_stage octeon_chip_specific_setup(octeon_device_t * oct)
 			oct->sriov_info.num_vfs = num_vfs;
 			oct->chip_id = OCTEON_CN93XX_PF;
 			return setup_cn93xx_octeon_pf_device(oct);
+		case OCTEON_CN98XX_PCIID_PF:
+			cavium_print_msg("OCTEON[%d]: CN98XX PASS%d.%d\n",
+					 oct->octeon_id, OCTEON_MAJOR_REV(oct),
+					 OCTEON_MINOR_REV(oct));
 
+			oct->pf_num = oct->octeon_id;
+			/* Enable it to stop loading the driver for PF1 */
+#ifdef ETHERPCI
+			if (oct->pf_num) {
+				cavium_print_msg
+					("EtherPCI is only supported on PF0, so discarding PF1 device. \n");
+				return -1;
+			}
+#endif
+			oct->sriov_info.num_vfs = num_vfs;
+			oct->chip_id = OCTEON_CN98XX_PF;
+			return setup_cn98xx_octeon_pf_device(oct); //use 93xx PF setup for now
 	default:
 		cavium_error("OCTEON: Unknown device found (dev_id: %x)\n",
 			     dev_id);
@@ -925,7 +945,7 @@ int octeon_device_init(octeon_device_t * octeon_dev, int resume)
 #endif
 		return 1;
 	} else if (stage == SETUP_IN_PROGRESS) {
-    		cavium_print_msg(" Chip specific setup inprogress\n");
+    		cavium_print_msg(" Chip specific setup in progress\n");
 		return 0;
 	}
 
@@ -1031,7 +1051,8 @@ resume_device_init:
 #else
 
 	if(octeon_dev->chip_id == OCTEON_CN83XX_PF ||
-	   octeon_dev->chip_id == OCTEON_CN93XX_PF) {
+	   octeon_dev->chip_id == OCTEON_CN93XX_PF ||
+	   octeon_dev->chip_id == OCTEON_CN98XX_PF) {
 #define SDP_HOST_LOADED                 0xDEADBEEFULL
 		octeon_write_csr64(octeon_dev, CN83XX_SLI_EPF_SCRATCH(0),
 						   SDP_HOST_LOADED);

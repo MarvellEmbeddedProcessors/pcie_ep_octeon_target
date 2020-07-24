@@ -209,7 +209,8 @@ static void *__retrieve_octeon_config_info(octeon_device_t * oct)
 	if (oct_conf_info[oct_id].conf_type != OCTEON_CONFIG_TYPE_DEFAULT) {
 
 		if (((oct->chip_id == OCTEON_CN83XX_VF) ||
-		     (oct->chip_id == OCTEON_CN93XX_VF))
+		     (oct->chip_id == OCTEON_CN93XX_VF) ||
+		     (oct->chip_id == OCTEON_CN98XX_VF))
 		    && (oct_conf_info[oct_id].conf_type ==
 			OCTEON_CONFIG_TYPE_CUSTOM))
 			return oct_conf_info[oct_id].custom;
@@ -222,7 +223,8 @@ static void *__retrieve_octeon_config_info(octeon_device_t * oct)
 
 	if (oct->chip_id == OCTEON_CN83XX_VF)
 		return (void *)&default_cn83xx_vf_conf;
-	else if (oct->chip_id == OCTEON_CN93XX_VF)
+	else if (oct->chip_id == OCTEON_CN93XX_VF ||
+		 oct->chip_id == OCTEON_CN98XX_VF)
 		return (void *)&default_cn93xx_vf_conf;
 
 	return NULL;
@@ -235,6 +237,7 @@ static int __verify_octeon_config_info(octeon_device_t * oct, void *conf)
 	case OCTEON_CN83XX_VF:
 		return validate_cn83xx_vf_config_info(conf);
 	case OCTEON_CN93XX_VF:
+	case OCTEON_CN98XX_VF:
 		return validate_cn93xx_vf_config_info(conf);
 	default:
 		cavium_error("Chip config verification failed. Invalid chipid:%d\n",

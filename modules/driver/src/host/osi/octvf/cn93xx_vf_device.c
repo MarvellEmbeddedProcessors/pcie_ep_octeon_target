@@ -758,6 +758,66 @@ static void cn93xx_disable_vf_interrupt(void *chip, uint8_t intr_flag)
 	cavium_print_msg(" MBOX interrupts enabled.\n");
 }
 
+int setup_cn98xx_octeon_vf_device(octeon_device_t * oct)
+{
+	uint64_t reg_val = 0ULL;
+	octeon_cn93xx_vf_t *cn98xx = (octeon_cn93xx_vf_t *) oct->chip;
+	//Should always be 0
+	oct->epf_num = 0;
+	//oct->pcie_port = 2; //for pem2 
+
+	cn98xx->oct = oct;
+
+	if (octeon_map_pci_barx(oct, 0, 0))
+		return 1;
+
+	cn98xx->conf = (cn93xx_vf_config_t *) oct_get_config_info(oct);
+	if (cn98xx->conf == NULL) {
+		cavium_error("%s No Config found for CN93XX\n", __FUNCTION__);
+		octeon_unmap_pci_barx(oct, 0);
+		return 1;
+	}
+
+	reg_val =
+	    octeon_read_csr64(oct,
+			      CN93XX_VF_SDP_R_IN_CONTROL(0));
+	oct->rings_per_vf = ((reg_val >> CN93XX_R_IN_CTL_RPVF_POS) &
+			     CN93XX_R_IN_CTL_RPVF_MASK);
+
+	cavium_print_msg("RINGS PER VF ARE:::%d\n", oct->rings_per_vf);
+
+	oct->drv_flags |= OCTEON_MSIX_CAPABLE;
+	oct->drv_flags |= OCTEON_MBOX_CAPABLE;
+	oct->drv_flags |= OCTEON_MSIX_AFFINITY_CAPABLE;
+
+	oct->fn_list.setup_iq_regs = cn93xx_setup_vf_iq_regs;
+	oct->fn_list.setup_oq_regs = cn93xx_setup_vf_oq_regs;
+	oct->fn_list.setup_mbox_regs = cn93xx_setup_vf_mbox_regs;
+
+	oct->fn_list.msix_interrupt_handler = cn93xx_vf_msix_interrupt_handler;
+
+	oct->fn_list.soft_reset = cn93xx_vf_soft_reset;
+	oct->fn_list.setup_device_regs = cn93xx_setup_vf_device_regs;
+	oct->fn_list.reinit_regs = cn93xx_reinit_regs;
+	oct->fn_list.update_iq_read_idx = cn93xx_update_read_index;
+
+	oct->fn_list.enable_interrupt = cn93xx_enable_vf_interrupt;
+	oct->fn_list.disable_interrupt = cn93xx_disable_vf_interrupt;
+
+	oct->fn_list.enable_io_queues = cn93xx_enable_vf_io_queues;
+	oct->fn_list.disable_io_queues = cn93xx_disable_vf_io_queues;
+
+	oct->fn_list.enable_input_queue = cn93xx_enable_vf_input_queue;
+	oct->fn_list.enable_output_queue = cn93xx_enable_vf_output_queue;
+
+	oct->fn_list.disable_input_queue = cn93xx_disable_vf_input_queue;
+	oct->fn_list.disable_output_queue = cn93xx_disable_vf_output_queue;
+
+	oct->fn_list.dump_registers = cn93xx_dump_vf_initialized_regs;
+
+	return 0;
+}
+
 int setup_cn93xx_octeon_vf_device(octeon_device_t * oct)
 {
 	uint64_t reg_val = 0ULL;

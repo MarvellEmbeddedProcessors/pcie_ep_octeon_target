@@ -558,6 +558,7 @@ static int csrreg_show(struct seq_file *s, void *v UNUSED)
 	case OCTEON_CN83XX_PF:
 		return cn83xx_pf_read_csrreg_buf(s, oct);
 	case OCTEON_CN93XX_PF:
+	case OCTEON_CN98XX_PF:
 		return cn93xx_pf_read_csrreg_buf(s, oct);
 	}
 
@@ -1377,7 +1378,7 @@ int cn93xx_pf_read_csrreg_buf(struct seq_file *s, octeon_device_t * oct)
 {
 	uint64_t addr = 0, tmp_addr = 0;
     int i =0;
-    int count, mac;
+    int count=0, mac;
     uint32_t offset[] = {0x4000, 0x4010, 0x4018, 0x4040, 
 	    		   (0x4040  | (1 << 3)), 
 	    		   (0x4040  | (2 << 3)), 
@@ -1565,7 +1566,11 @@ int cn93xx_pf_read_csrreg_buf(struct seq_file *s, octeon_device_t * oct)
     }
 
     mac = octeon_read_csr64(oct, 0x2c100) & 0xff ;
-    count = octeon_read_csr64(oct, (0x2c000 | (mac << 4))) >> 16 ;
+    if (oct->chip_id == OCTEON_CN93XX_PF)
+	    count = octeon_read_csr64(oct, (0x2c000 | (mac << 4))) >> 16 ;
+    else if (oct->chip_id == OCTEON_CN98XX_PF)
+	    count = (octeon_read_csr64(oct, (0x2c000 | (mac << 4))) >> 32) & 0x3F;
+
     /* Reg dump of IOQ registers */
     seq_printf(s, "\n\n\n############## IOQ RINGS #############\n");
 	for (i = 0; i < count; i++) {

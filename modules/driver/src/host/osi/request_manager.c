@@ -522,7 +522,8 @@ __do_instruction_processing(octeon_device_t * oct,
 #endif
 
 	if((si->alloc_flags & OCTEON_DIRECT_GATHER) &&
-		(oct->chip_id == OCTEON_CN93XX_PF || oct->chip_id == OCTEON_CN93XX_VF)) {
+		(oct->chip_id == OCTEON_CN93XX_PF || oct->chip_id == OCTEON_CN93XX_VF ||
+		 oct->chip_id == OCTEON_CN98XX_PF || oct->chip_id == OCTEON_CN98XX_VF)) {
 		cavium_error("OCTEONTX2 dont support direct gather mode\n");
 		return retval;
 	}
@@ -543,7 +544,8 @@ __do_instruction_processing(octeon_device_t * oct,
 	   may contain direct gather information in CN63XX. */
 	if ( (oct->chip_id == OCTEON_CN83XX_PF) ||
 	   (oct->chip_id == OCTEON_CN83XX_VF) ||
-		(oct->chip_id == OCTEON_CN93XX_PF) || (oct->chip_id == OCTEON_CN93XX_VF)) {
+		(oct->chip_id == OCTEON_CN93XX_PF) || (oct->chip_id == OCTEON_CN93XX_VF) ||
+		oct->chip_id == OCTEON_CN98XX_PF || oct->chip_id == OCTEON_CN98XX_VF) {
 		memset(&ihx, 0, sizeof(octeon_instr_ihx_t));
 		memset(&pki_ih3, 0, sizeof(octeon_instr_pki_ih3_t));
 		memset(&o3_cmd, 0, sizeof(octeon_instr3_64B_t));
@@ -626,7 +628,8 @@ __do_instruction_processing(octeon_device_t * oct,
 	if ((oct->chip_id == OCTEON_CN83XX_PF) ||
 		(oct->chip_id == OCTEON_CN83XX_VF) ||
 		(oct->chip_id == OCTEON_CN93XX_PF) ||
-		(oct->chip_id == OCTEON_CN93XX_VF)) {
+		(oct->chip_id == OCTEON_CN93XX_VF) ||
+		oct->chip_id == OCTEON_CN98XX_PF || oct->chip_id == OCTEON_CN98XX_VF) {
 		/* Fill up SDD IHX */
 		ihx.pkind = oct->pkind;
 
