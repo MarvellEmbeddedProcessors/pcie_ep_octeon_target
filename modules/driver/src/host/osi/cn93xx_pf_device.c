@@ -1274,8 +1274,8 @@ octeon_wait_fw_info(struct work_struct *work)
 			if (oct->sriov_info.num_vfs > rinfo.s.numvf)
 				oct->sriov_info.num_vfs = rinfo.s.numvf;
 
-			rinfo.s.rppf = num_rings_per_pf_pt;
-			rinfo.s.rpvf = num_rings_per_vf_pt;
+			rinfo.s.rppf = num_rings_per_pf;
+			rinfo.s.rpvf = num_rings_per_vf;
 			rinfo.s.numvf = oct->sriov_info.num_vfs;
 			rinfo.s.dir = HOST_TO_FW;
 			octeon_write_csr64(oct, CN93XX_SDP_R_IN_PKT_CNT(0),
