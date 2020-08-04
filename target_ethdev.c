@@ -1199,7 +1199,7 @@ static void mgmt_init_work(struct work_struct *work)
 	eth_hw_addr_random(ndev);
 	mdev = netdev_priv(ndev);
 	mdev->ndev = ndev;
-	mdev->dma_dev = get_dpi_dma_dev(HANDLE_TYPE_MGMT_NETDEV);
+	mdev->dma_dev = get_dpi_dma_dev(HANDLE_TYPE_MGMT_NETDEV, 0);
 	if (mdev->dma_dev == NULL) {
 		printk(KERN_ERR "no dma device\n");
 		ret = -ENODEV;
