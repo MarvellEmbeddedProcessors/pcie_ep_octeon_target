@@ -19,8 +19,7 @@
 
 mv_facility_conf_t conf;
 mv_facility_conf_t nwa_conf;
-extern int irq_list[];
-extern int irq_depth_list[];
+extern struct npu_irq_info irq_info[MAX_INTERRUPTS];
 extern struct device *plat_dev;
 static bool init_done = false;
 
@@ -56,14 +55,25 @@ int mv_get_bar_mem_map(int handle, mv_bar_map_t *bar_map)
 }
 EXPORT_SYMBOL(mv_get_bar_mem_map);
 
-int mv_pci_get_dma_dev(int handle, struct device **dev)
+int mv_pci_get_dma_dev_count(int handle)
 {
 	if (handle == MV_FACILITY_RPC)
-		*dev = get_dpi_dma_dev(handle);
-	else
-		return -ENOENT;
+		return conf.num_dma_dev;
 
-	return 0;
+	if (handle == MV_FACILITY_NW_AGENT)
+		return nwa_conf.num_dma_dev;
+
+	return -EINVAL;
+}
+
+int mv_pci_get_dma_dev(int handle, int index, struct device **dev)
+{
+	if (handle == MV_FACILITY_RPC) {
+		*dev = get_dpi_dma_dev(handle, index);
+		return 0;
+	}
+
+	return -ENOENT;
 }
 EXPORT_SYMBOL(mv_pci_get_dma_dev);
 
@@ -79,26 +89,38 @@ int mv_get_num_dbell(int handle, enum mv_target target, uint32_t *num_dbells)
 EXPORT_SYMBOL(mv_get_num_dbell);
 
 int mv_request_dbell_irq(int handle, u32 dbell, irq_handler_t irq_handler,
-			 void *arg)
+			 void *arg, const struct cpumask *cpumask)
 {
 	struct device *dev = plat_dev;
-	char irq_name[32];
-	int ret = 0, irq;
+	char irq_name[32], msg[128];
+	int ret = 0, cpu, n;
 
 	if (handle == MV_FACILITY_RPC) {
+		struct npu_irq_info *ii = &irq_info[NPU_FACILITY_RPC_IRQ_IDX+dbell];
+
 		if (dbell >= MV_FACILITY_RPC_IRQ_CNT) {
 			pr_err("RPC request irq %d is out of range\n", dbell);
 			return -ENOENT;
 		}
 
 		sprintf(irq_name, "rpc_irq%d", dbell);
-		irq = irq_list[NPU_FACILITY_RPC_IRQ_IDX+dbell];
-		printk("registering irq %d\n", irq);
-
-		ret = devm_request_irq(dev, irq, irq_handler, 0, irq_name, arg);
+		ret = devm_request_irq(dev, ii->irq, irq_handler, 0, irq_name, arg);
 		if (ret < 0)
 			return ret;
-		disable_irq(irq);
+
+		n = snprintf(msg, 128, "%s : registered irq %d on core ",
+				irq_name, ii->irq);
+		ii->cpumask = cpumask;
+		if (cpumask != NULL) {
+			irq_set_affinity_hint(ii->irq, cpumask);
+			for_each_cpu(cpu, cpumask)
+				n += snprintf((msg + n), 128, "%d ", cpu);
+		} else {
+			n += snprintf((msg + n), 128, "0");
+		}
+		snprintf((msg + n), 128, "\n");
+		pr_info("%s", msg);
+		disable_irq(ii->irq);
 	} else {
 		return -ENOENT;
 	}
@@ -109,9 +131,10 @@ EXPORT_SYMBOL(mv_request_dbell_irq);
 
 int mv_dbell_enable(int handle, uint32_t dbell)
 {
-	if (!irq_depth_list[NPU_FACILITY_RPC_IRQ_IDX+dbell]) {
-		enable_irq(irq_list[NPU_FACILITY_RPC_IRQ_IDX+dbell]);
-		irq_depth_list[NPU_FACILITY_RPC_IRQ_IDX+dbell] = 1;
+	struct npu_irq_info *ii = &irq_info[NPU_FACILITY_RPC_IRQ_IDX+dbell];
+	if (!ii->depth) {
+		enable_irq(ii->irq);
+		ii->depth = 1;
 	}
 	return 0;
 }
@@ -119,9 +142,10 @@ EXPORT_SYMBOL_GPL(mv_dbell_enable);
 
 int mv_dbell_disable(int handle, uint32_t dbell)
 {
-	if (irq_depth_list[NPU_FACILITY_RPC_IRQ_IDX+dbell]) {
-		disable_irq_nosync(irq_list[NPU_FACILITY_RPC_IRQ_IDX+dbell]);
-		irq_depth_list[NPU_FACILITY_RPC_IRQ_IDX+dbell] = 0;
+	struct npu_irq_info *ii = &irq_info[NPU_FACILITY_RPC_IRQ_IDX+dbell];
+	if (ii->depth) {
+		disable_irq_nosync(ii->irq);
+		ii->depth = 0;
 	}
 	return 0;
 }
@@ -136,7 +160,7 @@ EXPORT_SYMBOL_GPL(mv_dbell_disable_nosync);
 int mv_free_dbell_irq(int handle, uint32_t dbell, void *arg)
 {
 	struct device *dev = plat_dev;
-	int irq;
+	struct npu_irq_info *ii;
 
 	if (handle == MV_FACILITY_RPC) {
 		if (dbell >= MV_FACILITY_RPC_IRQ_CNT) {
@@ -144,9 +168,11 @@ int mv_free_dbell_irq(int handle, uint32_t dbell, void *arg)
 			return -ENOENT;
 		}
 
-		irq = irq_list[NPU_FACILITY_RPC_IRQ_IDX+dbell];
-		devm_free_irq(dev, irq, arg);
-		irq_depth_list[NPU_FACILITY_RPC_IRQ_IDX+dbell] = 0;
+		ii = &irq_info[NPU_FACILITY_RPC_IRQ_IDX+dbell];
+		irq_set_affinity_hint(ii->irq, NULL);
+		devm_free_irq(dev, ii->irq, arg);
+		ii->depth = 0;
+		ii->cpumask = NULL;
 	} else {
 		return -ENOENT;
 	}
@@ -162,10 +188,11 @@ int mv_send_dbell(int handle __attribute__((unused)),
 }
 EXPORT_SYMBOL(mv_send_dbell);
 
-int mv_pci_sync_dma(int handle, host_dma_addr_t host, void *ep_addr,
-		    dma_addr_t target, enum mv_dma_dir direction, u32 size)
+int mv_pci_sync_dma(int handle, struct device *dev, host_dma_addr_t host,
+					void *ep_addr, dma_addr_t target,
+					enum mv_dma_dir direction, u32 size)
 {
-	return do_dma_sync(target, host, ep_addr, size, direction);
+	return do_dma_sync(dev, target, host, ep_addr, size, direction);
 }
 EXPORT_SYMBOL(mv_pci_sync_dma);
 

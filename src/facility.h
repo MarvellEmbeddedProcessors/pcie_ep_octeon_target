@@ -74,6 +74,9 @@ typedef union {
  * Facility Configuration
  */
 typedef struct {
+        /* Number of dma devices assigned to facility */
+        unsigned int num_dma_dev;
+
         /* device to be used for DMA mapping */
         mv_facility_dev_t dma_dev;
 

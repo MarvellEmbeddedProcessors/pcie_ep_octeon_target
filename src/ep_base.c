@@ -59,8 +59,7 @@ void *npu_barmap_mem;
 
 /* NPU BAR map structure */
 struct npu_bar_map bar_map;
-int irq_list[MAX_INTERRUPTS];
-int irq_depth_list[MAX_INTERRUPTS];
+struct npu_irq_info irq_info[MAX_INTERRUPTS];
 
 /* platform device */
 struct device	*plat_dev;
@@ -394,8 +393,9 @@ static int npu_base_probe(struct platform_device *pdev)
 	}
 
 	for (i = 0; i < irq_count; i++) {
-		irq_list[i] = platform_get_irq(pdev, i);
-		irq_depth_list[i] = 0;
+		irq_info[i].irq = platform_get_irq(pdev, i);
+		irq_info[i].depth = 0;
+		irq_info[i].cpumask = NULL;
 	}
 
 	if (npu_bar_map_init(&bar_map, first_irq, irq_count)) {

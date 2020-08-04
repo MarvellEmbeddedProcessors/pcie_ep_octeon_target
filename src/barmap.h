@@ -40,6 +40,12 @@ struct npu_bar_map {
 	uint32_t gicd_offset;
 };
 
+struct npu_irq_info {
+	int irq;
+	int depth;
+	const struct cpumask *cpumask;
+};
+
 /* BAR1 provides 64MB of OcteonTX memory for Host access in EndPoint mode.
  * Use second half of this 64MB for various rings used to facilitate
  * communication between modules/entities on NPU and Host.
