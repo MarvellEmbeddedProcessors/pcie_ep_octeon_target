@@ -34,7 +34,7 @@ enum handle_type {
 	HANDLE_TYPE_COUNT          /* Number of facilities */
 };
 
-struct device *get_dpi_dma_dev(int handle);
+struct device *get_dpi_dma_dev(int handle, int index);
 void host_writel(uint32_t val,  void __iomem *host_addr);
 void host_map_writel(host_dma_addr_t host_addr, uint32_t val);
 void __iomem *host_ioremap(host_dma_addr_t host_addr);
@@ -42,10 +42,12 @@ void host_iounmap(void __iomem *addr);
 int dpi_vf_init(void);
 void dpi_vf_cleanup(void);
 
-int do_dma_sync(host_dma_addr_t local_dma_addr, host_dma_addr_t host_dma_addr,
-		void *local_virt_addr, int len, host_dma_dir_t dir);
-int do_dma_sync_dpi(host_dma_addr_t local_dma_addr, host_dma_addr_t host_addr,
-		void *local_virt_addr, int len, host_dma_dir_t dir);
+int do_dma_sync(struct device *dev, host_dma_addr_t local_dma_addr,
+		host_dma_addr_t host_dma_addr, void *local_virt_addr,
+		int len, host_dma_dir_t dir);
+int do_dma_sync_dpi(struct device *dev, host_dma_addr_t local_dma_addr,
+		host_dma_addr_t host_addr, void *local_virt_addr,
+		int len, host_dma_dir_t dir);
 int do_dma_sync_sli(host_dma_addr_t local_dma_addr, host_dma_addr_t host_addr,
 		void *local_virt_addr, int len, host_dma_dir_t dir);
 int do_dma_async_dpi_vector(struct device* dev, local_dma_addr_t *local_addr,
