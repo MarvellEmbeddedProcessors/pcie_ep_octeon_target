@@ -31,9 +31,11 @@ static unsigned int  epf_num = 0;
 module_param(epf_num, uint, 0644);
 MODULE_PARM_DESC(epf_num, "epf number to use");
 
-#define CN93xx_SDP_BASE 0x86E080000000ULL
-#define CN93XX_SDP0_EPFX_SCRATCH_OFFSET(epf) (0x000205E0ULL | (epf << 25))
-#define CN93XX_SDP0_EPFX_OEI_TRIG_ADDR(epf) (0x86E0C0000000ULL | (epf << 25))
+static uint64_t sdp_num = 0;
+
+#define CN93xx_SDP_BASE(a) (0x86E080000000ULL | a << 36)
+#define CN93XX_SDPX_EPFX_SCRATCH_OFFSET(epf) (0x000205E0ULL | (epf << 25))
+#define CN93XX_SDPX_EPFX_OEI_TRIG_ADDR(sdp, epf) (0x86E0C0000000ULL | (sdp << 36) | (epf << 25))
 #define PEMX_REG_BASE_93XX(pem) (0x8E0000000000ULL | ((uint64_t)pem << 36))
 
 #define CN83xx_SDP_BASE 0x874080000000ULL
@@ -249,7 +251,7 @@ static int npu_base_setup(struct npu_bar_map *bar_map)
 		oei_trig_remap_addr = ioremap(CN83XX_SDP0_EPFX_OEI_TRIG_ADDR(epf_num), 8);
 	else if (part_num == MRVL_CPU_PART_OCTEONTX2_96XX ||
 		 part_num == MRVL_CPU_PART_OCTEONTX2_98XX)
-		oei_trig_remap_addr = ioremap(CN93XX_SDP0_EPFX_OEI_TRIG_ADDR(epf_num), 8);
+		oei_trig_remap_addr = ioremap(CN93XX_SDPX_EPFX_OEI_TRIG_ADDR(sdp_num, epf_num), 8);
 
 	if (oei_trig_remap_addr == NULL) {
 		printk("Failed to ioremap oei_trig space\n");
@@ -276,7 +278,7 @@ static void npu_handshake_ready(struct npu_bar_map *bar_map)
 		scratch_addr = CN83xx_SDP_BASE + CN83XX_SDP0_SCRATCH_OFFSET(epf_num);
 	else if (part_num == MRVL_CPU_PART_OCTEONTX2_96XX ||
 		 part_num == MRVL_CPU_PART_OCTEONTX2_98XX)
-		scratch_addr = CN93xx_SDP_BASE + CN93XX_SDP0_EPFX_SCRATCH_OFFSET(epf_num);
+		scratch_addr = CN93xx_SDP_BASE(sdp_num) + CN93XX_SDPX_EPFX_SCRATCH_OFFSET(epf_num);
 	else
 		return;
 	scratch_val = ((uint64_t)(NPU_BARMAP_FIREWALL_FIRST_ENTRY *
@@ -366,6 +368,13 @@ static int npu_base_probe(struct platform_device *pdev)
 			goto exit;
 		}
 	}
+
+	/* on 98xx SDP number changes as per the PEM used */
+	if (part_num == MRVL_CPU_PART_OCTEONTX2_98XX) {
+		sdp_num = pem_num / 2;
+	}
+
+	printk("SDP block = %d\n", sdp_num);
 
 	irq = platform_get_irq(pdev, 0);
 	if (irq < 0) {
