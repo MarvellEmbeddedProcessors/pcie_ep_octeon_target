@@ -1,10 +1,17 @@
+/******************************************************************************
+ *  Copyright (C) 2020 Marvell International Ltd.
+ *
+ *  This program is provided "as is" without any warranty of any kind, and is
+ *  distributed under the applicable Marvell limited use license agreement.
+ *******************************************************************************/
+
 /**
  * @file mv_facility.h
  * @brief defines facility interface data structures and APIs
  *
  * Facility is a mechanism provided through which host and target
  * modules (implementing the functionality of facilities) communicate
- * via memory made accessible to Host through platform BAR(s).
+ * via platform memory made accessible to Host through platform BAR0
  */
 
 #ifndef _MV_FACILITY_H_
@@ -60,16 +67,29 @@ enum mv_target {
 int mv_get_facility_handle(char *name);
 
 /**
+ * @brief Get the Facility device count
+ *
+ * Returns the number of facility device's used for dma
+ * @param handle	Facility handle
+ *
+ * @return >= 0, on success and standard error numbers on failure.
+ */
+int mv_pci_get_dma_dev_count(
+	int			handle);
+
+/**
  * @brief Get the Facility device
  *
  * Returns the facility device used for dma
  * @param handle	Facility handle
+ * @param index 	index of dma device.
  * @param dev		the device used by the facility
  *
  * @return 0, on success and standard error numbers on failure.
  */
 int mv_pci_get_dma_dev(
 	int			handle,
+	int 			index,
 	struct device		**dev);
 
 /**
@@ -77,6 +97,7 @@ int mv_pci_get_dma_dev(
  *
  * Performs a DMA operation on a DMA assigned to a facility
  * @param handle	Facility handle
+ * @param dev 		dma device
  * @param host_addr	dma address in host system
  * @param ep_addr	virtual address in target system
  * @param dma_ep_addr	dma address in target system
@@ -88,6 +109,7 @@ int mv_pci_get_dma_dev(
 #ifdef CONFIG_MV_FACILITY_DMA_API
 int mv_pci_sync_dma(
 	int			handle,
+	struct device 		*dev,
 	host_dma_addr_t		host_addr,
 	void			*ep_addr,
 	dma_addr_t		dma_ep_addr,
@@ -121,6 +143,7 @@ int mv_get_num_dbell(
  * @param arg		this is passed as "dev" parameter to request_irq().
  *			so this argument is passed to the handler
  *			upon invocation.
+ * @param cpumask	cpu's that will handle irq for this doorbell.
  *
  * @return 0, on success and standard error numbers on failure.
  */
@@ -128,7 +151,8 @@ int mv_request_dbell_irq(
 	int			handle,
 	uint32_t		dbell,
 	irq_handler_t		handler,
-	void			*arg);
+	void			*arg,
+	const struct cpumask 	*cpumask);
 
 /**
  * @brief Free Facility IRQ

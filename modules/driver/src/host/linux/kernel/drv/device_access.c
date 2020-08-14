@@ -55,7 +55,12 @@ int mv_get_bar_mem_map(int handle, mv_bar_map_t *bar_map)
 }
 EXPORT_SYMBOL(mv_get_bar_mem_map);
 
-int mv_pci_get_dma_dev(int handle, struct device **dev)
+int mv_pci_get_dma_dev_count(int handle)
+{
+	return 1;
+}
+
+int mv_pci_get_dma_dev(int handle, int index, struct device **dev)
 {
 	if (handle == MV_FACILITY_RPC)
 		*dev = rpc_facility_conf.dma_dev.host_ep_dev;
@@ -82,7 +87,8 @@ int mv_request_dbell_irq(
 	int handle UNUSED,
 	uint32_t dbell UNUSED,
 	irq_handler_t handler UNUSED,
-	void *arg UNUSED)
+	void *arg UNUSED,
+	const struct cpumask *cpumask UNUSED)
 {
 	return -ENOTSUPP;
 }
