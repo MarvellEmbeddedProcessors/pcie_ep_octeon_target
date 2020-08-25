@@ -326,8 +326,20 @@ int do_dma_sync(struct device *dev, local_dma_addr_t local_dma_addr,
 }
 EXPORT_SYMBOL(do_dma_sync);
 
+int get_dpi_dma_dev_count(int handle)
+{
+	/* rpc gets all available devices, everyone else gets 1 device */
+	if (handle == HANDLE_TYPE_RPC)
+		return num_vfs;
+
+	return (num_vfs != 0);
+}
+EXPORT_SYMBOL(get_dpi_dma_dev_count);
+
 struct device *get_dpi_dma_dev(int handle, int index)
 {
+	(void) handle;
+
 	if (index < 0 || index >= num_vfs)
 		return NULL;
 

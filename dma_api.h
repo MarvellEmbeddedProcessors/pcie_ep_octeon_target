@@ -34,6 +34,7 @@ enum handle_type {
 	HANDLE_TYPE_COUNT          /* Number of facilities */
 };
 
+int get_dpi_dma_dev_count(int handle);
 struct device *get_dpi_dma_dev(int handle, int index);
 void host_writel(uint32_t val,  void __iomem *host_addr);
 void host_map_writel(host_dma_addr_t host_addr, uint32_t val);
