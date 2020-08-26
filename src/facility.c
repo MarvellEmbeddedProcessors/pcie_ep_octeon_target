@@ -63,7 +63,8 @@ void mv_facility_conf_init(struct device *dev, void *mapaddr, struct npu_bar_map
 	facility_conf[MV_FACILITY_CONTROL].num_t2h_dbells = 0;
 	strncpy(facility_conf[MV_FACILITY_CONTROL].name,
 		MV_FACILITY_NAME_CONTROL, FACILITY_NAME_LEN-1);
-	facility_conf[MV_FACILITY_CONTROL].num_dma_dev = 1;
+	facility_conf[MV_FACILITY_CONTROL].num_dma_dev =
+			get_dpi_dma_dev_count(HANDLE_TYPE_CONTROL);
 
 	facility_map = &bar_map->facility_map[MV_FACILITY_MGMT_NETDEV];
 	facility_conf[MV_FACILITY_MGMT_NETDEV].type = MV_FACILITY_MGMT_NETDEV;
@@ -79,7 +80,8 @@ void mv_facility_conf_init(struct device *dev, void *mapaddr, struct npu_bar_map
 	facility_conf[MV_FACILITY_MGMT_NETDEV].num_t2h_dbells = 0;
 	strncpy(facility_conf[MV_FACILITY_MGMT_NETDEV].name,
 		MV_FACILITY_NAME_MGMT_NETDEV, FACILITY_NAME_LEN-1);
-	facility_conf[MV_FACILITY_MGMT_NETDEV].num_dma_dev = 1;
+	facility_conf[MV_FACILITY_MGMT_NETDEV].num_dma_dev =
+			get_dpi_dma_dev_count(HANDLE_TYPE_MGMT_NETDEV);
 
 	facility_map = &bar_map->facility_map[MV_FACILITY_NW_AGENT];
 	facility_conf[MV_FACILITY_NW_AGENT].type = MV_FACILITY_NW_AGENT;
@@ -95,7 +97,8 @@ void mv_facility_conf_init(struct device *dev, void *mapaddr, struct npu_bar_map
 	facility_conf[MV_FACILITY_NW_AGENT].num_t2h_dbells = 0;
 	strncpy(facility_conf[MV_FACILITY_NW_AGENT].name,
 		MV_FACILITY_NAME_NETWORK_AGENT, FACILITY_NAME_LEN-1);
-	facility_conf[MV_FACILITY_NW_AGENT].num_dma_dev = 1;
+	facility_conf[MV_FACILITY_NW_AGENT].num_dma_dev =
+			get_dpi_dma_dev_count(HANDLE_TYPE_NW_AGENT);
 
 	facility_map = &bar_map->facility_map[MV_FACILITY_RPC];
 	facility_conf[MV_FACILITY_RPC].type = MV_FACILITY_RPC;
@@ -111,7 +114,8 @@ void mv_facility_conf_init(struct device *dev, void *mapaddr, struct npu_bar_map
 	facility_conf[MV_FACILITY_RPC].num_t2h_dbells = 0;
 	strncpy(facility_conf[MV_FACILITY_RPC].name,
 		MV_FACILITY_NAME_RPC, FACILITY_NAME_LEN-1);
-	facility_conf[MV_FACILITY_RPC].num_dma_dev = 5;
+	facility_conf[MV_FACILITY_RPC].num_dma_dev =
+			get_dpi_dma_dev_count(HANDLE_TYPE_RPC);
 
 	mv_dump_facility_conf(MV_FACILITY_CONTROL);
 	mv_dump_facility_conf(MV_FACILITY_MGMT_NETDEV);
