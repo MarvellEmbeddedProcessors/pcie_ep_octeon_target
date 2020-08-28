@@ -69,8 +69,11 @@ int mv_pci_get_dma_dev_count(int handle)
 int mv_pci_get_dma_dev(int handle, int index, struct device **dev)
 {
 	if (handle == MV_FACILITY_RPC) {
+		if (index >= conf.num_dma_dev)
+			return -EINVAL;
+
 		*dev = get_dpi_dma_dev(handle, index);
-		return 0;
+		return (*dev != NULL) ? 0 : -ENODEV;
 	}
 
 	return -ENOENT;
@@ -144,7 +147,7 @@ int mv_dbell_disable(int handle, uint32_t dbell)
 {
 	struct npu_irq_info *ii = &irq_info[NPU_FACILITY_RPC_IRQ_IDX+dbell];
 	if (ii->depth) {
-		disable_irq_nosync(ii->irq);
+		disable_irq(ii->irq);
 		ii->depth = 0;
 	}
 	return 0;
@@ -153,6 +156,11 @@ EXPORT_SYMBOL_GPL(mv_dbell_disable);
 
 int mv_dbell_disable_nosync(int handle, uint32_t dbell)
 {
+	struct npu_irq_info *ii = &irq_info[NPU_FACILITY_RPC_IRQ_IDX+dbell];
+	if (ii->depth) {
+		disable_irq_nosync(ii->irq);
+		ii->depth = 0;
+	}
 	return 0;
 }
 EXPORT_SYMBOL_GPL(mv_dbell_disable_nosync);
