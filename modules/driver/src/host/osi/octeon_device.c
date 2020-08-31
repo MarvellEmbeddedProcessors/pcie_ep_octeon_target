@@ -1803,6 +1803,7 @@ octeon_get_app_mode(void *octptr, unsigned long arg UNUSED)
         CFG_GET_NUM_INTF(default_oct_conf) = 1;
         cavium_print_msg("Octeon is running nic application\n");
     }
+    octeon_probe_module_handlers(octeon_dev->octeon_id);
     return OCT_POLL_FN_FINISHED;
 }
 
@@ -2188,6 +2189,38 @@ void octeon_init_module_handler_list(void)
 	cavium_spin_lock_init(&octmodhandlers_lock);
 }
 
+void octeon_probe_module_handlers(int octeon_id)
+{
+	octeon_device_t *oct_dev = octeon_device[octeon_id];
+	int modidx;
+
+	/* Call the start method for all existing octeon devices. */
+	for (modidx = 0; modidx < OCTEON_MAX_MODULES; modidx++) {
+		octeon_module_handler_t *handler = &octmodhandlers[modidx];
+
+		if ((oct_dev->app_mode & handler->app_type) &&
+		    (cavium_atomic_read(&oct_dev->mod_status[modidx]) ==
+		     OCTEON_MODULE_HANDLER_INIT_LATER)) {
+			cavium_print_msg("OCTEON[%d]: Starting modules for app_type: %s\n",
+				     octeon_id,
+				     get_oct_app_string(handler->app_type));
+			if (handler->startptr(octeon_id, oct_dev)) {
+				/* Call the stop method */
+				handler->stopptr(octeon_id, oct_dev);
+				cavium_atomic_set(&oct_dev->mod_status[modidx],
+						OCTEON_MODULE_HANDLER_STOPPED);
+				cavium_spin_lock(&octmodhandlers_lock);
+				cavium_memset(handler, 0,
+					      sizeof(octeon_module_handler_t));
+				cavium_spin_unlock(&octmodhandlers_lock);
+				continue;
+			}
+			cavium_atomic_set(&oct_dev->mod_status[modidx],
+					  OCTEON_MODULE_HANDLER_INIT_DONE);
+		}
+	}
+}
+
 int octeon_register_module_handler(octeon_module_handler_t * handler)
 {
 	int modidx, octidx, retval = 0;
@@ -2247,6 +2280,8 @@ int octeon_register_module_handler(octeon_module_handler_t * handler)
 		if (oct_dev == NULL)
 			continue;
 
+		cavium_atomic_set(&oct_dev->mod_status[modidx],
+				  OCTEON_MODULE_HANDLER_REGISTERED);
 #ifdef  ETHERPCI
 		oct_dev->app_mode = CVM_DRV_NIC_APP;	// Emulate NIC PCI Device
 		cavium_atomic_set(&oct_dev->status, OCT_DEV_CORE_OK);
@@ -2272,6 +2307,15 @@ int octeon_register_module_handler(octeon_module_handler_t * handler)
 				cavium_spin_unlock(&octmodhandlers_lock);
 				return retval;
 			}
+			cavium_atomic_set(&oct_dev->mod_status[modidx],
+					  OCTEON_MODULE_HANDLER_INIT_DONE);
+		} else {
+			cavium_print_msg("OCTEON[%d]: waiting for app mode; "
+				"\"%s\" module will be started one app mode is identified\n",
+				oct_dev->octeon_id,
+				get_oct_app_string(handler->app_type));
+			cavium_atomic_set(&oct_dev->mod_status[modidx],
+					  OCTEON_MODULE_HANDLER_INIT_LATER);
 		}
 	}
 

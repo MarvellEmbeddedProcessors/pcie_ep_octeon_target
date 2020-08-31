@@ -530,6 +530,8 @@ struct _OCTEON_DEVICE {
 	void *mbox_cmd_queue;
 	struct cavium_wq sdp_wq;
 
+	/* module handler status */
+	cavium_atomic_t mod_status[OCTEON_MAX_MODULES];
 };
 
 #define CHIP_FIELD(oct, TYPE, field)             \

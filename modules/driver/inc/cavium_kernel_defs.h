@@ -134,6 +134,14 @@ typedef struct {
 
 } octeon_droq_ops_t;
 
+typedef enum {
+	OCTEON_MODULE_HANDLER_UNREGISTERED,
+	OCTEON_MODULE_HANDLER_REGISTERED,
+	OCTEON_MODULE_HANDLER_INIT_LATER,
+	OCTEON_MODULE_HANDLER_INIT_DONE,
+	OCTEON_MODULE_HANDLER_STOPPED
+} octeon_module_handler_status_t;
+
 /** Structure passed by kernel application when registering a module with
 	the driver. */
 typedef struct {
@@ -309,6 +317,8 @@ int octeon_unregister_droq_ops(int octeon_id, uint32_t q_no);
  *         to add this handler.
  */
 int octeon_register_module_handler(octeon_module_handler_t * handler);
+
+void octeon_probe_module_handlers(int octeon_id);
 
 /** Called by a module when it is being unloaded to unregister start
  * and stop functions. The "stop" function will be called in this function
