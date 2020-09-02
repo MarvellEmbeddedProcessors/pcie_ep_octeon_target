@@ -65,6 +65,7 @@ int mv_pci_get_dma_dev_count(int handle)
 
 	return -EINVAL;
 }
+EXPORT_SYMBOL(mv_pci_get_dma_dev_count);
 
 int mv_pci_get_dma_dev(int handle, int index, struct device **dev)
 {
