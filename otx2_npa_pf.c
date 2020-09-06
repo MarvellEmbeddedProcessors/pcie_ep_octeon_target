@@ -10,6 +10,7 @@
 #include <linux/etherdevice.h>
 #include <linux/of.h>
 #include <linux/if_vlan.h>
+#include <linux/mutex.h>
 #include <net/ip.h>
 #include <linux/iommu.h>
 #include "otx2_common.h"
@@ -191,7 +192,7 @@ static int otx2_pfaf_mbox_init(struct npa_dev_t *npa_pf_dev)
 	//}
 	INIT_WORK(&mbox->mbox_wrk, otx2_pfaf_mbox_handler);
 	INIT_WORK(&mbox->mbox_up_wrk, otx2_pfaf_mbox_up_handler);
-	otx2_mbox_lock_init(&npa_pf_dev->mbox);
+	mutex_init(&npa_pf_dev->mbox.lock);
 	
 	return 0;
 }
@@ -562,11 +563,11 @@ static int otx2_register_mbox_intr(struct npa_dev_t *npa_pf_dev, bool probe_af)
                 return -EPROBE_DEFER;
         }
 
-	otx2_mbox_lock(&npa_pf_dev->mbox);
+	mutex_lock(&npa_pf_dev->mbox.lock);
         /* Get memory to put this msg */
         attach = otx2_mbox_alloc_msg_attach_resources(&npa_pf_dev->mbox);
         if (!attach) {
-                otx2_mbox_unlock(&npa_pf_dev->mbox);
+                mutex_unlock(&npa_pf_dev->mbox.lock);
                 return -ENOMEM;
         }
 
@@ -574,24 +575,24 @@ static int otx2_register_mbox_intr(struct npa_dev_t *npa_pf_dev, bool probe_af)
         /* Send attach request to AF */
         err = otx2_sync_mbox_msg(&npa_pf_dev->mbox);
         if (err) {
-                otx2_mbox_unlock(&npa_pf_dev->mbox);
+                mutex_unlock(&npa_pf_dev->mbox.lock);
                 return err;
         }
 
 	 /* Get NPA MSIX vector offsets */
         msix = otx2_mbox_alloc_msg_msix_offset(&npa_pf_dev->mbox);
         if (!msix) {
-                otx2_mbox_unlock(&npa_pf_dev->mbox);
+		mutex_unlock(&npa_pf_dev->mbox.lock);
                 return -ENOMEM;
         }
 
         err = otx2_sync_mbox_msg(&npa_pf_dev->mbox);
         if (err) {
-                otx2_mbox_unlock(&npa_pf_dev->mbox);
+                mutex_unlock(&npa_pf_dev->mbox.lock);
                 return err;
         }
 
-	otx2_mbox_unlock(&npa_pf_dev->mbox);
+	mutex_unlock(&npa_pf_dev->mbox.lock);
 
         return 0;
 }
