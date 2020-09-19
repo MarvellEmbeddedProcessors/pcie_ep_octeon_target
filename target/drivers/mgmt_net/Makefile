@@ -1,11 +1,19 @@
 CROSS=aarch64-marvell-linux-gnu-
-KERNEL?=${OCTEONTX_ROOT}/linux/kernel/linux
+KDIR?=${OCTEONTX_TARGET_ROOT}/linux/kernel/linux
 MODULE_NAME = mgmt_net
 SRCS = target_ethdev.c 
-FACILITY_DIR?=$(src)/../pcie_ep/src
-DMA_API_DIR?=$(src)/../dma_api
-INCLUDE_DIR = -I$(src) -I$(FACILITY_DIR)  -I$(DMA_API_DIR)
+FACILITY_DIR?=$(PWD)/../pcie_ep/src
+DMA_API_DIR?=$(PWD)/../dpi_dma
+#FACILITY_DIR?=$(OCTEONTX_TARGET_ROOT)/drivers/pcie_ep/src
+#DMA_API_DIR?=$(OCTEONTX_TARGET_ROOT)/drivers/dpi_dma
+INCLUDE_DIR = -I$(PWD) -I$(FACILITY_DIR) -I$(DMA_API_DIR)
 ccflags-y := $(INCLUDE_DIR)
+
+KBUILD_EXTRA_SYMBOLS=$(BUILD_DIR)/pcie_ep_octeontx-$(PCIE_EP_OCTEONTX_VERSION)/src/Module.symvers
+KBUILD_EXTRA_SYMBOLS+=$(BUILD_DIR)/dpi_dma_octeontx-$(DPI_DMA_OCTEONTX_VERSION)/Module.symvers
+export KBUILD_EXTRA_SYMBOLS
+
+$(info $$DMA_API_DIR is $(DMA_API_DIR))
  
 OBJS =  $(SRCS:.c=.o)
  
@@ -14,7 +22,7 @@ $(MODULE_NAME)-y = $(OBJS)
  
  
 all:
-	make ARCH=arm64 CROSS_COMPILE=$(CROSS) -C $(KERNEL) SUBDIRS=$(PWD) modules
+	make ARCH=arm64 CROSS_COMPILE=$(CROSS) -C $(KDIR) SUBDIRS=$(PWD) modules
  
 clean:
-	make -C $(KERNEL) SUBDIRS=$(PWD) clean
+	make -C $(KDIR) SUBDIRS=$(PWD) clean

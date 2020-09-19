@@ -1,5 +1,5 @@
 MODULE_MAME = mgmt_net
-PCIE_HOST ?= $(src)/../pcie_host/src
+PCIE_HOST ?= $(OCTEONTX_HOST_ROOT)/drivers/legacy/modules/driver/src/host/linux/kernel/drv
 KERNEL_DIR ?= /lib/modules/$(shell uname -r)/build
  
 SRCS = host_ethdev.c 
@@ -7,6 +7,7 @@ SRCS = host_ethdev.c
 INCLUDE_DIR = -I$(src) -I$(PCIE_HOST)
  
 ccflags-y := $(INCLUDE_DIR)
+KBUILD_EXTRA_SYMBOLS := $(PCIE_HOST)/Module.symvers
  
 OBJS =  $(SRCS:.c=.o)
  
