@@ -2,7 +2,7 @@
 # Copyright(c) 2010-2014 Intel Corporation
 
 # binary name
-APP = l2fwd_otx2
+APP = l2fwd_pcie_ep
 
 # all source are stored in SRCS-y
 SRCS-y := main.c sdp_app.c

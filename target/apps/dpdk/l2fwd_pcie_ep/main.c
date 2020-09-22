@@ -39,9 +39,7 @@
 #include <rte_mempool.h>
 #include <rte_mbuf.h>
 
-#include "soc_agent.h"
-#include "apps_rxtx.h"
-
+#include "otx-drv.h"
 static volatile bool force_quit;
 
 /* MAC updating enabled by default */
@@ -188,17 +186,13 @@ drop_pkt(uint32_t portid, struct rte_mbuf *m)
 static int
 prep_mbuf_for_app(uint32_t portid, struct rte_mbuf *mbuf)
 {
-	cvmcs_raw_inst_front_t *front;
-
 	if ((port_type[portid] == PORT_TYPE_NPU_PCI_PF) ||
 		(port_type[portid] == PORT_TYPE_NPU_PCI_VF)) {
-		front = rte_pktmbuf_mtod(mbuf, cvmcs_raw_inst_front_t *);
 		rte_pktmbuf_adj(mbuf, CVM_RAW_FRONT_SIZE);
 #ifdef OCTEONTX2
 		mbuf->l2_len -= CVM_RAW_FRONT_SIZE;
 #endif
 	}
-
 	return 0;
 }
 
@@ -228,9 +222,8 @@ static void
 l2fwd_simple_forward(struct rte_mbuf *m, unsigned portid)
 {
 	unsigned dst_port = RTE_MAX_ETHPORTS;
-	uint64_t metadata = 0;
-	uint16_t tag = 0;
-	int sent, i = 0;
+	unsigned src_port;
+	int sent;
 
 	if (unlikely(dump_pkt)) {
 		RTE_LOG(INFO, L2FWD, "\nRevc pkt from port %u"
@@ -240,37 +233,24 @@ l2fwd_simple_forward(struct rte_mbuf *m, unsigned portid)
 		rte_pktmbuf_dump(stdout, m, 64);
 		printf("\n");
 	}
-
-	prep_mbuf_for_app(mbuf);
+	src_port = portid;
+	dst_port = port_map[src_port]; 
+	prep_mbuf_for_app(src_port, m);
 	if (unlikely(dump_pkt)) {
-		RTE_LOG(INFO, L2FWD, "\nRevc pkt from port %u with tag 0x%x and"
-			" metadata 0x%"PRIx64","
+		RTE_LOG(INFO, L2FWD, "\nRevc pkt from port %u and"
 			" l2_len %u, l3_len %u, packet_type 0x%x\n",
-			portid, tag, metadata, m->l2_len, m->l3_len,
+			portid, m->l2_len, m->l3_len,
 			m->packet_type);
 		rte_pktmbuf_dump(stdout, m, 64);
 		printf("\n");
 	}
-	dst_port = portmap[src_port];
-
+	/* process packet */
 	if (unlikely(dst_port == RTE_MAX_ETHPORTS)) {
-		RTE_LOG(WARNING, L2FWD, "dst-port not found for src-port %u and"
-			" tag 0x%x\n", portid, tag);
+		RTE_LOG(WARNING, L2FWD, "dst-port not found for src-port %u \n", portid);
 		goto drop_pkt;
 	}
 
-	prep_mbuf_for_port(mbuf);
-	if (unlikely(dump_pkt)) {
-		RTE_LOG(INFO, L2FWD, "\nSend pkt to port %u with tag 0x%x and "
-			"metadata 0x%"PRIx64","
-			" l2_len %u, l3_len %u, packet_type 0x%x\n",
-			dst_port, tag, metadata, m->l2_len, m->l3_len,
-			m->packet_type);
-		rte_pktmbuf_dump(stdout, m, 64);
-		printf("\n");
-	}
-
-
+	prep_mbuf_for_port(dst_port, m);
 	if (unlikely(dump_pkt)) {
 		RTE_LOG(INFO, L2FWD, "\nSend pkt to port %u"
 			" l2_len %u, l3_len %u, packet_type 0x%x\n",
@@ -409,10 +389,10 @@ static void dump_port_mapping(void)
 
 	printf("\nPort mapping:\n");
 	printf("%-12s%-12s\n", "Src-Port", "Dst-Port");
-	while (port_mapping[i].src_port != RTE_MAX_ETHPORTS) {
+	while (port_map[i] != RTE_MAX_ETHPORTS) {
 		printf("%-12d%-12d\n",
-		       port_mapping[i].src_port,
-		       port_mapping[i].dst_port);
+		       i,
+		       port_map[i]);
 		i++;
 	}
 	printf("\n");
@@ -662,10 +642,11 @@ signal_handler(int signum)
 static void
 prepare_port_mapping(const char *filename)
 {
-	int row_count = 0, i, j, field_count = 0, numLines = 0, idx = 0;
+	int row_count = 0, j, field_count = 0, numLines = 0;
 	int nb_ports = rte_eth_dev_count_avail();
 	char buf[1024], *field;
 	FILE *fp;
+	unsigned src_port = 0;
 
 	for (j = 0; j < nb_ports; j++) {
 		port_map[j] = j;
@@ -703,9 +684,6 @@ prepare_port_mapping(const char *filename)
 				src_port =
 					 (uint32_t)strtol(field, NULL, 16);
 			if (field_count == 1)
-				port_type[src_port] =
-					 (uint32_t)strtol(field, NULL, 16);
-			if (field_count == 2)
 				port_map[src_port] =
 					 (uint32_t)strtol(field, NULL, 16);
 			field = strtok(NULL, ",");
@@ -836,6 +814,7 @@ main(int argc, char **argv)
 
 
 	prepare_port_mapping(conf_file);
+	dump_port_mapping();
 
 	/* Initialise each port */
 	RTE_ETH_FOREACH_DEV(portid) {
