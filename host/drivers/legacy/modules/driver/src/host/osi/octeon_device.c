@@ -1780,7 +1780,7 @@ octeon_get_app_mode(void *octptr, unsigned long arg UNUSED)
 	octeon_dev->app_mode = CVM_DRV_NIC_APP;
 	core_clk = 1200;
 	coproc_clk = (reg_val >> 16) & 0xffff;
-	octeon_dev->pkind = 40;
+	octeon_dev->pkind = 40 + octeon_dev->sriov_info.num_vfs;
     }
 
     cavium_print_msg("OCTEON running with Core clock:%d Copro clock:%d\n",
