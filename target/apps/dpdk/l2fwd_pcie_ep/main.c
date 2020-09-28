@@ -38,6 +38,7 @@
 #include <rte_ethdev.h>
 #include <rte_mempool.h>
 #include <rte_mbuf.h>
+#include <rte_bus_pci.h>
 
 #include "otx-drv.h"
 static volatile bool force_quit;
@@ -127,12 +128,12 @@ print_stats(void)
 	const char clr[] = { 27, '[', '2', 'J', '\0' };
 	const char topLeft[] = { 27, '[', '1', ';', '1', 'H','\0' };
 
-		/* Clear screen and move to top left */
+	/* Clear screen and move to top left */
 	printf("%s%s", clr, topLeft);
 
 	printf("\nPort statistics ====================================");
 
-	for (portid = 0; portid < RTE_MAX_ETHPORTS; portid++) {
+	RTE_ETH_FOREACH_DEV(portid) {
 		/* skip disabled ports */
 		if ((l2fwd_enabled_port_mask & (1 << portid)) == 0)
 			continue;
@@ -188,6 +189,7 @@ prep_mbuf_for_app(uint32_t portid, struct rte_mbuf *mbuf)
 {
 	if ((port_type[portid] == PORT_TYPE_NPU_PCI_PF) ||
 		(port_type[portid] == PORT_TYPE_NPU_PCI_VF)) {
+		//printf("packet from PF/VF port-%d\n", portid);
 		rte_pktmbuf_adj(mbuf, CVM_RAW_FRONT_SIZE);
 #ifdef OCTEONTX2
 		mbuf->l2_len -= CVM_RAW_FRONT_SIZE;
@@ -201,7 +203,7 @@ prep_mbuf_for_port(uint32_t portid, struct rte_mbuf *mbuf)
 {
         volatile cvmcs_resp_hdr_t *resp_ptr = NULL;
 
-	if ((port_type[portid] != PORT_TYPE_NPU_PCI_PF) ||
+	if ((port_type[portid] != PORT_TYPE_NPU_PCI_PF) &&
 		(port_type[portid] != PORT_TYPE_NPU_PCI_VF))
 		return 0;
 
@@ -226,10 +228,9 @@ l2fwd_simple_forward(struct rte_mbuf *m, unsigned portid)
 	int sent;
 
 	if (unlikely(dump_pkt)) {
-		RTE_LOG(INFO, L2FWD, "\nRevc pkt from port %u"
-			" l2_len %u, l3_len %u, packet_type 0x%x\n",
-			portid, m->l2_len, m->l3_len,
-			m->packet_type);
+		RTE_LOG(INFO, L2FWD,
+			"\nRcvd from port-%u; l2_len %u, l3_len %u, packet_type 0x%x\n",
+			portid, m->l2_len, m->l3_len, m->packet_type);
 		rte_pktmbuf_dump(stdout, m, 64);
 		printf("\n");
 	}
@@ -237,10 +238,9 @@ l2fwd_simple_forward(struct rte_mbuf *m, unsigned portid)
 	dst_port = port_map[src_port]; 
 	prep_mbuf_for_app(src_port, m);
 	if (unlikely(dump_pkt)) {
-		RTE_LOG(INFO, L2FWD, "\nRevc pkt from port %u and"
-			" l2_len %u, l3_len %u, packet_type 0x%x\n",
-			portid, m->l2_len, m->l3_len,
-			m->packet_type);
+		RTE_LOG(INFO, L2FWD,
+			"\nafter prep_mbuf_for_app: Rcvd from port-%u; l2_len %u, l3_len %u, packet_type 0x%x\n",
+			portid, m->l2_len, m->l3_len, m->packet_type);
 		rte_pktmbuf_dump(stdout, m, 64);
 		printf("\n");
 	}
@@ -469,6 +469,7 @@ static const char short_options[] =
 	"p:"  /* portmask */
 	"q:"  /* number of queues */
 	"d"  /* debug */
+	"f:"  /* config file */
 	"T:"  /* timer period */
 	;
 
@@ -651,6 +652,7 @@ prepare_port_mapping(const char *filename)
 	for (j = 0; j < nb_ports; j++) {
 		port_map[j] = j;
 	}
+	port_map[j] = RTE_MAX_ETHPORTS;
 
 	fp = fopen(filename, "r");
 	if (!fp) {
@@ -690,8 +692,8 @@ prepare_port_mapping(const char *filename)
 			field_count++;
 		}
 		printf("Index %d ", row_count-1);
-		printf("Sorce Port: %d\t", src_port);
-		printf("Dest Port: %d\t", port_map[src_port]);
+		printf("Source Port: %d\t", src_port);
+		printf("Dest Port: %d\n", port_map[src_port]);
 	}
 	fclose(fp);
 print_exit:
@@ -699,10 +701,68 @@ print_exit:
 	printf("Final Port Map Table\n");
 	printf("====================\n");
 	for (j = 0; j < nb_ports; j++) {
-		printf("Sorce Port:%d dst port %d\n", j, port_map[j]);
+		printf("Source Port:%d dst port %d\n", j, port_map[j]);
 	}
 	printf("====================\n");
 }
+
+static void
+init_port_type(void)
+{
+#ifdef OCTEONTX
+	char if_name[RTE_ETH_NAME_MAX_LEN];
+	uint16_t portid;
+	int ret;
+
+	RTE_ETH_FOREACH_DEV(portid) {
+		ret = rte_eth_dev_get_name_by_port(portid, if_name);
+		if (ret < 0) {
+			printf("Name not found for %d\n", portid);
+			continue;
+		}
+		if (!strncmp(if_name,"eth_octeontx_net",16)) {
+			printf("Port-%d is BGX interface\n", portid);
+			port_type[portid] = PORT_TYPE_NPU_NET;
+		} else if (!strncmp(if_name,"eth_octeontx_pci_pf",19)) {
+			printf("Port-%d is PCI PF interface\n", portid);
+			port_type[portid] = PORT_TYPE_NPU_PCI_PF;
+		} else if (!strncmp(if_name,"eth_octeontx_pci_vf",19)) {
+			printf("Port-%d is PCI VF interface\n", portid);
+			port_type[portid] = PORT_TYPE_NPU_PCI_VF;
+		} else {
+			printf(ERR, "Unknown interface %d %s\n", portid, if_name);
+		}
+	}
+#else
+	struct rte_pci_device *pci_dev;
+	uint16_t port;
+
+	RTE_ETH_FOREACH_DEV(port) {
+		struct rte_eth_dev *eth_dev = &rte_eth_devices[port];
+
+		pci_dev = RTE_ETH_DEV_TO_PCI(eth_dev);
+		printf("port %d: device (%x:%x) %u:%u:%u:%u\n",
+			port, pci_dev->id.vendor_id, pci_dev->id.device_id,
+			pci_dev->addr.domain, pci_dev->addr.bus,
+			pci_dev->addr.devid, pci_dev->addr.function);
+		if (pci_dev->id.device_id == 0xa063) {
+			port_type[port] = PORT_TYPE_NPU_NET;
+		} else if (pci_dev->id.device_id == 0xa0f7) {
+			if (pci_dev->addr.function == 1)
+				port_type[port] = PORT_TYPE_NPU_PCI_PF;
+			else
+				port_type[port] = PORT_TYPE_NPU_PCI_VF;
+		} else {
+			printf("Unknown port %d; device (%x:%x) %u:%u:%u:%u\n",
+				port,
+				pci_dev->id.vendor_id, pci_dev->id.device_id,
+				pci_dev->addr.domain, pci_dev->addr.bus,
+				pci_dev->addr.devid, pci_dev->addr.function);
+		}
+	}
+#endif
+}
+
 int
 main(int argc, char **argv)
 {
@@ -813,6 +873,7 @@ main(int argc, char **argv)
 		rte_exit(EXIT_FAILURE, "Cannot init mbuf pool\n");
 
 
+	init_port_type();
 	prepare_port_mapping(conf_file);
 	dump_port_mapping();
 
@@ -822,6 +883,7 @@ main(int argc, char **argv)
 		struct rte_eth_txconf txq_conf;
 		struct rte_eth_conf local_port_conf = port_conf;
 		struct rte_eth_dev_info dev_info;
+		char if_name[RTE_ETH_NAME_MAX_LEN];
 
 		/* skip ports that are not enabled */
 		if ((l2fwd_enabled_port_mask & (1 << portid)) == 0) {
@@ -831,7 +893,12 @@ main(int argc, char **argv)
 		nb_ports_available++;
 
 		/* init port */
-		printf("Initializing port %u... ", portid);
+		ret = rte_eth_dev_get_name_by_port(portid, if_name);
+		if (ret < 0) {
+			printf("Error: ifname not found for portid-%d\n", portid);
+			continue;
+		}
+		printf("Initializing port %u; ifname = %s... ", portid, if_name);
 		fflush(stdout);
 
 		ret = rte_eth_dev_info_get(portid, &dev_info);
