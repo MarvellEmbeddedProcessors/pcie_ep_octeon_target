@@ -6,6 +6,9 @@
 #include "octeon-pci.h"
 #include <linux/log2.h>
 
+#define DPI0_EBUS_PORTX_CFG(a) (0x86E000004100ULL | (a)<<3)
+#define DPI1_EBUS_PORTX_CFG(a) (0x86F000004100ULL | (a)<<3)
+
 #define FW_TO_HOST 0x2
 #define HOST_TO_FW 0x1
 int g_app_mode = CVM_DRV_APP_START;
@@ -1111,6 +1114,8 @@ static int resume_cn93xx_setup(octeon_device_t * oct)
 	uint64_t npfs = 0, rppf = 0, pf_srn = 0;
 	uint64_t nvfs = 0, rpvf = 0, vf_srn = 0;
 	int i, j, srn;
+	u8 mps_val, mrrs_val;
+	int mps, mrrs;
 #ifndef ETHERPCI
 	int vf_rings = 0;
 #endif
@@ -1243,6 +1248,28 @@ static int resume_cn93xx_setup(octeon_device_t * oct)
 
 	cavium_print_msg(" EtherPCI Enabled, not enabling SRIOV.\n");
 #endif
+
+	/* setup DPI MPS and MRRS accordingly */
+	mps = pcie_get_mps(oct->pci_dev);
+	mrrs = pcie_get_readrq(oct->pci_dev);
+	cavium_print_msg(" MPS=%d, MRRS=%d\n",mps, mrrs);
+
+	mps_val = fls(mps) - 8;
+	mrrs_val = fls(mrrs) - 8;
+
+	/* port0 */
+	regval = OCTEON_PCI_WIN_READ(oct, DPI0_EBUS_PORTX_CFG(0));
+	regval |= (mps_val << 4) | mrrs_val;
+	OCTEON_PCI_WIN_WRITE(oct, DPI0_EBUS_PORTX_CFG(0), regval);
+	/* port1 */
+	regval = OCTEON_PCI_WIN_READ(oct, DPI0_EBUS_PORTX_CFG(1));
+	regval |= (mps_val << 4) | mrrs_val;
+	OCTEON_PCI_WIN_WRITE(oct, DPI0_EBUS_PORTX_CFG(1), regval);
+
+	/* TODO: 98xx has 2xDPI blocks but need to identify the proper block
+	 * number based on the PEM
+	 */
+
 	return 0;
 }
 
