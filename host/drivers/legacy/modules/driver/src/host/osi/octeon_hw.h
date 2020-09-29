@@ -84,22 +84,14 @@ static inline uint16_t OCTEON_MINOR_REV(octeon_device_t * oct)
 static inline uint64_t OCTEON_PCI_WIN_READ(octeon_device_t * oct, uint64_t addr)
 {
 	uint64_t val64;
-	volatile uint32_t val32, addrhi;
 
-	/* The windowed read happens when the LSB of the addr is written.
-	   So write MSB first */
-	addrhi = (addr >> 32);
 	if ((oct->chip_id == OCTEON_CN83XX_PF) ||
 	    (oct->chip_id == OCTEON_CN83XX_VF))
-		addrhi |= 0x00060000;
-	OCTEON_WRITE32(oct->reg_list.pci_win_rd_addr_hi, addrhi);
+		addr |= 1ull << 49; /* read 8 bytes */
+	else
+		addr |= 1ull << 53; /* read 8 bytes */
 
-	/* Read back to preserve ordering of writes */
-	val32 = OCTEON_READ32(oct->reg_list.pci_win_rd_addr_hi);
-
-	OCTEON_WRITE32(oct->reg_list.pci_win_rd_addr_lo, addr & 0xffffffff);
-	val32 = OCTEON_READ32(oct->reg_list.pci_win_rd_addr_lo);
-
+	OCTEON_WRITE64(oct->reg_list.pci_win_rd_addr, addr);
 	val64 = OCTEON_READ64(oct->reg_list.pci_win_rd_data);
 
 	cavium_print(PRINT_REGS,
@@ -122,20 +114,13 @@ static inline uint64_t OCTEON_PCI_WIN_READ(octeon_device_t * oct, uint64_t addr)
 static inline void
 OCTEON_PCI_WIN_WRITE(octeon_device_t * oct, uint64_t addr, uint64_t val)
 {
-	volatile uint32_t val32;
-
 	OCTEON_WRITE64(oct->reg_list.pci_win_wr_addr, addr);
 
-	/* The write happens when the LSB is written. So write MSB first. */
-	OCTEON_WRITE32(oct->reg_list.pci_win_wr_data_hi, val >> 32);
-	/* Read the MSB to ensure ordering of writes. */
-	val32 = OCTEON_READ32(oct->reg_list.pci_win_wr_data_hi);
+	OCTEON_WRITE64(oct->reg_list.pci_win_wr_data, val);
 
-	OCTEON_WRITE32(oct->reg_list.pci_win_wr_data_lo, val & 0xffffffff);
 	cavium_print(PRINT_REGS,
 		     "OCTEON_PCI_WIN_WRITE: reg: 0x%016llx val: 0x%016llx\n",
 		     addr, val);
-
 }
 
 #define   CN3XXX_DEVICE_IN_PCIX_MODE(oct_dev)       \
