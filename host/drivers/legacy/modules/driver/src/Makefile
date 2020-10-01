@@ -71,7 +71,9 @@ tests:
 clean:
 	cd $(DRIVER_ROOT)/host/linux/kernel/drv; $(MAKE) clean; 
 	cd $(DRIVER_ROOT)/host/linux/user/api; $(MAKE) clean; 
-	cd $(DRIVER_ROOT)/host/linux/user/utils; $(MAKE) clean
+	cd $(DRIVER_ROOT)/host/linux/user/utils; $(MAKE) clean;
+	cd $(DRIVER_ROOT)/host/linux/kernel/drv/octnic; $(MAKE) clean;
+	@cd $(CNNIC_ROOT); sh sym-link.sh undo
 
 user_drv_clean:check_cnnic
 	cd $(DRIVER_ROOT)/host/linux/user/drv; $(MAKE) clean; 

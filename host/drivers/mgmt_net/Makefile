@@ -20,3 +20,4 @@ all:
  
 clean:
 	make -C $(KERNEL_DIR) M=`pwd` clean
+	@rm host_ethdev.o.ur-safe
