@@ -185,7 +185,7 @@ octnet_prepare_pci_cmd(octeon_device_t * oct,
 			//pki_ih3.qpg = oct->pkind * 32;	/* PKI will use the defualt sttings */
 
 			pki_ih3.pm = 0x0;	/* 0x0 - meant for Parse starting at LA (L2) */
-			pki_ih3.sl = 32 + TOTAL_TAG_LEN;	/* sl will be sizeof(pki_ih3) */
+			pki_ih3.sl = 28 + TOTAL_TAG_LEN;	/* sl will be sizeof(pki_ih3) */
 		}
 		o3_cmd.ih3 = *((uint64_t *) & ihx);
 		o3tx_cmd.ih3 = *((uint64_t *) & ihx);
