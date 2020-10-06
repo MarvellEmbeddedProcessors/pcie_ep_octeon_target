@@ -33,6 +33,10 @@ extern int cn83xx_pf_setup_global_oq_reg(octeon_device_t *, int);
 extern int cn83xx_pf_setup_global_iq_reg(octeon_device_t *, int);
 extern int g_app_mode;
 
+/* On 83xx this is called DPIx_SLI_PRTx_CFG but address is same */
+#define DPI0_EBUS_PORTX_CFG(a) (0x86E000004100ULL | (a)<<3)
+#define DPI1_EBUS_PORTX_CFG(a) (0x86F000004100ULL | (a)<<3)
+
 char oct_dev_state_str[OCT_DEV_STATES + 1][32] = {
 	"BEGIN", "PCI-MAP-DONE", "DISPATCH-INIT-DONE",
 	"BUFPOOL-INIT-DONE", "RESPLIST-INIT-DONE", "HOST-READY",
@@ -1672,6 +1676,8 @@ octeon_wait_for_npu_base(void *octptr, unsigned long arg UNUSED)
 {
 	octeon_device_t *octeon_dev = (octeon_device_t *) octptr;
 	volatile uint64_t reg_val = 0;
+	u8 mps_val, mrrs_val;
+	int mps, mrrs, port = 0;
 
 	/** 
 	 * Along with the app mode firmware sends core clock(in MHz),
@@ -1721,7 +1727,29 @@ octeon_wait_for_npu_base(void *octptr, unsigned long arg UNUSED)
 		       __func__, octeon_dev->chip_id);
 		return OCT_POLL_FN_CONTINUE;
 	}
+
+	/* setup DPI MPS and MRRS accordingly */
+	mps = pcie_get_mps(octeon_dev->pci_dev);
+	mrrs = pcie_get_readrq(octeon_dev->pci_dev);
+	cavium_print_msg(" MPS=%d, MRRS=%d\n",mps, mrrs);
+
+	mps_val = fls(mps) - 8;
+	mrrs_val = fls(mrrs) - 8;
+
+	if (octeon_dev->chip_id == OCTEON_CN83XX_PF)
+		port = octeon_dev->pcie_port;
+	else if (octeon_dev->chip_id == OCTEON_CN93XX_PF)
+		port = octeon_dev->pcie_port/2; //its either 0 or 1
+	/* TODO: 98xx has 2xDPI blocks but need to identify the proper port by
+	 * applying workaround for SDP-38594
+	 */
+
+	reg_val = OCTEON_PCI_WIN_READ(octeon_dev, DPI0_EBUS_PORTX_CFG(port));
+	reg_val |= (mps_val << 4) | mrrs_val;
+	OCTEON_PCI_WIN_WRITE(octeon_dev, DPI0_EBUS_PORTX_CFG(port), reg_val);
+
 	npu_handshake_done = true;
+
 	return OCT_POLL_FN_FINISHED;
 }
 
