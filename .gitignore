@@ -1,0 +1,24 @@
+# Ignore tags created by etags, ctags, gtags (GNU global) and cscope
+TAGS
+.TAGS
+!TAGS/
+tags
+.tags
+!tags/
+gtags.files
+GTAGS
+GRTAGS
+GPATH
+GSYMS
+cscope.files
+cscope.out
+cscope.in.out
+cscope.po.out
+
+# Ignore directories
+host/drivers/legacy/modules/driver/inc
+host/drivers/legacy/modules/driver/bin
+
+.*.swp
+*.o
+.*.o.cmd
