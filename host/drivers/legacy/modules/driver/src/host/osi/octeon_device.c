@@ -1677,7 +1677,7 @@ octeon_wait_for_npu_base(void *octptr, unsigned long arg UNUSED)
 	octeon_device_t *octeon_dev = (octeon_device_t *) octptr;
 	volatile uint64_t reg_val = 0;
 	u8 mps_val, mrrs_val;
-	int mps, mrrs, port = 0;
+	int mps, mrrs, port = 0, dpi_num = 0;
 
 	/** 
 	 * Along with the app mode firmware sends core clock(in MHz),
@@ -1739,14 +1739,25 @@ octeon_wait_for_npu_base(void *octptr, unsigned long arg UNUSED)
 	if (octeon_dev->chip_id == OCTEON_CN83XX_PF)
 		port = octeon_dev->pcie_port;
 	else if (octeon_dev->chip_id == OCTEON_CN93XX_PF)
-		port = octeon_dev->pcie_port/2; //its either 0 or 1
-	/* TODO: 98xx has 2xDPI blocks but need to identify the proper port by
-	 * applying workaround for SDP-38594
+		port = octeon_dev->pcie_port / 2; //its either 0 or 1
+	/*
+	 * Due to SDP-38594 the workaround is to pass the PEM number through the
+	 * memmap structure from the EP
 	 */
+	else if (octeon_dev->chip_id == OCTEON_CN98XX_PF) {
+		dpi_num = npu_memmap_info.pem_num / 2;
+		port = npu_memmap_info.pem_num & 0x1;
+	}
 
-	reg_val = OCTEON_PCI_WIN_READ(octeon_dev, DPI0_EBUS_PORTX_CFG(port));
-	reg_val |= (mps_val << 4) | mrrs_val;
-	OCTEON_PCI_WIN_WRITE(octeon_dev, DPI0_EBUS_PORTX_CFG(port), reg_val);
+	if (!dpi_num) {
+		reg_val = OCTEON_PCI_WIN_READ(octeon_dev, DPI0_EBUS_PORTX_CFG(port));
+		reg_val |= (mps_val << 4) | mrrs_val;
+		OCTEON_PCI_WIN_WRITE(octeon_dev, DPI0_EBUS_PORTX_CFG(port), reg_val);
+	} else {
+		reg_val = OCTEON_PCI_WIN_READ(octeon_dev, DPI1_EBUS_PORTX_CFG(port));
+		reg_val |= (mps_val << 4) | mrrs_val;
+		OCTEON_PCI_WIN_WRITE(octeon_dev, DPI1_EBUS_PORTX_CFG(port), reg_val);
+	}
 
 	npu_handshake_done = true;
 

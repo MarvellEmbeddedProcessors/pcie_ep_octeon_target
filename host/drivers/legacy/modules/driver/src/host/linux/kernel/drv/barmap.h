@@ -36,6 +36,7 @@ struct npu_bar_map {
 	struct facility_bar_map facility_map[MV_FACILITY_COUNT];
 	/* offset in BAR1 where GICD CSR space is mapped */
 	uint32_t gicd_offset;
+	uint8_t pem_num;
 };
 
 /* BAR1 provides 64MB of OcteonTX memory for Host access in EndPoint mode.

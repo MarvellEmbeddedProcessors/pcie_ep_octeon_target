@@ -397,7 +397,7 @@ static int npu_base_probe(struct platform_device *pdev)
 		irq_info[i].cpumask = NULL;
 	}
 
-	if (npu_bar_map_init(&bar_map, first_irq, irq_count)) {
+	if (npu_bar_map_init(&bar_map, pem_num, first_irq, irq_count)) {
 		printk("bar map int failed\n");
 		return -1;
 	}

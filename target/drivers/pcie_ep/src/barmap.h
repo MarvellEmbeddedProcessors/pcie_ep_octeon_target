@@ -38,6 +38,7 @@ struct npu_bar_map {
 	struct facility_bar_map facility_map[MV_FACILITY_COUNT];
 	/* offset in BAR1 where GICD CSR space is mapped */
 	uint32_t gicd_offset;
+	uint8_t pem_num;
 };
 
 struct npu_irq_info {
@@ -103,7 +104,7 @@ struct npu_irq_info {
 
 #define NPU_SPI_IRQ_START 32
 
-static inline int npu_bar_map_init(struct npu_bar_map *map,
+static inline int npu_bar_map_init(struct npu_bar_map *map, int pem_num,
 				   int first_irq, int irq_count)
 {
 	struct facility_bar_map *facility_map;
@@ -153,6 +154,7 @@ static inline int npu_bar_map_init(struct npu_bar_map *map,
 	facility_map->h2t_dbell_count = MV_FACILITY_RPC_IRQ_CNT;
 
 	map->gicd_offset = NPU_BARMAP_SPI_OFFSET;
+	map->pem_num = (uint8_t)pem_num;
 	return 0;
 }
 
