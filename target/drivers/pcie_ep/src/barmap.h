@@ -42,7 +42,6 @@ struct npu_bar_map {
 
 struct npu_irq_info {
 	int irq;
-	int depth;
 	const struct cpumask *cpumask;
 };
 

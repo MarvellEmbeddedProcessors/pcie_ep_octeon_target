@@ -135,33 +135,21 @@ EXPORT_SYMBOL(mv_request_dbell_irq);
 
 int mv_dbell_enable(int handle, uint32_t dbell)
 {
-	struct npu_irq_info *ii = &irq_info[NPU_FACILITY_RPC_IRQ_IDX+dbell];
-	if (!ii->depth) {
-		enable_irq(ii->irq);
-		ii->depth = 1;
-	}
+	enable_irq(irq_info[NPU_FACILITY_RPC_IRQ_IDX + dbell].irq);
 	return 0;
 }
 EXPORT_SYMBOL_GPL(mv_dbell_enable);
 
 int mv_dbell_disable(int handle, uint32_t dbell)
 {
-	struct npu_irq_info *ii = &irq_info[NPU_FACILITY_RPC_IRQ_IDX+dbell];
-	if (ii->depth) {
-		disable_irq(ii->irq);
-		ii->depth = 0;
-	}
+	disable_irq(irq_info[NPU_FACILITY_RPC_IRQ_IDX + dbell].irq);
 	return 0;
 }
 EXPORT_SYMBOL_GPL(mv_dbell_disable);
 
 int mv_dbell_disable_nosync(int handle, uint32_t dbell)
 {
-	struct npu_irq_info *ii = &irq_info[NPU_FACILITY_RPC_IRQ_IDX+dbell];
-	if (ii->depth) {
-		disable_irq_nosync(ii->irq);
-		ii->depth = 0;
-	}
+	disable_irq_nosync(irq_info[NPU_FACILITY_RPC_IRQ_IDX + dbell].irq);
 	return 0;
 }
 EXPORT_SYMBOL_GPL(mv_dbell_disable_nosync);
@@ -180,7 +168,6 @@ int mv_free_dbell_irq(int handle, uint32_t dbell, void *arg)
 		ii = &irq_info[NPU_FACILITY_RPC_IRQ_IDX+dbell];
 		irq_set_affinity_hint(ii->irq, NULL);
 		devm_free_irq(dev, ii->irq, arg);
-		ii->depth = 0;
 		ii->cpumask = NULL;
 	} else {
 		return -ENOENT;

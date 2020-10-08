@@ -373,7 +373,7 @@ static int npu_base_probe(struct platform_device *pdev)
 		sdp_num = pem_num / 2;
 	}
 
-	printk("SDP block = %d\n", sdp_num);
+	printk("SDP block = %lld\n", sdp_num);
 
 	irq = platform_get_irq(pdev, 0);
 	if (irq < 0) {
@@ -394,7 +394,6 @@ static int npu_base_probe(struct platform_device *pdev)
 
 	for (i = 0; i < irq_count; i++) {
 		irq_info[i].irq = platform_get_irq(pdev, i);
-		irq_info[i].depth = 0;
 		irq_info[i].cpumask = NULL;
 	}
 
