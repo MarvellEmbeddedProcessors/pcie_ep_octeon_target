@@ -15,10 +15,10 @@
 #include "dpi.h"
 #include "fpa.h"
 #include "dpi_cmd.h"
+#include "npa_api.h"
 #include "dma_api.h"
 #include "octeontx_mbox.h"
 #include "octeontx.h"
-#include "otx2_npa_pf.h"
 
 #define DRV_NAME "octeontx-dpi-vf"
 #define DRV_VERSION "1.0"
@@ -38,7 +38,6 @@
 
 #define FPA_PF_ID 0
 #define DPI_PF_ID 0
-
 
 static unsigned int pem_num = 0;
 module_param(pem_num, uint, 0644);
@@ -97,7 +96,7 @@ struct dpivf_t {
 	int id;
 	struct fpavf *fpa;
 	struct dma_pool *comp_buf_pool;
-	u16 aura;
+	u32 aura;
 	u8 *host_writel_ptr;
 	u64 host_writel_iova;
 };
@@ -685,8 +684,12 @@ int dpi_vf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		}
 
 		dpi_vf->vf_id = pdev->devfn - 1;
-		dpi_vf->aura = npa_aura_pool_init(DPI_NB_CHUNKS, DPI_CHUNK_SIZE,
-								dpi_vf->dev);
+		err = npa_aura_pool_init(DPI_NB_CHUNKS, DPI_CHUNK_SIZE,
+					 &dpi_vf->aura, dpi_vf->dev);
+		if (err) {
+			dev_err(dev, "Failed to init aura pool pair");
+			return err;
+		}
 		dpi_buf = npa_alloc_buf(dpi_vf->aura);
 		if (!dpi_buf) {
 			dev_err(dev, "Failed to allocate");
@@ -698,7 +701,7 @@ int dpi_vf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		otx2_mbox_msg.s.csize = DPI_CHUNK_SIZE;
 		otx2_mbox_msg.s.aura = dpi_vf->aura;
 		otx2_mbox_msg.s.sso_pf_func = 0;
-		otx2_mbox_msg.s.npa_pf_func = npa_pf_func();
+		otx2_mbox_msg.s.npa_pf_func = npa_pf_func(dpi_vf->aura);
 
 		/* Opening DPI queue */
 		err = otx2_dpipf->queue_config(otx2_dpi_pfdev, &otx2_mbox_msg);
