@@ -363,8 +363,6 @@ int octnet_setup_net_queues(int octeon_id, octnet_priv_t * priv)
 
 	memset(&droq_ops, 0, sizeof(octeon_droq_ops_t));
 
-	droq_ops.fptr = octnet_push_packet;
-
 #ifdef OCT_NIC_USE_NAPI
 	droq_ops.poll_mode = 1;
 	droq_ops.napi_fn = octnet_napi_drv_callback;
@@ -372,9 +370,9 @@ int octnet_setup_net_queues(int octeon_id, octnet_priv_t * priv)
 	droq_ops.drop_on_max = 1;
 #endif
 	cavium_print(PRINT_DEBUG,
-		     "Setting droq ops for q %d poll_mode: %d napi_fn: %p fptr: %p drop: %d\n",
+		     "Setting droq ops for q %d poll_mode: %d napi_fn: %p drop: %d\n",
 		     priv->rxq, droq_ops.poll_mode, droq_ops.napi_fn,
-		     droq_ops.fptr, droq_ops.drop_on_max);
+		     droq_ops.drop_on_max);
 
 #ifdef ETHERPCI
 	/* Register the droq ops structure so that we can start handling packets
@@ -1209,6 +1207,17 @@ int octnet_init_nic_module(int octeon_id, void *octeon_dev)
 				goto octnet_init_failure;
 			}
 		}
+		/* assign droq's to netdev's
+		 * link_count = 1: all DROQs assigned to the same link
+		 * link_count > 1: 1 DROQ per link
+		 */
+		if (ls->link_count == 1)
+			octeon_droq_set_netdev(oct, 0,
+					octnet_get_num_ioqs(oct),
+					octprops[octeon_id]->pndev[ifidx]);
+		else
+			octeon_droq_set_netdev(oct, ifidx, 1,
+					octprops[octeon_id]->pndev[ifidx]);
 	}
 
 #if !defined(ETHERPCI)
@@ -1220,7 +1229,6 @@ int octnet_init_nic_module(int octeon_id, void *octeon_dev)
 #endif
 
 		memset(&droq_ops, 0, sizeof(octeon_droq_ops_t));
-		droq_ops.fptr = octnet_push_packet;
 #ifdef OCT_NIC_USE_NAPI
 		droq_ops.poll_mode = 1;
 		droq_ops.napi_fun = octnet_napi_callback;

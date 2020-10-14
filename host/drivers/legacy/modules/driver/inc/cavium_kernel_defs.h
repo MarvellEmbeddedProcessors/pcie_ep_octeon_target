@@ -88,12 +88,6 @@ typedef int (*octeon_dispatch_fn_t) (octeon_recv_info_t *, void *);
   * information for each octeon device.
   */
 typedef struct {
-	/** This registered function will be called by the driver with
-	    the octeon id, pointer to buffer from droq and length of 
-	    data in the buffer. The response header gives the port 
-	    number to the caller.  Function pointer is set by caller.  */
-	void (*fptr) (int, void *, uint32_t, octeon_resp_hdr_t *, int, void *);
-
 	/* This function will be called by the driver for all NAPI related
 	   events. The first param is the octeon id. The second param is the
 	   output queue number. The third is the NAPI event that occurred. */
@@ -333,9 +327,6 @@ int octeon_register_poll_fn(int oct_id, octeon_poll_ops_t * ops);
 int
 octeon_unregister_poll_fn(int oct_id, octeon_poll_fn_t fn,
 			  unsigned long fn_arg);
-
-int
-octeon_process_droq_poll_cmd(int oct_id, uint32_t q_no, int cmd, uint32_t arg);
 
 int
 octeon_register_noresp_buf_free_fn(int oct_id, int buftype,

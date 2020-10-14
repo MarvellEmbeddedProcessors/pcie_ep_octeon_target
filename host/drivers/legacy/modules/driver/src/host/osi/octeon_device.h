@@ -391,6 +391,7 @@ struct _OCTEON_DEVICE {
 
 	cavium_atomic_t interrupts;
 
+	/* TODO: remove this unused flag */
 	cavium_atomic_t in_interrupt;
 
 	int num_iqs;
@@ -624,6 +625,8 @@ int octeon_setup_output_queues(octeon_device_t * oct);
 int octeon_setup_mbox(octeon_device_t * oct);
 
 int octeon_enable_msix_interrupts(octeon_device_t * oct);
+
+void octeon_enable_irq(octeon_droq_t *droq);
 
 int octeon_allocate_ioq_vector(octeon_device_t * oct);
 

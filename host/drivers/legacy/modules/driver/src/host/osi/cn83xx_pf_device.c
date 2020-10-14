@@ -712,39 +712,19 @@ cvm_intr_return_t cn83xx_pf_msix_interrupt_handler(void *dev)
 	octeon_device_t *oct = ioq_vector->oct_dev;
 	uint64_t intr64;
 
-	cavium_print(PRINT_FLOW, " In %s octeon_dev @ %p  \n",
-		     __CVM_FUNCTION__, oct);
 	intr64 = OCTEON_READ64(ioq_vector->droq->pkts_sent_reg);
-
-	/** 
-	 * If our device has interrupted, then proceed. Also check 
-	 * for all f's if interrupt was triggered on an error
-	 * and the PCI read fails. 
-	 */
 	if (!(intr64 & (0x7ULL << 60)))
 		return CVM_INTR_NONE;
 
-	cavium_atomic_set(&oct->in_interrupt, 1);
-
 	oct->stats.interrupts++;
 
-	cavium_atomic_inc(&oct->interrupts);
-
-	/* Write count reg in sli_pkt_cnts to clear these int. */
-	if (intr64 & CN83XX_INTR_R_OUT_INT) {
-#ifdef OCT_NIC_USE_NAPI
-        cavium_disable_irq_nosync(ioq_vector->droq->irq_num);
-#endif
+	if (intr64 & CN83XX_INTR_R_OUT_INT)
 		cn83xx_droq_intr_handler(ioq_vector);
-	}
 
 	/* Handle PI int, write count in IN_DONE reg to clear these int */
 	if (intr64 & CN83XX_INTR_R_IN_INT) {
 		cn83xx_iq_intr_handler(ioq_vector);
 	}
-
-	cavium_atomic_set(&oct->in_interrupt, 0);
-
 	return CVM_INTR_HANDLED;
 }
 

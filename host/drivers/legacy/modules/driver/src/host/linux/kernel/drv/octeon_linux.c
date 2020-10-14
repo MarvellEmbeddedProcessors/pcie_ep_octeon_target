@@ -262,7 +262,6 @@ EXPORT_SYMBOL(octeon_debug_level);
 EXPORT_SYMBOL(octeon_reset_oq_bufsize);
 EXPORT_SYMBOL(octeon_register_droq_ops);
 EXPORT_SYMBOL(octeon_unregister_droq_ops);
-EXPORT_SYMBOL(octeon_process_droq_poll_cmd);
 EXPORT_SYMBOL(octeon_send_short_command);
 EXPORT_SYMBOL(octeon_reset_ioq);
 
@@ -286,5 +285,9 @@ EXPORT_SYMBOL(wait_for_iq_instr_fetch);
 EXPORT_SYMBOL(wait_for_pending_requests);
 EXPORT_SYMBOL(wait_for_oq_pkts);
 EXPORT_SYMBOL(wait_for_output_queue_pkts);
+
+EXPORT_SYMBOL(octeon_droq_set_netdev);
+EXPORT_SYMBOL(octeon_droq_process_poll_pkts);
+EXPORT_SYMBOL(octeon_enable_irq);
 
 #endif

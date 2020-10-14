@@ -260,8 +260,6 @@ void octnet_tx_timeout(octnet_os_devptr_t * pndev);
 
 int octnet_setup_instr(int octeon_id, octnet_priv_t * priv, int port);
 
-void octnet_push_packet(int octeon_id, void *skbuff, uint32_t len, octeon_resp_hdr_t * resp_hdr, int lastpkt, void *napi);	/* lastpkt: for TCP_RR/STREAM perf. */
-
 static inline char *octnet_get_devname(octnet_os_devptr_t * dev)
 {
 	struct net_device *ldev = (struct net_device *)dev;

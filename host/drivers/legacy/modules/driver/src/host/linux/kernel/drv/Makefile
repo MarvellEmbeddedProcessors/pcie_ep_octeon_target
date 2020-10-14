@@ -43,6 +43,7 @@ endif
 INCLUDE += -I. -I$(SUBDIRS)/../../../../common    -I$(SUBDIRS)/../../../osi    \
 	-I$(SUBDIRS)/../../../osi/octvf	\
 	-I$(SUBDIRS)/../../../../../inc  -I$(SUBDIRS)/../test -I$(SUBDIRS)
+INCLUDE += -I$(SUBDIRS)/octnic
 
 EXTRA_CFLAGS +=	-D__SMP__ -O2 -finline-functions $(INCLUDE) $(WARNINGS)
 

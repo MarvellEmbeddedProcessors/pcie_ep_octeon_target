@@ -158,15 +158,21 @@ typedef struct {
 
   /** Packets pending to be processed - tasklet implementation */
 	cavium_atomic_t pkts_pending;
+	uint32_t last_pkt_count;
 
   /** Number of  descriptors in this ring. */
 	uint32_t max_count;
+	uint32_t ring_size_mask;
 
   /** The number of descriptors pending refill. */
 	uint32_t refill_count;
 
 	uint32_t pkts_per_intr;
 	uint32_t refill_threshold;
+
+  /** The size of each buffer pointed by the buffer pointer. */
+	uint32_t buffer_size;
+	uint32_t max_single_buffer_size;
 
   /** The max number of descriptors in DROQ without a buffer.
       This field is used to keep track of empty space threshold. If the
@@ -180,9 +186,6 @@ typedef struct {
   /** The receive buffer list. This list has the virtual addresses of the
       buffers.  */
 	octeon_recv_buffer_t *recv_buf_list;
-
-  /** The size of each buffer pointed by the buffer pointer. */
-	uint32_t buffer_size;
 
   /** Pointer to the mapped packet credit register.
        Host writes number of info/buffer ptrs available to this register */
@@ -214,6 +217,7 @@ typedef struct {
 	void *app_ctx;
 
 	struct napi_struct napi;
+	struct net_device *pndev;
 
 	octeon_droq_ism_t ism;
 
@@ -256,6 +260,9 @@ int octeon_droq_check_hw_for_pkts(octeon_device_t * oct, octeon_droq_t * droq);
 int octeon_setup_droq(int oct_id, int q_no, void *app_ctx);
 
 int32_t octeon_create_droq(octeon_device_t * oct, int q_no, void *app_ctx);
+int32_t octeon_droq_set_netdev(octeon_device_t *oct, int q_no, int q_cnt,
+			       struct net_device *pndev);
+int octeon_droq_process_poll_pkts(octeon_droq_t *droq, uint32_t budget);
 
 #endif	/*__OCTEON_DROQ_H__ */
 

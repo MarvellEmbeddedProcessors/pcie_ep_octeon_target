@@ -1118,6 +1118,7 @@ int oct_reinit_oq(octeon_device_t * oct, int oq_no)
 	droq->octeon_write_index = 0;
 	droq->host_refill_index = 0;
 	droq->refill_count = 0;
+	droq->last_pkt_count = 0;
 	cavium_atomic_set(&droq->pkts_pending, 0);
 
 	if (oct->chip_id == OCTEON_CN83XX_PF)
@@ -2556,4 +2557,17 @@ int octeon_all_devices_active(void)
 	return (octeon_active_dev_count() == octeon_device_count);
 }
 
+void octeon_enable_irq(octeon_droq_t *droq)
+{
+	uint32_t pkts_pend = (u32)cavium_atomic_read(&droq->pkts_pending);
+
+	/* TODO: add support 93xx,98xx */
+	/* write processed packet count along with RESEND bit set.
+	 * this will trigger an interrupt if there are still unprocessed
+	 * packets pending
+	 */
+	OCTEON_WRITE64(droq->pkts_sent_reg,
+		       (1UL << 59) | (droq->last_pkt_count - pkts_pend));
+	droq->last_pkt_count = pkts_pend;
+}
 /* $Id: octeon_device.c 165632 2017-08-31 09:12:31Z mchalla $ */

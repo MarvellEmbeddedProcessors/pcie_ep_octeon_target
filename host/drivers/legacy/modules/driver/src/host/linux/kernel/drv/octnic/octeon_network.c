@@ -384,84 +384,6 @@ int octnet_change_mtu(struct net_device *pndev, int new_mtu)
 	return 0;
 }
 
-/** Routine to push packets arriving on Octeon interface upto network layer.
-  * @param octeon_id  - pointer to octeon device.
-  * @param skbuff     - skbuff struct to be passed to network layer.
-  * @param len        - size of total data received.
-  * @param resp_hdr   - Response header
-  * @param lastpkt    - indicates whether this is last packet to push
-  * @param napi       - NAPI handler
-  */
-void
-octnet_push_packet(int octeon_id,
-		   void *skbuff,
-		   uint32_t len,
-		   octeon_resp_hdr_t * resp_hdr, int lastpkt, void *napi)
-{
-// *INDENT-OFF*
-	struct sk_buff     *skb   = (struct sk_buff *)skbuff;
-	octnet_os_devptr_t *pndev = (octnet_os_devptr_t *)octprops[octeon_id]->pndev[resp_hdr->dest_qport];
-// *INDENT-ON*
-
-	if (pndev) {
-
-		int rc;
-
-		octnet_priv_t *priv = GET_NETDEV_PRIV(pndev);
-
-		/* Do not proceed if the interface is not in RUNNING state. */
-		if (!
-		    (cavium_atomic_read(&priv->ifstate) &
-		     OCT_NIC_IFSTATE_RUNNING)) {
-			free_recv_buffer(skb);
-			atomic64_inc((atomic64_t *) & priv->stats.rx_dropped);	/* atomic increment: multi-core support:66xx */
-			return;
-		}
-
-		skb->dev = pndev;
-#ifndef CONFIG_PPORT
-		skb->protocol = eth_type_trans(skb, skb->dev);
-#else
-		if (unlikely(false == (pport_do_receive(skb)))) {
-			cavium_print(PRINT_DEBUG,
-				     "pport receive error port_id(0x%08x)\n",
-				     ntohs(*(__be16 *)skb->data));
-			free_recv_buffer(skb);
-			atomic64_inc((atomic64_t *) & priv->stats.rx_errors);
-			return;
-		}
-#endif
-
-		if (resp_hdr->csum_verified == CNNIC_CSUM_VERIFIED)
-			skb->ip_summed = CHECKSUM_UNNECESSARY;	/* checksum has already verified on OCTEON */
-		else
-			skb->ip_summed = CHECKSUM_NONE;
-
-#if defined (OCT_NIC_USE_NAPI)
-		rc = napi_gro_receive(napi, skb);
-#else
-		rc = (lastpkt) ? netif_rx_ni(skb) : netif_rx(skb);	/* tuned for TCP_RR/STREAM perf: speed-up packet push */
-#endif
-
-#ifdef OCT_NIC_USE_NAPI
-		if (rc != GRO_DROP) {
-#else
-		if (rc != NET_RX_DROP) {
-#endif
-			priv->stats.rx_bytes += len;
-			atomic64_inc((atomic64_t *) & priv->stats.rx_packets);	/* atomic increment: multi-core support:66xx */
-//			pndev->last_rx = jiffies;
-		} else {
-			atomic64_inc((atomic64_t *) & priv->stats.rx_dropped);	/* atomic increment: multi-core support:66xx */
-		}
-
-	} else {
-
-		free_recv_buffer(skb);
-	}
-
-}
-
 void octnic_free_netbuf(void *buf)
 {
 	struct sk_buff *skb;
@@ -825,48 +747,15 @@ void octnet_napi_callback(octeon_droq_t * droq)
 	napi_schedule(&droq->napi);
 }
 
-int octnet_napi_do_rx(octnet_priv_t * priv, int budget)
-{
-	int work_done, oct_id;
-
-	oct_id = get_octeon_device_id(priv->oct_dev);
-
-	work_done = octeon_process_droq_poll_cmd(oct_id, priv->rxq,
-						 POLL_EVENT_PROCESS_PKTS,
-						 budget);
-	if (work_done < 0) {
-		cavium_error
-		    ("\n %s: CHECK THE OCTEON DEVICE ID OR DROQ NUMBER\n",
-		     __FUNCTION__);
-		goto octnet_napi_finish;
-	}
-
-	if (work_done > budget) {
-		cavium_error(">>>> %s work_done: %d budget: %d\n", __FUNCTION__,
-			     work_done, budget);
-	}
-
-	return work_done;
-
-octnet_napi_finish:
-	octnet_notify_napi_complete(priv);
-	octeon_process_droq_poll_cmd(oct_id, priv->rxq, POLL_EVENT_ENABLE_INTR,
-				     0);
-	return 0;
-}
-
 int octnet_napi_poll_fn(struct napi_struct *napi, int budget)
 {
 	octeon_droq_t *droq;
-	int work_done, oct_id;
+	int work_done;
 
 	droq = container_of(napi, octeon_droq_t, napi);
-	oct_id = get_octeon_device_id(droq->oct_dev);
 	//printk("%s: q_no:%d cpu:%d budget:%d\n",__func__,droq->q_no,smp_processor_id(),budget);
 
-	work_done = octeon_process_droq_poll_cmd(oct_id, droq->q_no,
-						 POLL_EVENT_PROCESS_PKTS,
-						 budget);
+	work_done = octeon_droq_process_poll_pkts(droq, budget);
 	//printk("work_done:%d budget:%d\n", work_done, budget);
 #ifdef OCT_NIC_IQ_USE_NAPI
 	iq = droq->oct_dev->instr_queue[iq_no];
@@ -890,16 +779,14 @@ int octnet_napi_poll_fn(struct napi_struct *napi, int budget)
 		(droq->pkt_count >= MAX_REG_CNT)) {
 		tx_done = 1;
 		napi_complete_done(napi, work_done);
-		octeon_process_droq_poll_cmd(oct_id, droq->q_no,
-						POLL_EVENT_ENABLE_INTR, 0);
-			return 0;
+		octeon_enable_irq(droq);
+		return 0;
 	}
 	return (!tx_done) ? (budget) : (work_done);
 #else	
 	if (work_done < budget) {
 		napi_complete(napi);
-		octeon_process_droq_poll_cmd(oct_id, droq->q_no,
-					     POLL_EVENT_ENABLE_INTR, 0);
+		octeon_enable_irq(droq);
 		return 0;
 	}
 
@@ -909,52 +796,6 @@ int octnet_napi_poll_fn(struct napi_struct *napi, int budget)
 	return work_done;
 #endif	
 }
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,24)
-
-int octnet_napi_poll(struct napi_struct *napi, int budget)
-{
-	struct net_device *pndev = napi->dev;
-	octnet_priv_t *priv = GET_NETDEV_PRIV(pndev);
-	int work_done;
-
-	work_done = octnet_napi_do_rx(priv, budget);
-
-	if (work_done < budget) {
-		int oct_id = get_octeon_device_id(priv->oct_dev);
-		octnet_notify_napi_complete(priv);
-		octeon_process_droq_poll_cmd(oct_id, priv->rxq,
-					     POLL_EVENT_ENABLE_INTR, 0);
-		return 0;
-	}
-
-	return work_done;
-}
-
-#else
-
-int octnet_napi_poll(struct net_device *pndev, int *budget)
-{
-	int work_done = 0;
-	octnet_priv_t *priv = GET_NETDEV_PRIV(pndev);
-
-	work_done = octnet_napi_do_rx(priv, *budget);
-
-	*budget -= work_done;
-	pndev->quota -= work_done;
-
-	if (work_done < *budget) {
-		int oct_id = get_octeon_device_id(priv->oct_dev);
-		octnet_notify_napi_complete(priv);
-		octeon_process_droq_poll_cmd(oct_id, priv->rxq,
-					     POLL_EVENT_ENABLE_INTR, 0);
-		return 0;
-	}
-
-	return 1;
-}
-
-#endif
 
 struct net_device_stats *octnet_stats(struct net_device *pndev)
 {
