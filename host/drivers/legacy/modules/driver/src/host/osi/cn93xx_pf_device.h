@@ -1,3 +1,6 @@
+/* Copyright (c) 2020 Marvell.
+ * SPDX-License-Identifier: GPL-2.0
+ */
 
 /*! \file  cn93xx_pf_device.h
     \brief Host Driver: Routines that perform CN93XX specific PF domain operations.

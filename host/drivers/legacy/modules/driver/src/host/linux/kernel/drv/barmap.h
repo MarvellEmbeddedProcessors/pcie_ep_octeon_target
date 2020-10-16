@@ -1,3 +1,7 @@
+/* Copyright (c) 2020 Marvell.
+ * SPDX-License-Identifier: GPL-2.0
+ */
+
 #ifndef _BARMAP_H_
 #define _BARMAP_H_
 

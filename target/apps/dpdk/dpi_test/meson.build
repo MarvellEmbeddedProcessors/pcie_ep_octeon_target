@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright (C) 2020 Marvell International Ltd.
+# Copyright (C) 2020 Marvell.
 
 # meson file, for building this example as part of a main DPDK build.
 #

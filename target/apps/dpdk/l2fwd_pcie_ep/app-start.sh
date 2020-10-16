@@ -1,3 +1,6 @@
+# Copyright (c) 2020 Marvell.
+# SPDX-License-Identifier: BSD-3-Clause
+
 #!/bin/sh
 
 mkdir -p /dev/huge

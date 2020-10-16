@@ -1,7 +1,0 @@
-v0.1
-----
-- setting up memory regions, creating interrupt
-- base driver handshake with host eth_mux driver
-- parsing interrupts from dts file
-- registered handler for control interrupt
-- created patch for 83xx dts file to create all interrupt devices

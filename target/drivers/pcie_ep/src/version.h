@@ -1,3 +1,7 @@
+/* Copyright (c) 2020 Marvell.
+ * SPDX-License-Identifier: GPL-2.0
+ */
+
 #ifndef _VERSION_
 #define _VERSION_
 

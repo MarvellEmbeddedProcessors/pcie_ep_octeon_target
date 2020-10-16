@@ -1,3 +1,6 @@
+#Copyright (c) 2020 Marvell.
+#SPDX-License-Identifier: GPL-2.0
+
 MODULE_MAME = mgmt_net
 PCIE_HOST ?= $(OCTEONTX_HOST_ROOT)/drivers/legacy/modules/driver/src/host/linux/kernel/drv
 KERNEL_DIR ?= /lib/modules/$(shell uname -r)/build

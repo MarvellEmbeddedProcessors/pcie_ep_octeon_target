@@ -1,3 +1,6 @@
+#Copyright (c) 2020 Marvell.
+#SPDX-License-Identifier: GPL-2.0
+
 CROSS=aarch64-marvell-linux-gnu-
 MODULE_NAME = dpi_dma
 SRCS = dma_api.c 

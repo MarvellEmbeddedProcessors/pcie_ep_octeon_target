@@ -1,3 +1,7 @@
+#Copyright (c) 2020 Marvell.
+#SPDX-License-Identifier: GPL-2.0
+
+
 CROSS=aarch64-marvell-linux-gnu-
 KDIR?=${OCTEONTX_TARGET_ROOT}/linux/kernel/linux
 MODULE_NAME = mgmt_net

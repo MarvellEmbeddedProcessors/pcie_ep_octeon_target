@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright(c) 2010-2014 Intel Corporation
+# Copyright (c) 2020 Marvell.
 
 # binary name
 APP = l2fwd_pcie_ep

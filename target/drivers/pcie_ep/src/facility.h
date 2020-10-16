@@ -1,3 +1,7 @@
+/* Copyright (c) 2020 Marvell.
+ * SPDX-License-Identifier: GPL-2.0
+ */
+
 /**
  * @file facility.h
  * @brief defines facility interface data structures and APIs

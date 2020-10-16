@@ -1,7 +1,8 @@
-// SPDX-License-Identifier: (GPL-2.0)
+/* Copyright (c) 2020 Marvell.
+ * SPDX-License-Identifier: GPL-2.0
+ */
+
 /* Mgmt ethernet driver
- *
- * Copyright (C) 2015-2019 Marvell, Inc.
  */
 
 #include <linux/cpumask.h>

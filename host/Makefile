@@ -1,7 +1,5 @@
-#  Copyright (C) 2020 Marvell International Ltd.
-#
-#  This program is provided "as is" without any warranty of any kind, and is
-#  distributed under the applicable Marvell limited use license agreement.
+#Copyright (c) 2020 Marvell.
+#SPDX-License-Identifier: GPL-2.0
 
 OCTEONTX_HOST_ROOT = $(shell pwd)
 export OCTEONTX_HOST_ROOT

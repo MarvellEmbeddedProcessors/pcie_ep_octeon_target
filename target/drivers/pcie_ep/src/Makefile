@@ -1,3 +1,7 @@
+#Copyright (c) 2020 Marvell.
+#SPDX-License-Identifier: GPL-2.0
+
+
 CROSS_COMPILE=aarch64-marvell-linux-gnu-
 ARCH ?= arm64
 KDIR ?= ${OCTEONTX_TARGET_ROOT}/linux/kernel/linux

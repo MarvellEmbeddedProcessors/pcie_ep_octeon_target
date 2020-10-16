@@ -1,3 +1,6 @@
+/* Copyright (c) 2020 Marvell.
+ * SPDX-License-Identifier: GPL-2.0
+ */
 
 /*! \file cn93xx_vf_regs.h
     \brief Host Driver: Register Address and Register Mask values for

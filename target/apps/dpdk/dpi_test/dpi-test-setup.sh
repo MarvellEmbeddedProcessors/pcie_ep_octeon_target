@@ -1,3 +1,6 @@
+#Copyright (c) 2020 Marvell.
+#SPDX-License-Identifier: BSD-3-Clause
+
 # Enable DPI VFs
 NUMVFS=8
 DPIPF=$(ls -d /sys/bus/pci/drivers/octeontx2-dpi/0* 2>/dev/null)
