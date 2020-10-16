@@ -48,51 +48,15 @@ host_drv:
 	@$(MAKE) check_cnnic;
 	cd $(DRIVER_ROOT)/host/linux/kernel/drv; $(MAKE) all;
 
-.NOTPARALLEL: host_api
-host_api: 
-	@$(MAKE) check_cnnic;
-	cd $(DRIVER_ROOT)/host/linux/user/api; $(MAKE) all; 
-
-.NOTPARALLEL: utils
-utils: 
-	@$(MAKE) check_cnnic;
-	cd $(DRIVER_ROOT)/host/linux/user/utils; $(MAKE) all;
-
-user_drv: nic_app
-	@$(MAKE) check_cnnic;
-	cd $(DRIVER_ROOT)/host/linux/user/drv; $(MAKE) clean; $(MAKE) all;
-
-tests:
-	@$(MAKE) check_cnnic;
-	cd $(DRIVER_ROOT)/host/linux/user/test; $(MAKE) all;
-	cd $(DRIVER_ROOT)/host/linux/kernel/req_resp; $(MAKE) all;
-	cd $(DRIVER_ROOT)/host/linux/kernel/droq_test; $(MAKE) all;
-	
 clean:
 	cd $(DRIVER_ROOT)/host/linux/kernel/drv; $(MAKE) clean; 
-	cd $(DRIVER_ROOT)/host/linux/user/api; $(MAKE) clean; 
-	cd $(DRIVER_ROOT)/host/linux/user/utils; $(MAKE) clean;
 	cd $(DRIVER_ROOT)/host/linux/kernel/drv/octnic; $(MAKE) clean;
 	@cd $(CNNIC_ROOT); sh sym-link.sh undo
-
-user_drv_clean:check_cnnic
-	cd $(DRIVER_ROOT)/host/linux/user/drv; $(MAKE) clean; 
-
-tests_clean:
-	cd $(DRIVER_ROOT)/host/linux/user/test; $(MAKE) clean;
-	cd $(DRIVER_ROOT)/host/linux/kernel/req_resp; $(MAKE) clean;
-	cd $(DRIVER_ROOT)/host/linux/kernel/droq_test; $(MAKE) clean;
-
-links:
-	@$(MAKE) check_cnnic;
-	cd $(DRIVER_ROOT)/host/linux/user/api; $(MAKE) links;
-
 
 host_nic: check_cnnic host_drv 
 	@if [ -d $(DRIVER_ROOT)/host/linux/kernel/drv/octnic ]; \
 	then cd $(DRIVER_ROOT)/host/linux/kernel/drv/octnic; $(MAKE); \
 	else echo -e "\nOcteon NIC Host Driver not installed\n"; fi;
-
 
 host_clean:
 	@if [ -d $(DRIVER_ROOT)/host/linux/kernel/drv/octnic ]; then cd $(DRIVER_ROOT)/host/linux/kernel/drv/octnic; $(MAKE) clean; fi;
@@ -100,7 +64,6 @@ host_clean:
 all_clean:
 	$(MAKE) clean;
 	$(MAKE) host_clean;
-	$(MAKE) tests_clean;
 	@cd $(CNNIC_ROOT); sh sym-link.sh undo
 
 # $Id: Makefile 170855 2018-03-30 12:30:15Z asasidharan $
