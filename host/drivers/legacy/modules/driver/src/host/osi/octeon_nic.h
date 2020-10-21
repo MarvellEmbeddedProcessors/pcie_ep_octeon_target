@@ -206,7 +206,8 @@ octnet_prepare_pci_cmd(octeon_device_t * oct,
 
 }
 
-int octnet_send_nic_data_pkt(octeon_device_t * oct, octnic_data_pkt_t * ndata);
+int octnet_send_nic_data_pkt(octeon_device_t * oct, octnic_data_pkt_t * ndata,
+			     int force_db);
 
 int
 octnet_send_nic_ctrl_pkt(octeon_device_t * oct, octnic_ctrl_pkt_t * nctrl,

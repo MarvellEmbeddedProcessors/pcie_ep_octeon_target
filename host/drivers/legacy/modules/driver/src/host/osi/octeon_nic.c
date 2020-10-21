@@ -7,17 +7,12 @@
 #include "octeon_macros.h"
 #include "octeon_nic.h"
 
-int octnet_send_nic_data_pkt(octeon_device_t * oct, octnic_data_pkt_t * ndata)
+int octnet_send_nic_data_pkt(octeon_device_t * oct, octnic_data_pkt_t * ndata,
+			     int force_db)
 {
-#if  defined(FLOW_BASED_DISTRIBUTION)
-	return octeon_send_noresponse_command(oct, ndata->q_no, 0, &ndata->cmd,
-					      ndata->buf, ndata->datasize,
-					      ndata->buftype);
-#else
-	return octeon_send_noresponse_command(oct, ndata->q_no, 1, &ndata->cmd,
-					      ndata->buf, ndata->datasize,
-					      ndata->buftype);
-#endif
+	return octeon_send_noresponse_command(oct, ndata->q_no, force_db,
+					      &ndata->cmd, ndata->buf,
+					      ndata->datasize, ndata->buftype);
 }
 
 void octnet_link_ctrl_callback(octeon_req_status_t status, void *sif_ptr)

@@ -667,7 +667,7 @@ int octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 		}
 	}
 
-	status = octnet_send_nic_data_pkt(priv->oct_dev, &ndata);
+	status = octnet_send_nic_data_pkt(priv->oct_dev, &ndata, !skb->xmit_more);
 	if (status == NORESP_SEND_FAILED)
 		goto oct_xmit_failed;
 

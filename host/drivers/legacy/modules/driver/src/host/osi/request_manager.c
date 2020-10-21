@@ -227,7 +227,7 @@ __post_command(octeon_device_t * octeon_dev UNUSED,
 static inline iq_post_status_t
 __post_command2(octeon_device_t * octeon_dev UNUSED,
 		octeon_instr_queue_t * iq,
-		uint32_t force_db UNUSED, uint8_t * cmd)
+		uint8_t * cmd)
 {
 	iq_post_status_t st;
 
@@ -452,6 +452,7 @@ oct_poll_fn_status_t check_db_timeout(void *octptr, unsigned long iq_no)
 	}
 	iq->last_db_time = cavium_jiffies;
 
+#if 0
 	/* Get the lock and prevent tasklets. This routine gets called from
 	   the poll thread. Instructions can now be posted in tasklet context */
 	cavium_spin_lock_softirqsave(&iq->lock);
@@ -459,6 +460,7 @@ oct_poll_fn_status_t check_db_timeout(void *octptr, unsigned long iq_no)
 		ring_doorbell(oct, iq);
 
 	cavium_spin_unlock_softirqrestore(&iq->lock);
+#endif
 
 	/* Flush the instruction queue */
 	if (iq->do_auto_flush)
@@ -1510,17 +1512,19 @@ octeon_send_noresponse_command(octeon_device_t * oct,
 
 	cavium_spin_lock_softirqsave(&iq->lock);
 
-	st = __post_command2(oct, iq, force_db, cmd);
+	st = __post_command2(oct, iq, cmd);
 
 	if (cavium_likely(st.status != IQ_SEND_FAILED)) {
 		__add_to_nrlist(iq, st.index, buf, buftype);
 		INCR_INSTRQUEUE_PKT_COUNT(oct, iq_no, bytes_sent, datasize);
 		INCR_INSTRQUEUE_PKT_COUNT(oct, iq_no, instr_posted, 1);
 
-		if (iq->fill_cnt >= iq->fill_threshold || force_db)
+		if (iq->fill_cnt >= iq->fill_threshold || force_db || st.status == IQ_SEND_STOP)
 			ring_doorbell(oct, iq);
 
 	} else {
+		if (iq->fill_cnt != 0)
+			ring_doorbell(oct, iq);
 		INCR_INSTRQUEUE_PKT_COUNT(oct, iq_no, instr_dropped, 1);
 	}
 
@@ -1528,7 +1532,7 @@ octeon_send_noresponse_command(octeon_device_t * oct,
 
 #ifndef OCT_NIC_IQ_USE_NAPI
 	if (iq->do_auto_flush)
-		octeon_flush_iq(oct, iq, 8);
+		octeon_flush_iq(oct, iq, iq->max_count/2);
 #endif		
 
 	return st.status;

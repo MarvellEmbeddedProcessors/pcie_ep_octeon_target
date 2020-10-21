@@ -494,11 +494,6 @@ struct _OCTEON_DEVICE {
 #ifdef OCT_NIC_IQ_USE_NAPI
 	struct cavium_wq req_comp_wq;
 		
-	/** Lock for req response list */
-	spinlock_t cmd_resp_wqlock;
-	
-	uint32_t cmd_resp_state;
-
 	struct cavium_wq check_db_wq[64];
 #endif
 

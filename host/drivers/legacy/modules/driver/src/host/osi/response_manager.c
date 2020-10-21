@@ -32,8 +32,6 @@ int octeon_setup_response_list(octeon_device_t * oct)
 
 #ifdef OCT_NIC_IQ_USE_NAPI
 
-	spin_lock_init(&oct->cmd_resp_wqlock);
-
 	oct->req_comp_wq.wq = alloc_workqueue("req-comp", WQ_MEM_RECLAIM, 0);
 	if (!oct->req_comp_wq.wq) {
 		dev_err(&oct->pci_dev->dev, "failed to create wq thread\n");
@@ -43,7 +41,6 @@ int octeon_setup_response_list(octeon_device_t * oct)
 	cwq = &oct->req_comp_wq;
 	INIT_DELAYED_WORK(&cwq->wk.work, oct_poll_req_completion);
 	cwq->wk.ctxptr = oct;
-	oct->cmd_resp_state = OCT_DRV_ONLINE;
 	queue_delayed_work(cwq->wq, &cwq->wk.work, msecs_to_jiffies(50));
 
 #else

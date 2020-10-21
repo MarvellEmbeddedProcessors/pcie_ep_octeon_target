@@ -146,9 +146,10 @@ int octeon_init_instr_queue(octeon_device_t * oct, int iq_no)
 
 #else
 #ifndef APP_CMD_POST
+//this path is taken when IQ NAPI is disabled
 	poll_ops.fn = check_db_timeout;
 	poll_ops.fn_arg = (unsigned long)iq_no;
-	poll_ops.ticks = 1;
+	poll_ops.ticks = 1000;
 	cavium_strncpy(poll_ops.name, sizeof(poll_ops.name), "Doorbell Timeout",
 		       sizeof(poll_ops.name) - 1);
 	poll_ops.rsvd = 0xff;
