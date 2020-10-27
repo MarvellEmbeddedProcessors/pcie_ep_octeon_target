@@ -98,6 +98,7 @@ int octeon_init_instr_queue(octeon_device_t * oct, int iq_no)
 	oct->fn_list.setup_iq_regs(oct, iq_no);
 
 #ifndef APP_CMD_POST
+#if 0
 	poll_ops.fn = check_db_timeout;
 	poll_ops.fn_arg = (unsigned long)iq_no;
 	poll_ops.ticks = 1;
@@ -105,6 +106,7 @@ int octeon_init_instr_queue(octeon_device_t * oct, int iq_no)
 		       sizeof(poll_ops.name) - 1);
 	poll_ops.rsvd = 0xff;
 	octeon_register_poll_fn(oct->octeon_id, &poll_ops);
+#endif
 #endif
 
 	return 0;

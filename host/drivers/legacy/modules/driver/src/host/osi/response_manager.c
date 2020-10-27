@@ -16,7 +16,6 @@ int octeon_setup_response_list(octeon_device_t * oct)
 {
 	int i, ret = 0;
 #ifdef OCT_NIC_IQ_USE_NAPI
-	struct cavium_wq *cwq;
 #else	
 	octeon_poll_ops_t poll_ops;
 #endif	
@@ -31,18 +30,6 @@ int octeon_setup_response_list(octeon_device_t * oct)
 	}
 
 #ifdef OCT_NIC_IQ_USE_NAPI
-
-	oct->req_comp_wq.wq = alloc_workqueue("req-comp", WQ_MEM_RECLAIM, 0);
-	if (!oct->req_comp_wq.wq) {
-		dev_err(&oct->pci_dev->dev, "failed to create wq thread\n");
-		return -ENOMEM;
-	}
-
-	cwq = &oct->req_comp_wq;
-	INIT_DELAYED_WORK(&cwq->wk.work, oct_poll_req_completion);
-	cwq->wk.ctxptr = oct;
-	queue_delayed_work(cwq->wq, &cwq->wk.work, msecs_to_jiffies(50));
-
 #else
 	cavium_memset(&poll_ops, 0, sizeof(octeon_poll_ops_t));
 
@@ -63,9 +50,7 @@ int octeon_setup_response_list(octeon_device_t * oct)
 void octeon_delete_response_list(octeon_device_t * oct)
 {
 #ifdef OCT_NIC_IQ_USE_NAPI
-	cancel_delayed_work_sync(&oct->req_comp_wq.wk.work);
-	destroy_workqueue(oct->req_comp_wq.wq);
-#else	
+#else
 	octeon_unregister_poll_fn(oct->octeon_id, oct_poll_req_completion, 0);
 //      octeon_unregister_poll_fn(oct->octeon_id, oct_poll_check_unordered_list, 0);
 #endif
@@ -431,36 +416,33 @@ unordered_finish:
 
 void process_noresponse_list(octeon_device_t * oct, octeon_instr_queue_t * iq)
 {
-	cavium_list_t instr_list, *tmp, *tmp2;
-	octeon_soft_instruction_t *instr;
 	uint32_t get_idx;
-
-	CAVIUM_INIT_LIST_HEAD(&instr_list);
-
-	cavium_spin_lock_softirqsave(&iq->lock);
+	int buftype;
 
 	get_idx = iq->nr_free.get_idx;
 
 	while (get_idx != iq->nr_free.put_idx) {
+		buftype = iq->nr_free.q[get_idx].buftype;
 		cavium_print(PRINT_DEBUG,
 			     "Removing buf @ %p type %d from idx %d\n",
-			     iq->nr_free.q[get_idx].buf,
-			     iq->nr_free.q[get_idx].buftype, get_idx);
+			     iq->nr_free.q[get_idx].buf, buftype, get_idx);
 
 // *INDENT-OFF*
-		switch(iq->nr_free.q[get_idx].buftype) {
+		switch(buftype) {
 			case NORESP_BUFTYPE_INSTR:
-				instr = (octeon_soft_instruction_t *)iq->nr_free.q[get_idx].buf;
-				cavium_list_add_tail(&instr->list, &instr_list);
-				break;
+				BUG_ON(1);
 			case NORESP_BUFTYPE_NET:
 			case NORESP_BUFTYPE_NET_SG:
 			case NORESP_BUFTYPE_OHSM_SEND:
-				noresp_buf_free_fn[oct->octeon_id][iq->nr_free.q[get_idx].buftype](iq->nr_free.q[get_idx].buf);
+				/* TODO: there can't be different function per device per buftype
+				 * mostly it's one function per buftype across all device
+				 * make corresponding changes below
+				 */
+				noresp_buf_free_fn[oct->octeon_id][buftype](iq->nr_free.q[get_idx].buf);
 				break;
 			default:
 				cavium_error("%s Unknown buftype: %d buf: %p at idx %d\n", 
-				             __CVM_FUNCTION__, iq->nr_free.q[get_idx].buftype,
+				             __CVM_FUNCTION__, buftype,
 				             iq->nr_free.q[get_idx].buf, get_idx);
 		}
 // *INDENT-ON*
@@ -470,15 +452,6 @@ void process_noresponse_list(octeon_device_t * oct, octeon_instr_queue_t * iq)
 	}
 
 	iq->nr_free.get_idx = get_idx;
-
-	cavium_spin_unlock_softirqrestore(&iq->lock);
-
-	cavium_list_for_each_safe(tmp, tmp2, &instr_list) {
-		octeon_soft_instruction_t *instr =
-		    (octeon_soft_instruction_t *) tmp;
-		cavium_list_del(tmp);
-		release_soft_instr(oct, instr, instr->req_info.status);
-	}
 
 	return;
 }
@@ -645,19 +618,6 @@ oct_poll_check_unordered_list(void *octptr, unsigned long arg UNUSED)
 }
 
 #ifdef OCT_NIC_IQ_USE_NAPI
-void oct_poll_req_completion(struct work_struct *work)
-{
-	struct cavium_wk *wk = (struct cavium_wk *)work;
-	octeon_device_t *oct = (octeon_device_t *)wk->ctxptr;
-	struct cavium_wq *cwq = &oct->req_comp_wq;
-
-	process_ordered_list(oct, 0);
-
-	check_unordered_blocking_list(oct);
-
-	queue_delayed_work(cwq->wq, &cwq->wk.work, msecs_to_jiffies(50));
-}
-
 #else
 oct_poll_fn_status_t
 oct_poll_req_completion(void *octptr, unsigned long arg UNUSED)

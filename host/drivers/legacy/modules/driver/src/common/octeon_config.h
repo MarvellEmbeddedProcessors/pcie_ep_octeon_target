@@ -52,7 +52,7 @@
 
 #define   CN83XX_DB_MIN                 1
 #define   CN83XX_DB_TIMEOUT             1
-#define   CN83XX_INTR_THRESHOLD		    0xFFFFFFFF
+#define   CN83XX_INTR_THRESHOLD		    0x0
 
 /* CN83xx OQ configuration macros */
 #define   CN83XX_MAX_OUTPUT_QUEUES	64
@@ -108,7 +108,7 @@
 
 #define   CN93XX_DB_MIN 		1
 #define   CN93XX_DB_TIMEOUT		1
-#define   CN93XX_INTR_THRESHOLD 	0xFFFFFFFF
+#define   CN93XX_INTR_THRESHOLD 	0x0
 
 /* CN93xx OQ configuration macros */
 #define   CN93XX_MAX_OUTPUT_QUEUES	128

@@ -10,9 +10,6 @@
 
 extern void mv_facility_irq_handler(uint64_t event_word);
 
-extern int cn83xx_droq_intr_handler(octeon_ioq_vector_t * ioq_vector);
-
-extern void cn83xx_iq_intr_handler(octeon_ioq_vector_t * ioq_vector);
 extern int num_rings_per_pf;
 extern int num_rings_per_vf;
 
@@ -438,6 +435,8 @@ static void cn83xx_setup_iq_regs(octeon_device_t * oct, int iq_no)
 	    + CN83XX_SDP_EPF_R_IN_INSTR_DBELL(oct->epf_num, iq_no);
 	iq->inst_cnt_reg = (uint8_t *) oct->mmio[0].hw_addr
 	    + CN83XX_SDP_EPF_R_IN_CNTS(oct->epf_num, iq_no);
+	iq->intr_lvl_reg = (uint8_t *) oct->mmio[0].hw_addr
+	    + CN83XX_SDP_EPF_R_IN_INT_LEVELS(oct->epf_num, iq_no);
 
 	cavium_print(PRINT_DEBUG,
 		     "InstQ[%d]:dbell reg @ 0x%p instcnt_reg @ 0x%p\n", iq_no,
@@ -710,6 +709,7 @@ cvm_intr_return_t cn83xx_pf_msix_interrupt_handler(void *dev)
 {
 	octeon_ioq_vector_t *ioq_vector = (octeon_ioq_vector_t *) dev;
 	octeon_device_t *oct = ioq_vector->oct_dev;
+	octeon_droq_t *droq = ioq_vector->droq;
 	uint64_t intr64;
 
 	intr64 = OCTEON_READ64(ioq_vector->droq->pkts_sent_reg);
@@ -718,13 +718,7 @@ cvm_intr_return_t cn83xx_pf_msix_interrupt_handler(void *dev)
 
 	oct->stats.interrupts++;
 
-	if (intr64 & CN83XX_INTR_R_OUT_INT)
-		cn83xx_droq_intr_handler(ioq_vector);
-
-	/* Handle PI int, write count in IN_DONE reg to clear these int */
-	if (intr64 & CN83XX_INTR_R_IN_INT) {
-		cn83xx_iq_intr_handler(ioq_vector);
-	}
+	droq->ops.napi_fun((void *)droq);
 	return CVM_INTR_HANDLED;
 }
 
@@ -920,23 +914,21 @@ static uint32_t cn83xx_bar1_idx_read(octeon_device_t * oct, int idx)
 
 static uint32_t cn83xx_update_read_index(octeon_instr_queue_t * iq)
 {
-	uint32_t new_idx = OCTEON_READ32(iq->inst_cnt_reg);
+	u32 new_idx;
+	u32 last_done;
+	u32 pkt_in_done = OCTEON_READ32(iq->inst_cnt_reg);
 
-	/** 
-	 * The new instr cnt reg is a 32-bit counter that can roll over.
-	 * We have noted the counter's initial value at init time into
-	 * reset_instr_cnt
-	 */
-	if (iq->reset_instr_cnt < new_idx)
-		new_idx -= iq->reset_instr_cnt;
-	else
-		new_idx += (0xffffffff - iq->reset_instr_cnt) + 1;
+	last_done = pkt_in_done - iq->pkt_in_done;
+	iq->pkt_in_done = pkt_in_done;
 
-	/**
-	 * Modulo of the new index with the IQ size will give us 
-	 * the new index.
+	/* Modulo of the new index with the IQ size will give us
+	 * the new index.  The iq->reset_instr_cnt is always zero for
+	 * cn23xx, so no extra adjustments are needed.
 	 */
-	new_idx %= iq->max_count;
+#define OCTEON_PKT_IN_DONE_CNT_MASK (0x00000000FFFFFFFFULL)
+	new_idx = (iq->octeon_read_index +
+		   (u32)(last_done & OCTEON_PKT_IN_DONE_CNT_MASK)) %
+		  iq->max_count;
 
 	return new_idx;
 }

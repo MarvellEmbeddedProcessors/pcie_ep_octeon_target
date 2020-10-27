@@ -100,6 +100,8 @@ typedef struct {
   /** This field keeps track of the instructions pending in this queue. */
 	cavium_atomic_t instr_pending;
 
+	uint32_t pkt_in_done;
+	uint32_t pkts_processed;
 	uint32_t reset_instr_cnt;
 
   /** Pointer to the Virtual Base addr of the input ring. */
@@ -114,6 +116,9 @@ typedef struct {
 
   /** Octeon instruction count register for this ring. */
 	void *inst_cnt_reg;
+
+	/* interrupt level register for this ring */
+	void *intr_lvl_reg;
 
   /** Moved from OCTEOn Device Structure */
 	uint32_t pend_list_size;
@@ -142,11 +147,6 @@ typedef struct {
   /** Host memory address. HW updates these address with the number of pkts that
       are read by Octeon. */	
 	octeon_in_cnt_ism_t ism;
-
-#ifdef OCT_NIC_IQ_USE_NAPI
-    /** A spinlock to protect access to the input ring.*/
-    spinlock_t iq_flush_running_lock;
-#endif	
 
   /** Application context */
 	void *app_ctx;
@@ -325,6 +325,9 @@ octeon_flush_iq(octeon_device_t * oct, octeon_instr_queue_t * iq,
 void octeon_perf_flush_iq(octeon_device_t * oct, octeon_instr_queue_t * iq);
 
 int octeon_setup_iq(octeon_device_t * oct, int iq_no, void *app_ctx);
+void octeon_init_iq_intr_moderation(octeon_device_t * oct);
+void octeon_iq_intr_tune(struct work_struct *work);
+void octeon_cleanup_iq_intr_moderation(octeon_device_t *oct);
 
 #endif /* __OCTEON_IQ_H__ */
 

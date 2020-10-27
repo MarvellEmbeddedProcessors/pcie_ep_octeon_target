@@ -386,9 +386,9 @@ flush_instr_queue(octeon_device_t * oct, octeon_instr_queue_t * iq)
 {
 	cavium_spin_lock_softirqsave(&iq->lock);
 	update_iq_indices(oct, iq);
-	cavium_spin_unlock_softirqrestore(&iq->lock);
 
 	process_noresponse_list(oct, iq);
+	cavium_spin_unlock_softirqrestore(&iq->lock);
 }
 
 #ifdef OCT_NIC_IQ_USE_NAPI
@@ -422,6 +422,7 @@ void __check_db_timeout(octeon_device_t *oct, u64 iq_no)
 	//lio_enable_irq(NULL, iq); //TODO
 }
 
+#if 0
 void check_db_timeout(struct work_struct *work)
 {
 	struct cavium_wk *wk = (struct cavium_wk *)work;
@@ -433,6 +434,7 @@ void check_db_timeout(struct work_struct *work)
 	__check_db_timeout(oct, iq_no);
 	queue_delayed_work(db_wq->wq, &db_wq->wk.work, msecs_to_jiffies(delay));
 }
+#endif
 
 #else
 /* Called by the Poll thread at regular intervals to check the instruction
@@ -495,6 +497,8 @@ __do_instruction_processing(octeon_device_t * oct,
 
 	octeon_instr_ihx_t ihx;
 
+	printk("%s: This path is deprecated ##################\n", __func__);
+	BUG_ON(1);
 	retval.u64 = OCTEON_REQUEST_FAILED;
 	cavium_print(PRINT_FLOW,
 		     "\n\n----#  octeon_process_instruction  #----\n");
@@ -1625,98 +1629,75 @@ octeon_iq_post_command(octeon_device_t * oct,
   * queue to which they had posted a command before.
   */
 
-#if 0 //def 0 //OCT_NIC_IQ_USE_NAPI
+#ifdef OCT_NIC_IQ_USE_NAPI
+extern void (*noresp_buf_free_fn[MAX_OCTEON_DEVICES][NORESP_TYPES + 1]) (void *);
 /* Can only run in process context */
 int
 lio_process_iq_request_list(octeon_device_t *oct,
 	octeon_instr_queue_t *iq, u32 napi_budget)
 {
-	int reqtype;
+	int buftype;
 	void *buf;
 	u32 old = iq->flush_index;
 	u32 inst_count = 0;
-	unsigned int pkts_compl = 0, bytes_compl = 0;
-	struct octeon_soft_command *sc;
-	struct octeon_instr_irh *irh;
-	unsigned long flags;
 
-    while (old != iq->octeon_read_index) {
-		reqtype = iq->nrlist[old].reqtype;
+	while (old != iq->octeon_read_index) {
+		buftype = iq->nrlist[old].buftype;
 		buf     = iq->nrlist[old].buf;
 
-		if (reqtype == REQTYPE_NONE)
-			goto skip_this;
+		//TODO: yet to add support
+		//octeon_update_tx_completion_counters(buf, buftype, &pkts_compl,
+		//		&bytes_compl);
 
-		octeon_update_tx_completion_counters(buf, reqtype, &pkts_compl,
-				&bytes_compl);
-
-		switch (reqtype) {
-			case REQTYPE_NORESP_NET:
-			case REQTYPE_NORESP_NET_SG:
-			case REQTYPE_RESP_NET_SG:
-				reqtype_free_fn[oct->octeon_id][reqtype](buf);
+		switch (buftype) {
+			case NORESP_BUFTYPE_NONE:
+			case NORESP_BUFTYPE_INSTR:
+			case NORESP_BUFTYPE_OHSM_SEND:
+				//WARN_ON(1);
+				//printk("Received buftype - %d ##\n", buftype);
 				break;
-	        case REQTYPE_RESP_NET:
-	        case REQTYPE_SOFT_COMMAND:
-	            sc = buf;
 
-            if (OCTEON_CN23XX_PF(oct) || OCTEON_CN23XX_VF(oct))
-				irh = (struct octeon_instr_irh *)
-				                  &sc->cmd.cmd3.irh;
-			else
-			    irh = (struct octeon_instr_irh *)
-			                    &sc->cmd.cmd2.irh;
-			if (irh->rflag) {
-				/* We're expecting a response from Octeon.
-				 * It's up to lio_process_ordered_list() to
-				 * process  sc. Add sc to the ordered soft
-				 * command response list because we expect
-				 * a response from Octeon.
-			     */
-               spin_lock_irqsave
-                   (&oct->response_list
-	                     [OCTEON_ORDERED_SC_LIST].lock,
-	                      flags);
-	           atomic_inc(&oct->response_list
-	                   [OCTEON_ORDERED_SC_LIST].
-	                    pending_req_count);
-	           list_add_tail(&sc->node, &oct->response_list
-	                   [OCTEON_ORDERED_SC_LIST].head);
-	           spin_unlock_irqrestore
-	                   (&oct->response_list
-	                     [OCTEON_ORDERED_SC_LIST].lock,
-	                     flags);
+			case NORESP_BUFTYPE_NET:
+			case NORESP_BUFTYPE_NET_SG:
+				noresp_buf_free_fn[oct->octeon_id][buftype](buf);
+				break;
 
-            } else {
-                if (sc->callback) {
-                   /* This callback must not sleep */
-                   sc->callback(oct, OCTEON_REQUEST_DONE,
-                            sc->callback_arg);
-                }
-            }
-            break;
 		        default:
-	            dev_err(&oct->pci_dev->dev,
-	                "%s Unknown reqtype: %d buf: %p at idx %d\n",
-	                __func__, reqtype, buf, old);
-        }
+				dev_err(&oct->pci_dev->dev,
+					"%s Unknown buftype: %d buf: %p at idx %d\n",
+					__func__, buftype, buf, old);
+        	}
 
-        iq->request_list[old].buf = NULL;
-        iq->request_list[old].reqtype = 0;
+		iq->nrlist[old].buf = NULL;
+		iq->nrlist[old].buftype = 0;
 
- skip_this:
 		inst_count++;
-		old = incr_index(old, 1, iq->max_count);
+		INCR_INDEX_BY1(old, iq->max_count);
 				 
+		/* TODO: optimize this part
+		 * there are two scenarios this function gets called 
+		 * 1. from interrupt bottom half
+		 *     > napi_dbudget is never 0
+		 *     > so, have a condition in while loop
+		 *         credtis = budget; //before loop
+		 *         while (... && credits--)
+		 * 2. interface down/shutdown
+		 *     > max iq->max_count can be processed;
+		 *     > pass budget = iq->max_count from the callers;
+		 * finally, remove inst_count++ and return (budget-credits)
+		 */
 		if ((napi_budget) && (inst_count >= napi_budget))
 			break;
-	 }
-	 if (bytes_compl)
-	      octeon_report_tx_completion_to_bql(iq->app_ctx, pkts_compl,
-	                           bytes_compl);
-	 iq->flush_index = old;
-																 
-	 return inst_count;
+	}
+#if 0 //TODO: to be added
+	if (bytes_compl)
+		octeon_report_tx_completion_to_bql(iq->app_ctx,
+						   pkts_compl, bytes_compl);
+#endif
+	iq->flush_index = old;
+
+//	printk("## IQ-%d processed (%d/%d) read_idx=%u flush=%u\n", iq->iq_no, inst_count, napi_budget, iq->octeon_read_index, iq->flush_index);
+	return inst_count;
 }
 #endif
 
@@ -1731,29 +1712,28 @@ octeon_flush_iq(octeon_device_t *oct, octeon_instr_queue_t *iq,
     uint32_t tot_inst_processed = 0;
     int tx_done = 1;
 
-    if (!spin_trylock(&iq->iq_flush_running_lock))
-		return tx_done;
-
 	spin_lock_bh(&iq->lock);
 									    
 	iq->octeon_read_index = oct->fn_list.update_iq_read_idx(iq);
 
-    do {
+	do {
 		/* Process any outstanding IQ packets. */
 		if (iq->flush_index == iq->octeon_read_index)
 			break;
 
+		//printk("%s: Q-%d budget = %u; tot_inst_processed=%u read_idx=%u flush=%u pending=%u\n", __func__, iq->iq_no, napi_budget, tot_inst_processed, iq->octeon_read_index, iq->flush_index, atomic_read(&iq->instr_pending));
 		if (napi_budget)
 			inst_processed =
 				lio_process_iq_request_list(oct, iq,
-										napi_budget -
-										tot_inst_processed);
+					napi_budget - tot_inst_processed);
 		else
 			inst_processed =
-				lio_process_iq_request_list(oct, iq, 0);
+				lio_process_iq_request_list(oct, iq,
+							 iq->max_count);
 
 		if (inst_processed) {
 			atomic_sub(inst_processed, &iq->instr_pending);
+			iq->pkts_processed += inst_processed;
 			iq->stats.instr_processed += inst_processed;
 		}
 
@@ -1769,8 +1749,7 @@ octeon_flush_iq(octeon_device_t *oct, octeon_instr_queue_t *iq,
 
 	spin_unlock_bh(&iq->lock);
 
-	spin_unlock(&iq->iq_flush_running_lock);
-
+	//printk("%s: DONE; Q-%d budget=%u; tot_inst_processed=%u read_idx=%u flush=%u\n", __func__, iq->iq_no, napi_budget, tot_inst_processed, iq->octeon_read_index, iq->flush_index);
 	return tx_done;
 }
 #else

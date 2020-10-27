@@ -95,7 +95,7 @@ OCTDRVFLAGS += -DBUFPTR_ONLY_MODE
 OCTDRVFLAGS += -DENABLE_OCTEON_III=1
 #Enable this flag to use NAPI for only NIC mode operation.
 OCTDRVFLAGS += -DOCT_NIC_USE_NAPI
-#OCTDRVFLAGS += -DOCT_NIC_IQ_USE_NAPI
+OCTDRVFLAGS += -DOCT_NIC_IQ_USE_NAPI
 #OCTDRVFLAGS += -DOCT_TX2_ISM_INT
 
 #This feature is meant for kernel versions above 3.4.110

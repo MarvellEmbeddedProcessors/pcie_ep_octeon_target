@@ -102,9 +102,9 @@ void octeon_pcierror_quiesce_device(octeon_device_t * oct)
 			iq->octeon_read_index = iq->host_write_index;
 			iq->stats.instr_processed +=
 			    cavium_atomic_read(&iq->instr_pending);
-			cavium_spin_unlock_softirqrestore(&iq->lock);
 
 			process_noresponse_list(oct, iq);
+			cavium_spin_unlock_softirqrestore(&iq->lock);
 		}
 	}
 

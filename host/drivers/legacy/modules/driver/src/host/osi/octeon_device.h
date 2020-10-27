@@ -348,6 +348,14 @@ typedef struct cvm_ioq_vector {
 #define OCTEON_MBOX_CAPABLE	                  (1 << 3)
 #define OCTEON_MSIX_AFFINITY_CAPABLE          (1 << 4)
 
+struct iq_intr_wq {
+	struct delayed_work work;
+	struct workqueue_struct *wq;
+	octeon_device_t *oct;
+	uint64_t last_ts;
+	uint64_t last_pkt_cnt[64];
+};
+
 /** The Octeon device. 
  *  Each Octeon device has this structure to represent all its
  *  components.
@@ -491,11 +499,7 @@ struct _OCTEON_DEVICE {
 	/*pkind value for DPI */
 	uint8_t pkind;
 
-#ifdef OCT_NIC_IQ_USE_NAPI
-	struct cavium_wq req_comp_wq;
-		
-	struct cavium_wq check_db_wq[64];
-#endif
+	struct iq_intr_wq iq_intr_wq;
 
 	/* mbox related */
 	uint32_t mbox_wait_cond;
@@ -621,7 +625,7 @@ int octeon_setup_mbox(octeon_device_t * oct);
 
 int octeon_enable_msix_interrupts(octeon_device_t * oct);
 
-void octeon_enable_irq(octeon_droq_t *droq);
+void octeon_enable_irq(octeon_droq_t *droq, octeon_instr_queue_t *iq);
 
 int octeon_allocate_ioq_vector(octeon_device_t * oct);
 

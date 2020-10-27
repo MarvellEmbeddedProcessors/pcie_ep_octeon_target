@@ -127,7 +127,6 @@ void free_instr_from_lists(octeon_device_t * octeon_dev,
 			   uint32_t iq_no);
 
 #ifdef OCT_NIC_IQ_USE_NAPI
-void oct_poll_req_completion(struct work_struct *work);
 #else
 oct_poll_fn_status_t oct_poll_req_completion(void *octptr, unsigned long arg);
 #endif

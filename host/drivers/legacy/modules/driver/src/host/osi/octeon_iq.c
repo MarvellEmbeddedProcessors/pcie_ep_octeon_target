@@ -11,10 +11,43 @@ extern int octeon_init_nr_free_list(octeon_instr_queue_t * iq, int count);
 
 
 #ifdef OCT_NIC_IQ_USE_NAPI
-extern void check_db_timeout(struct work_struct *work);
 #else
 extern oct_poll_fn_status_t check_db_timeout(void *octptr, unsigned long iq_no);
 #endif
+
+void octeon_init_iq_intr_moderation(octeon_device_t *oct)
+{
+	struct iq_intr_wq *iq_intr_wq;
+
+	iq_intr_wq = &oct->iq_intr_wq;
+	memset(iq_intr_wq->last_pkt_cnt, 0, sizeof(uint64_t)*64);
+	iq_intr_wq->last_ts = jiffies;
+	iq_intr_wq->oct = oct;
+	iq_intr_wq->wq = alloc_workqueue("octeon_iq_intr_tune",
+					 WQ_MEM_RECLAIM, 0);
+	if (iq_intr_wq->wq == NULL) {
+		cavium_error
+		    ("OCTEON: Cannot create wq for IQ interrupt moderation\n");
+		return;
+	}
+
+	INIT_DELAYED_WORK(&iq_intr_wq->work, octeon_iq_intr_tune);
+	queue_delayed_work(iq_intr_wq->wq, &iq_intr_wq->work, msecs_to_jiffies(10));
+}
+
+void octeon_cleanup_iq_intr_moderation(octeon_device_t *oct)
+{
+	struct iq_intr_wq *iq_intr_wq;
+
+	iq_intr_wq = &oct->iq_intr_wq;
+	if (iq_intr_wq->wq == NULL)
+		return;
+
+	cancel_delayed_work_sync(&iq_intr_wq->work);
+	flush_workqueue(iq_intr_wq->wq);
+	destroy_workqueue(iq_intr_wq->wq);
+	iq_intr_wq->wq = NULL;
+}
 
 /* Return 0 on success, 1 on failure */
 int octeon_init_instr_queue(octeon_device_t * oct, int iq_no)
@@ -23,7 +56,6 @@ int octeon_init_instr_queue(octeon_device_t * oct, int iq_no)
 	octeon_iq_config_t *conf = NULL;
 	uint32_t q_size;
 #ifdef OCT_NIC_IQ_USE_NAPI
-	struct cavium_wq *db_wq;
 #else	
 #ifndef APP_CMD_POST
 	octeon_poll_ops_t poll_ops;
@@ -112,6 +144,8 @@ int octeon_init_instr_queue(octeon_device_t * oct, int iq_no)
 	iq->do_auto_flush = 1;
 	iq->db_timeout = conf->db_timeout;
 	cavium_atomic_set(&iq->instr_pending, 0);
+	iq->pkts_processed = 0;
+	iq->pkt_in_done = 0;
 
 	/* Initialize the spinlock for this instruction queue */
 	cavium_spin_lock_init(&iq->lock);
@@ -127,23 +161,6 @@ int octeon_init_instr_queue(octeon_device_t * oct, int iq_no)
 
 
 #ifdef OCT_NIC_IQ_USE_NAPI
-	oct->check_db_wq[iq_no].wq = alloc_workqueue("check_iq_db",
-	                             WQ_MEM_RECLAIM, 0);
-	if (!oct->check_db_wq[iq_no].wq) {
-		octeon_pci_free_consistent(oct->pci_dev, q_size, iq->base_addr,
-					   iq->base_addr_dma, iq->app_ctx);
-		cavium_error
-		    ("OCTEON: Cannot create db wq for queue %d\n",
-		     iq_no);
-		return 1;
-    }
-	db_wq = &oct->check_db_wq[iq_no];
-
-	INIT_DELAYED_WORK(&db_wq->wk.work, check_db_timeout);
-	db_wq->wk.ctxptr = oct;
-	db_wq->wk.ctxul = iq_no;
-	queue_delayed_work(db_wq->wq, &db_wq->wk.work, msecs_to_jiffies(1));
-
 #else
 #ifndef APP_CMD_POST
 //this path is taken when IQ NAPI is disabled
@@ -166,8 +183,6 @@ int octeon_delete_instr_queue(octeon_device_t * oct, int iq_no)
 	octeon_instr_queue_t *iq = oct->instr_queue[iq_no];
 
 #ifdef OCT_NIC_IQ_USE_NAPI
-	cancel_delayed_work_sync(&oct->check_db_wq[iq_no].wk.work);
-	destroy_workqueue(oct->check_db_wq[iq_no].wq);
 #else	
 	octeon_unregister_poll_fn(oct->octeon_id, check_db_timeout, iq_no);
 #endif	

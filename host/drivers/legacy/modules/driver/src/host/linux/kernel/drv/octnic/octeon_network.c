@@ -749,6 +749,10 @@ void octnet_napi_callback(octeon_droq_t * droq)
 
 int octnet_napi_poll_fn(struct napi_struct *napi, int budget)
 {
+#ifdef OCT_NIC_IQ_USE_NAPI
+	octeon_instr_queue_t *iq;
+	int tx_done = 0, iq_no;
+#endif
 	octeon_droq_t *droq;
 	int work_done;
 
@@ -758,35 +762,37 @@ int octnet_napi_poll_fn(struct napi_struct *napi, int budget)
 	work_done = octeon_droq_process_poll_pkts(droq, budget);
 	//printk("work_done:%d budget:%d\n", work_done, budget);
 #ifdef OCT_NIC_IQ_USE_NAPI
+	iq_no = droq->q_no;
 	iq = droq->oct_dev->instr_queue[iq_no];
 	if (iq) {
 		if (atomic_read(&iq->instr_pending))
 		/* Process iq buffers with in the budget limits */
-			tx_done = octeon_flush_iq(oct, iq, budget);
+			tx_done = octeon_flush_iq(droq->oct_dev, iq, budget);
 		else
 			tx_done = 1;
 		/* Update iq read-index rather than waiting for next interrupt.
 		 * Return back if tx_done is false.
 		 */
-		update_txq_status(oct, iq_no);
+		/* TODO: to be implemented; same as lio_update_txq_status() */
+		//update_txq_status(droq->oct_dev, iq_no);
 	} else {
-		dev_err(&oct->pci_dev->dev, "%s:  iq (%d) num invalid\n",
+		dev_err(&droq->oct_dev->pci_dev->dev, "%s:  iq (%d) num invalid\n",
 				__func__, iq_no);
 	}
+#define MAX_REG_CNT 2000000U
 	/* force enable interrupt if reg cnts are high to avoid wraparound */
-	if ((work_done < budget && tx_done) ||
-		(iq && iq->pkt_in_done >= MAX_REG_CNT) ||
-		(droq->pkt_count >= MAX_REG_CNT)) {
-		tx_done = 1;
-		napi_complete_done(napi, work_done);
-		octeon_enable_irq(droq);
+	if ((tx_done && (work_done < budget)) ||
+	    (iq && iq->pkt_in_done >= MAX_REG_CNT) ||
+		(droq->last_pkt_count >= MAX_REG_CNT)) {
+		napi_complete(napi);
+		octeon_enable_irq(droq, iq);
 		return 0;
 	}
 	return (!tx_done) ? (budget) : (work_done);
 #else	
 	if (work_done < budget) {
 		napi_complete(napi);
-		octeon_enable_irq(droq);
+		octeon_enable_irq(droq, iq);
 		return 0;
 	}
 

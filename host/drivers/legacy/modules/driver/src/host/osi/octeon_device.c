@@ -296,6 +296,7 @@ int octeon_setup_io_queues(octeon_device_t * octeon_dev)
 			}
 		}
 	}
+	octeon_init_iq_intr_moderation(octeon_dev);
 
 	return 0;
 }
@@ -1386,6 +1387,7 @@ int oct_stop_base_module(int octeon_id, void *octeon_dev)
 		/* required for multi PF Octeon h/w */
 		cavium_mdelay(100);
 
+		octeon_cleanup_iq_intr_moderation(oct_dev);
         cavium_print_msg("Send the stop cmd \n");
 		if (wait_for_all_pending_requests(oct_dev)) {
 			cavium_error
@@ -2557,17 +2559,71 @@ int octeon_all_devices_active(void)
 	return (octeon_active_dev_count() == octeon_device_count);
 }
 
-void octeon_enable_irq(octeon_droq_t *droq)
+void octeon_iq_intr_tune(struct work_struct *work)
+{
+	struct iq_intr_wq *iq_intr_wq = (struct iq_intr_wq *)work;
+	octeon_device_t *oct = iq_intr_wq->oct;
+	int num_ioqs = oct->sriov_info.rings_per_pf;
+	octeon_instr_queue_t *iq;
+	int intr_level, i;
+	uint64_t curr_ts;
+	static int iter = 0;
+	int print = 0;
+
+	iq_intr_wq = &oct->iq_intr_wq;
+	curr_ts = jiffies;
+	iter++;
+	if (iter % 100 == 0)
+		print = 0; /* set to 1 to print interrupt level updates */
+	
+	for (i = 0; i < num_ioqs; i++) {
+		iq = oct->instr_queue[i];
+		if (!iq) {
+			printk("%s: IQ-%d is NULL\n", __func__, i);
+			continue;
+		}
+		if (print)
+			printk("%s: IQ-%d curr_ts=%llu last_ts=%llu; msecs=%u last,processed=(%llu - %llu)\n",
+				__func__, i, curr_ts, iq_intr_wq->last_ts,
+				(jiffies_to_msecs(curr_ts - iq_intr_wq->last_ts)*10),
+				iq_intr_wq->last_pkt_cnt[i], iq->stats.instr_processed);
+		if (iq->stats.instr_processed == 0)
+			continue;
+		intr_level = (iq->stats.instr_processed -
+			      iq_intr_wq->last_pkt_cnt[i]) /
+			     (jiffies_to_msecs(curr_ts - iq_intr_wq->last_ts)*10);
+		if (print)
+			printk("%s: IQ-%d set to %d\n", __func__, i, intr_level);
+		OCTEON_WRITE32(iq->intr_lvl_reg, intr_level);
+		OCTEON_WRITE64(iq->inst_cnt_reg, 1UL << 59);
+		iq_intr_wq->last_pkt_cnt[i] = iq->stats.instr_processed;
+	}
+	iq_intr_wq->last_ts = curr_ts;
+	queue_delayed_work(iq_intr_wq->wq, &iq_intr_wq->work, msecs_to_jiffies(10));
+}
+
+void octeon_enable_irq(octeon_droq_t *droq, octeon_instr_queue_t *iq)
 {
 	uint32_t pkts_pend = (u32)cavium_atomic_read(&droq->pkts_pending);
+	uint32_t iq_pend;
+
+	if (iq->pkts_processed) {
+		iq_pend = (u32)cavium_atomic_read(&droq->pkts_pending);
+		OCTEON_WRITE32(iq->inst_cnt_reg, iq->pkts_processed);
+		iq->pkt_in_done -= iq->pkts_processed;
+		iq->pkts_processed = 0;
+	}
 
 	/* TODO: add support 93xx,98xx */
 	/* write processed packet count along with RESEND bit set.
 	 * this will trigger an interrupt if there are still unprocessed
 	 * packets pending
 	 */
-	OCTEON_WRITE64(droq->pkts_sent_reg,
-		       (1UL << 59) | (droq->last_pkt_count - pkts_pend));
-	droq->last_pkt_count = pkts_pend;
+	if (droq->last_pkt_count - pkts_pend) {
+		OCTEON_WRITE32(droq->pkts_sent_reg, droq->last_pkt_count - pkts_pend);
+		droq->last_pkt_count = pkts_pend;
+	}
+	mmiowb();
+	OCTEON_WRITE64(droq->pkts_sent_reg, 1UL << 59);
 }
 /* $Id: octeon_device.c 165632 2017-08-31 09:12:31Z mchalla $ */

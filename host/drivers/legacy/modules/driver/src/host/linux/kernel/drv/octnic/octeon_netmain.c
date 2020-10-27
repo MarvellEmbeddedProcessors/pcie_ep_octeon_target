@@ -839,6 +839,7 @@ int octnet_destroy_io_queues(octeon_device_t * octeon_dev,
 	num_intf = octnet_get_num_intf(octeon_dev);
 	num_ioqs = octnet_get_num_ioqs(octeon_dev);
 
+	octeon_cleanup_iq_intr_moderation(octeon_dev);
 	for (ifidx = 0; ifidx < num_intf; ifidx++) {
 		baseq = octnet_get_intf_baseq(octeon_dev, ifidx);
 
@@ -972,6 +973,7 @@ octnet_setup_io_queues(octeon_device_t * octeon_dev,
 			}
 		}
 	}
+	octeon_init_iq_intr_moderation(octeon_dev);
 	cavium_atomic_set(&octeon_dev->status, OCT_DEV_INSTR_QUEUE_INIT_DONE);
 
 	/* set up DROQs. */
@@ -1286,6 +1288,7 @@ int octnet_init_nic_module(int octeon_id, void *octeon_dev)
 octnet_init_failure:
 	cavium_error("OCTNIC: Initialization Failed\n");
 
+#if 0 //this is not processed by NPU
 	if ((oct->chip_id == OCTEON_CN83XX_PF)
 	    || (oct->chip_id == OCTEON_CN83XX_VF)
 	    || (oct->chip_id == OCTEON_CN93XX_PF) ||
@@ -1293,6 +1296,7 @@ octnet_init_failure:
 		/* Send short command to firmware to free these interface's PCAM entry */
 		octeon_send_short_command(oct, HOST_NW_STOP_OP, 0, NULL, 0);
 	}
+#endif
 
 	cavium_atomic_set(&oct->status, prev_status);
 	cavium_print_msg("resetting the state to prev_status: %d\n", prev_status);
@@ -1445,6 +1449,7 @@ int octnet_stop_nic_module(int octeon_id, void *oct)
 	num_intf = octnet_get_num_intf(octeon_dev);
 	num_ioqs = octnet_get_num_ioqs(octeon_dev);
 
+#if 0 //this is not processed by NPU
 	if ((octeon_dev->chip_id == OCTEON_CN83XX_PF)
 	    || (octeon_dev->chip_id == OCTEON_CN83XX_VF)
 	    || (octeon_dev->chip_id == OCTEON_CN93XX_PF)
@@ -1452,6 +1457,7 @@ int octnet_stop_nic_module(int octeon_id, void *oct)
 		/* Send short command to firmware to free these interface's PCAM entry */
 		octeon_send_short_command(oct, HOST_NW_STOP_OP, 0, NULL, 0);
 	}
+#endif
 	for (ifidx = 0; ifidx < num_intf; ifidx++) {
 		baseq = octnet_get_intf_baseq(octeon_dev, ifidx);
 
