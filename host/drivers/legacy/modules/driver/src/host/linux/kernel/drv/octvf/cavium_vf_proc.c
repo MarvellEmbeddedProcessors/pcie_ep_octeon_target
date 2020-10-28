@@ -239,8 +239,8 @@ fill_droq_status(octeon_device_t * oct, int oq_no, struct seq_file *str)
 
 	seq_printf(str, ">> Status\n");
 
-	seq_printf(str, "Packets Pending: %d Refill Count: %d\n",
-		   cavium_atomic_read(&droq->pkts_pending), droq->refill_count);
+	seq_printf(str, "Packets Pending: %u Refill Count: %u\n",
+		   droq->pkts_pending, droq->refill_count);
 
 	seq_printf(str, "Index  Read: %d Refill: %d\n",
 		   droq->host_read_index, droq->host_refill_index);

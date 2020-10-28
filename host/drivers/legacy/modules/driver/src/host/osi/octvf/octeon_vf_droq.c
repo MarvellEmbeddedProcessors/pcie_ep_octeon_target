@@ -33,10 +33,10 @@ int octeon_droq_check_hw_for_pkts(octeon_device_t * oct, octeon_droq_t * droq)
 	int pkt_count = 0;
 
 	pkt_count = OCTEON_READ32(droq->pkts_sent_reg);
-	/*printk("%s: pkt_count(sent_reg):%d pkts_pending:%d\n",
-	   __func__, pkt_count, cavium_atomic_read(&droq->pkts_pending)); */
+	/*printk("%s: pkt_count(sent_reg):%d pkts_pending:%u\n",
+	   __func__, pkt_count, droq->pkts_pending); */
 	if (pkt_count) {
-		cavium_atomic_add(pkt_count, &droq->pkts_pending);
+		droq->pkts_pending += pkt_count;
 		if (!oct->msix_on) {
 			OCTEON_WRITE32(droq->pkts_sent_reg, pkt_count);
 		}
@@ -68,8 +68,7 @@ void oct_dump_droq_state(octeon_droq_t * oq)
 			 oq->host_refill_index);
 
 	cavium_print_msg("Pkts: pending: %u forrefill: %u\n",
-			 cavium_atomic_read(&oq->pkts_pending),
-			 oq->refill_count);
+			 oq->pkts_pending, oq->refill_count);
 
 	cavium_print_msg("Stats: PktsRcvd: %llu BytesRcvd: %llu\n",
 			 oq->stats.pkts_received, oq->stats.bytes_received);
@@ -102,7 +101,7 @@ static void octeon_droq_reset_indices(octeon_droq_t * droq)
 	droq->octeon_write_index = 0;
 	droq->host_refill_index = 0;
 	droq->refill_count = 0;
-	cavium_atomic_set(&droq->pkts_pending, 0);
+	droq->pkts_pending = 0;
 }
 
 static void
@@ -224,7 +223,7 @@ int octeon_delete_droq(octeon_device_t * oct, uint32_t q_no)
 	if (CVM_KTHREAD_EXISTS(&droq->thread)) {
 		cavium_print_msg("Killing DROQ[%d] thread\n", q_no);
 
-		cavium_atomic_inc(&droq->pkts_pending);
+		droq->pkts_pending++;
 		droq->stop_thread = 1;
 		cavium_flush_write();
 
@@ -1521,7 +1520,7 @@ octeon_droq_process_packets(octeon_device_t * oct, octeon_droq_t * droq)
 	uint32_t pkt_count = 0, pkts_processed = 0, desc_refilled = 0, i = 0;
 	cavium_list_t *tmp, *tmp2;
 
-	pkt_count = cavium_atomic_read(&droq->pkts_pending);
+	pkt_count = droq->pkts_pending;
 	if (!pkt_count)
 		return 0;
 
@@ -1562,7 +1561,7 @@ octeon_droq_process_packets(octeon_device_t * oct, octeon_droq_t * droq)
 
 		droq->stats.pkts_received += pkt_count;
 		droq->stats.dropped_toomany += pkt_count;
-		cavium_atomic_sub(pkt_count, &droq->pkts_pending);
+		droq->pkts_pending -= pkt_count;
 
 		if (droq->refill_count >= droq->refill_threshold) {
 			uint32_t desc_refilled = octeon_droq_refill(oct, droq);
@@ -1594,7 +1593,7 @@ octeon_droq_process_packets(octeon_device_t * oct, octeon_droq_t * droq)
 							     pkt_count);
 #endif
 		}
-		cavium_atomic_sub(pkts_processed, &droq->pkts_pending);
+		droq->pkts_pending -= pkts_processed;
 
 		if (droq->refill_count >= droq->refill_threshold) {
 			desc_refilled = octeon_droq_refill(oct, droq);
@@ -1615,7 +1614,7 @@ octeon_droq_process_packets(octeon_device_t * oct, octeon_droq_t * droq)
 	}
 
 	/* If there are packets pending. schedule tasklet again */
-	if (cavium_atomic_read(&droq->pkts_pending))
+	if (droq->pkts_pending)
 		return 1;
 
 	return 0;
@@ -1630,7 +1629,7 @@ octeon_droq_process_packets(octeon_device_t * oct, octeon_droq_t * droq)
 	uint32_t pkt_count = 0, pkts_processed = 0, desc_refilled = 0;
 	cavium_list_t *tmp, *tmp2;
 
-	pkt_count = cavium_atomic_read(&droq->pkts_pending);
+	pkt_count = droq->pkts_pending;
 	if (!pkt_count)
 		return 0;
 
@@ -1659,7 +1658,7 @@ octeon_droq_process_packets(octeon_device_t * oct, octeon_droq_t * droq)
 		    octeon_droq_slow_process_packets(oct, droq, pkt_count);
 #endif
 	}
-	cavium_atomic_sub(pkts_processed, &droq->pkts_pending);
+	droq->pkts_pending -= pkts_processed;
 
 	if (droq->refill_count >= droq->refill_threshold) {
 		desc_refilled = octeon_droq_refill(oct, droq);
@@ -1681,7 +1680,7 @@ octeon_droq_process_packets(octeon_device_t * oct, octeon_droq_t * droq)
 // *INDENT-ON*
 
 	/* If there are packets pending. schedule tasklet again */
-	if (cavium_atomic_read(&droq->pkts_pending))
+	if (droq->pkts_pending)
 		return 1;
 
 	return 0;
@@ -1714,10 +1713,10 @@ static int oct_droq_thread(void *arg)
 
 	while (!droq->stop_thread && !cavium_kthread_signalled()) {
 
-		while (cavium_atomic_read(&droq->pkts_pending))
+		while (droq->pkts_pending)
 			octeon_droq_process_packets(droq->oct_dev, droq);
 
-		cavium_sleep_atomic_cond(&droq->wc, &droq->pkts_pending);
+		cavium_sleep_cond(&droq->wc, &droq->pkts_pending);
 	}
 
 	cavium_print_msg("OCTEON[%d]: DROQ thread quitting now\n",
@@ -1744,8 +1743,7 @@ octeon_droq_process_poll_pkts(octeon_device_t * oct,
 	while (total_pkts_processed < budget) {
 
 		pkts_available = CVM_MIN((budget - total_pkts_processed),
-					 (uint32_t) (cavium_atomic_read
-						     (&droq->pkts_pending)));
+					 droq->pkts_pending);
 		if (pkts_available == 0)
 			break;
 #ifdef OCT_REUSE_RX_BUFS
@@ -1757,8 +1755,7 @@ octeon_droq_process_poll_pkts(octeon_device_t * oct,
 								  pkts_available);
 #endif
 
-		cavium_atomic_sub(pkts_processed, &droq->pkts_pending);
-
+		droq->pkts_pending -= pkts_processed;
 		total_pkts_processed += pkts_processed;
 
 		octeon_droq_check_hw_for_pkts(oct, droq);

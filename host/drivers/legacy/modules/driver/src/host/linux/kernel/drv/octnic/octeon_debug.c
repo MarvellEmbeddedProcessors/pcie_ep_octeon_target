@@ -63,7 +63,7 @@ static void octeon_debug_dump(struct net_device *dev)
 		netdev_info(dev, "host_read_index    = %u\n", oq->host_read_index);
 		netdev_info(dev, "octeon_write_index = %u\n", oq->octeon_write_index);
 		netdev_info(dev, "host_refill_index  = %u\n", oq->host_refill_index);
-		netdev_info(dev, "pkts_pending       = %u\n", cavium_atomic_read(&oq->pkts_pending));
+		netdev_info(dev, "pkts_pending       = %u\n", oq->pkts_pending);
 		netdev_info(dev, "refill_count       = %u\n", oq->refill_count);
 		netdev_info(dev, "max_count          = %u\n", oq->max_count);
 		netdev_info(dev, "pkts_received      = %llu\n", oq->stats.pkts_received);

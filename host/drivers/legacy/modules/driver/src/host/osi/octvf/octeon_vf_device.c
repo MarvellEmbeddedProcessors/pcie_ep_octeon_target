@@ -846,7 +846,7 @@ int octeon_hot_reset(octeon_device_t * oct)
 		droq->octeon_write_index = 0;
 		droq->host_refill_index = 0;
 		droq->refill_count = 0;
-		cavium_atomic_set(&droq->pkts_pending, 0);
+		droq->pkts_pending = 0;
 	}
 
 	oct->fn_list.reinit_regs(oct);

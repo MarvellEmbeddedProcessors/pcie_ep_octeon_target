@@ -157,7 +157,7 @@ typedef struct {
 	uint32_t host_refill_index;
 
   /** Packets pending to be processed - tasklet implementation */
-	cavium_atomic_t pkts_pending;
+	uint32_t pkts_pending;
 	uint32_t last_pkt_count;
 
   /** Number of  descriptors in this ring. */

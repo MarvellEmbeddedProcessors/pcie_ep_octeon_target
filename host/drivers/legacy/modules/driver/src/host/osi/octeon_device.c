@@ -1120,7 +1120,7 @@ int oct_reinit_oq(octeon_device_t * oct, int oq_no)
 	droq->host_refill_index = 0;
 	droq->refill_count = 0;
 	droq->last_pkt_count = 0;
-	cavium_atomic_set(&droq->pkts_pending, 0);
+	droq->pkts_pending = 0;
 
 	if (oct->chip_id == OCTEON_CN83XX_PF)
 		cn83xx_pf_setup_global_oq_reg(oct, oq_no);
@@ -2604,11 +2604,9 @@ void octeon_iq_intr_tune(struct work_struct *work)
 
 void octeon_enable_irq(octeon_droq_t *droq, octeon_instr_queue_t *iq)
 {
-	uint32_t pkts_pend = (u32)cavium_atomic_read(&droq->pkts_pending);
-	uint32_t iq_pend;
+	uint32_t pkts_pend = droq->pkts_pending;
 
 	if (iq->pkts_processed) {
-		iq_pend = (u32)cavium_atomic_read(&droq->pkts_pending);
 		OCTEON_WRITE32(iq->inst_cnt_reg, iq->pkts_processed);
 		iq->pkt_in_done -= iq->pkts_processed;
 		iq->pkts_processed = 0;
