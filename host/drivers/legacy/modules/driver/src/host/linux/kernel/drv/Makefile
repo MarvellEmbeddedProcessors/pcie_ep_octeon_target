@@ -78,9 +78,7 @@ OBJS += octeon_linux.o            	\
 	../../../osi/pending_list.o     \
 	../../../osi/octeon_device.o    \
 	../../../osi/cn83xx_pf_device.o    \
-	../../../osi/cn83xx_common.o    \
 	../../../osi/cn93xx_pf_device.o    \
-	../../../osi/cn93xx_common.o    \
 	../../../osi/octeon_errata.o    \
 	../../../osi/octeon_mem_ops.o   \
 	../../../osi/octeon_droq.o      \

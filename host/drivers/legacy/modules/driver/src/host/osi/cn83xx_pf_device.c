@@ -921,10 +921,6 @@ static uint32_t cn83xx_update_read_index(octeon_instr_queue_t * iq)
 	last_done = pkt_in_done - iq->pkt_in_done;
 	iq->pkt_in_done = pkt_in_done;
 
-	/* Modulo of the new index with the IQ size will give us
-	 * the new index.  The iq->reset_instr_cnt is always zero for
-	 * cn23xx, so no extra adjustments are needed.
-	 */
 #define OCTEON_PKT_IN_DONE_CNT_MASK (0x00000000FFFFFFFFULL)
 	new_idx = (iq->octeon_read_index +
 		   (u32)(last_done & OCTEON_PKT_IN_DONE_CNT_MASK)) %

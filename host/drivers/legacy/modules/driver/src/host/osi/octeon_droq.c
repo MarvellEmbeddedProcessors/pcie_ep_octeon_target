@@ -38,11 +38,7 @@ int octeon_droq_check_hw_for_pkts(octeon_device_t * oct, octeon_droq_t * droq)
 	uint32_t pkt_count = 0;
 	uint32_t new_pkts;
 
-#ifdef OCT_TX2_ISM_INT
-	pkt_count = *(uint64_t *)(droq->ism.pkt_cnt_addr);
-#else
 	pkt_count = OCTEON_READ32(droq->pkts_sent_reg);
-#endif
 	new_pkts = pkt_count - droq->last_pkt_count;
 //	printk("%s: Q-%d pkt_count(sent_reg):%u last_cnt:%u pkts_pending:%u\n",
 //		__func__, droq->q_no, pkt_count, droq->last_pkt_count, cavium_atomic_read(&droq->pkts_pending));

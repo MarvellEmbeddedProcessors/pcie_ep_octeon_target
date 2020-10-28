@@ -29,12 +29,10 @@ struct fw_handshake_wrk hs_wrk;
 
 extern int octeon_device_init(octeon_device_t *, int);
 extern void mv_facility_irq_handler(uint64_t event_word);
-extern int cn93xx_droq_intr_handler(octeon_ioq_vector_t * ioq_vector);
 
 extern int num_rings_per_pf;
 extern int num_rings_per_vf;
 static int num_rings_per_pf_pt, num_rings_per_vf_pt;
-extern void cn93xx_iq_intr_handler(octeon_ioq_vector_t * ioq_vector);
 
 void cn93xx_dump_iq_regs(octeon_device_t * oct)
 {
@@ -436,6 +434,8 @@ static void cn93xx_setup_iq_regs(octeon_device_t * oct, int iq_no)
 	    + CN93XX_SDP_R_IN_INSTR_DBELL(iq_no);
 	iq->inst_cnt_reg = (uint8_t *) oct->mmio[0].hw_addr
 	    + CN93XX_SDP_R_IN_CNTS(iq_no);
+	iq->intr_lvl_reg = (uint8_t *) oct->mmio[0].hw_addr
+	    + CN93XX_SDP_R_IN_INT_LEVELS(iq_no);
 
 	cavium_print(PRINT_DEBUG,
 		     "InstQ[%d]:dbell reg @ 0x%p instcnt_reg @ 0x%p\n", iq_no,
@@ -455,11 +455,6 @@ static void cn93xx_setup_iq_regs(octeon_device_t * oct, int iq_no)
 
 	octeon_write_csr64(oct,
 			   CN93XX_SDP_R_IN_INT_LEVELS(iq_no), reg_val);
-
-#ifdef OCT_TX2_ISM_INT	
-	octeon_write_csr64(oct, CN93XX_SDP_R_IN_CNTS_ISM(iq_no), (iq->ism.pkt_cnt_dma)|0x1ULL);
-#endif
-
 }
 
 static void cn93xx_setup_oq_regs(octeon_device_t * oct, int oq_no)
@@ -693,6 +688,7 @@ cvm_intr_return_t cn93xx_pf_msix_interrupt_handler(void *dev)
 {
 	octeon_ioq_vector_t *ioq_vector = (octeon_ioq_vector_t *) dev;
 	octeon_device_t *oct = ioq_vector->oct_dev;
+	octeon_droq_t *droq = ioq_vector->droq;
 	uint64_t intr64;
 
 	cavium_print(PRINT_FLOW, " In %s octeon_dev @ %p  \n",
@@ -707,27 +703,9 @@ cvm_intr_return_t cn93xx_pf_msix_interrupt_handler(void *dev)
 	if (!(intr64 & (0x7ULL << 60)))
 		return CVM_INTR_NONE;
 
-	cavium_atomic_set(&oct->in_interrupt, 1);
-
 	oct->stats.interrupts++;
 
-	cavium_atomic_inc(&oct->interrupts);
-
-	/* Write count reg in sli_pkt_cnts to clear these int. */
-	if (intr64 & CN93XX_INTR_R_OUT_INT) {
-#ifdef OCT_NIC_USE_NAPI
-        cavium_disable_irq_nosync(ioq_vector->droq->irq_num);
-#endif
-		cn93xx_droq_intr_handler(ioq_vector);
-	}
-
-	/* Handle PI int, write count in IN_DONE reg to clear these int */
-	if (intr64 & CN93XX_INTR_R_IN_INT) {
-		cn93xx_iq_intr_handler(ioq_vector);
-	}
-
-	cavium_atomic_set(&oct->in_interrupt, 0);
-
+	droq->ops.napi_fun((void *)droq);
 	return CVM_INTR_HANDLED;
 }
 
@@ -930,23 +908,17 @@ static uint32_t cn93xx_bar1_idx_read(octeon_device_t * oct, int idx)
 
 static uint32_t cn93xx_update_read_index(octeon_instr_queue_t * iq)
 {
-	uint32_t new_idx = OCTEON_READ32(iq->inst_cnt_reg);
+	u32 new_idx;
+	u32 last_done;
+	u32 pkt_in_done = OCTEON_READ32(iq->inst_cnt_reg);
 
-	/** 
-	 * The new instr cnt reg is a 32-bit counter that can roll over.
-	 * We have noted the counter's initial value at init time into
-	 * reset_instr_cnt
-	 */
-	if (iq->reset_instr_cnt < new_idx)
-		new_idx -= iq->reset_instr_cnt;
-	else
-		new_idx += (0xffffffff - iq->reset_instr_cnt) + 1;
+	last_done = pkt_in_done - iq->pkt_in_done;
+	iq->pkt_in_done = pkt_in_done;
 
-	/**
-	 * Modulo of the new index with the IQ size will give us 
-	 * the new index.
-	 */
-	new_idx %= iq->max_count;
+#define OCTEON_PKT_IN_DONE_CNT_MASK (0x00000000FFFFFFFFULL)
+	new_idx = (iq->octeon_read_index +
+		   (u32)(last_done & OCTEON_PKT_IN_DONE_CNT_MASK)) %
+		  iq->max_count;
 
 	return new_idx;
 }
