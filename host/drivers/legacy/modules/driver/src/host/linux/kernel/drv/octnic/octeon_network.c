@@ -491,12 +491,26 @@ int octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 	octnet_priv_t *priv;
 	struct octnet_buf_free_info *finfo;
 	octnic_cmd_setup_t cmdsetup;
+	octeon_device_t *oct_dev;
 	octnic_data_pkt_t ndata;
-	int cpu = 0, status = 0;
+	int cpu = 0, status = 0, q_no;
 
 	cavium_print(PRINT_FLOW, "OCTNIC: network xmit called\n");
 
 	priv = GET_NETDEV_PRIV(pndev);
+
+	if (netif_is_multiqueue(pndev)) {
+		/* queue mapping: tuned for TCP_RR/STREAM perf: get corenum */
+		cpu = smp_processor_id();
+		q_no = priv->txq + (cpu & (priv->linfo.num_txpciq - 1));
+		/* mq support: defer sending if qfull */
+		if (octnet_iq_is_full(priv->oct_dev, q_no)) {
+			/* TODO: increment some counter for ethtool stats ?? */
+			return OCT_NIC_TX_BUSY;
+		}
+	} else {
+		q_no = priv->txq;
+	}
 
 #ifdef CONFIG_PPORT
 	if (unlikely(*(u32 *)(&skb->cb[SKB_CB_PPORT_MAGIC_OFFSET]) !=
@@ -506,8 +520,6 @@ int octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 		goto oct_xmit_failed;
 	}
 #endif
-	atomic64_inc((atomic64_t *) & priv->stats.tx_packets);	/* atomic increment: multi-core support:66xx */
-	priv->stats.tx_bytes += skb->len;
 
 	if (!OCTNET_IFSTATE_CHECK(priv, OCT_NIC_IFSTATE_TXENABLED)) {
 		return OCT_NIC_TX_BUSY;
@@ -528,23 +540,8 @@ int octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 
 	/* Prepare the attributes for the data to be passed to OSI. */
 	ndata.buf = (void *)finfo;
+	ndata.q_no = q_no;
 
-	ndata.q_no = priv->txq;
-
-#if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,18)
-#if !defined(ETHERPCI)
-	if (netif_is_multiqueue(pndev)) {
-//              cpu = skb->queue_mapping;       /* mq support: sk_buff sub-queue mapping */
-
-		cpu = smp_processor_id();	/* queue mapping: tuned for TCP_RR/STREAM perf: get corenum */
-
-		ndata.q_no = priv->txq + (cpu & (priv->linfo.num_txpciq - 1));
-		if (octnet_iq_is_full(priv->oct_dev, ndata.q_no)) {	/* mq support: defer sending if qfull */
-			return OCT_NIC_TX_BUSY;
-		}
-	}
-#endif
-#endif
 	//printk(" XMIT - valid Qs: %d, 1st Q no: %d, cpu:  %d, q_no:%d\n",priv->linfo.num_txpciq, priv->txq, cpu, ndata.q_no );
 
 	ndata.datasize = skb->len;
@@ -688,7 +685,8 @@ int octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 	return OCT_NIC_TX_OK;
 
 oct_xmit_failed:
-	atomic64_inc((atomic64_t *) & priv->stats.tx_dropped);	/* atomic increment: multi-core support:66xx */
+	oct_dev = priv->oct_dev;
+	oct_dev->instr_queue[q_no]->stats.instr_dropped++;
 	free_recv_buffer(skb);
 	return OCT_NIC_TX_OK;
 }
@@ -805,8 +803,35 @@ int octnet_napi_poll_fn(struct napi_struct *napi, int budget)
 
 struct net_device_stats *octnet_stats(struct net_device *pndev)
 {
+	octnet_priv_t *priv = GET_NETDEV_PRIV(pndev);
+	octeon_device_t *oct_dev = priv->oct_dev;
+	struct net_device_stats *stats = &priv->stats;
+	octeon_instr_queue_t *instr_queue;
+	octeon_droq_t *droq;
+	int i, total_rings;
+
+	total_rings = oct_dev->sriov_info.rings_per_pf;
+	memset(stats, 0, sizeof(struct net_device_stats));
 	cavium_print(PRINT_FLOW, "octnet_stats: network stats called\n");
-	return &(GET_NETDEV_PRIV(pndev)->stats);
+	for (i = 0; i < total_rings; i++) {
+		instr_queue =  oct_dev->instr_queue[i];
+		stats->tx_packets += instr_queue->stats.instr_posted;
+		stats->tx_bytes += instr_queue->stats.bytes_sent;
+		stats->tx_dropped += instr_queue->stats.instr_dropped;
+		/* TODO:
+		 * tx_errors not incremented anywhere; fix it or remove it.
+		 */
+
+		droq = oct_dev->droq[i];
+		stats->rx_packets += droq->stats.pkts_st_received;
+		stats->rx_bytes += droq->stats.bytes_st_received;
+		stats->rx_dropped += droq->stats.dropped_nodispatch +
+			droq->stats.dropped_nomem +
+			droq->stats.dropped_toomany +
+			droq->stats.dropped_zlp;
+	}
+
+	return stats;
 }
 
 void octnet_tx_timeout(struct net_device *pndev)
@@ -924,17 +949,39 @@ oct_get_ethtool_stats(struct net_device *netdev,
 	octeon_droq_t *droq;
 	octeon_instr_queue_t *instr_queue;
 	int i, cnt, total_rings;
+	uint64_t tx_packets, tx_bytes, tx_errors, tx_dropped;
+	uint64_t rx_packets, rx_bytes, rx_dropped;
 
 	cnt = 0;
-	data[cnt++] = priv->stats.tx_packets;
-	data[cnt++] = priv->stats.tx_bytes;
-	data[cnt++] = priv->stats.rx_packets;
-	data[cnt++] = priv->stats.rx_bytes;
-	data[cnt++] = priv->stats.tx_errors;
-	data[cnt++] = priv->stats.tx_dropped;
-	data[cnt++] = priv->stats.rx_dropped;
+	tx_packets = tx_bytes = tx_errors = tx_dropped = 0;
+	rx_packets = rx_bytes = rx_dropped = 0;
 
 	total_rings = oct_dev->sriov_info.rings_per_pf;
+	for (i = 0; i < total_rings; i++) {
+		instr_queue =  oct_dev->instr_queue[i];
+		tx_packets += instr_queue->stats.instr_posted;
+		tx_bytes += instr_queue->stats.bytes_sent;
+		tx_dropped += instr_queue->stats.instr_dropped;
+		/* TODO:
+		 * tx_errors not incremented anywhere; fix it or remove it.
+		 */
+
+		droq = oct_dev->droq[i];
+		rx_packets += droq->stats.pkts_st_received;
+		rx_bytes += droq->stats.bytes_st_received;
+		rx_dropped += droq->stats.dropped_nodispatch +
+			droq->stats.dropped_nomem +
+			droq->stats.dropped_toomany +
+			droq->stats.dropped_zlp;
+	}
+	data[cnt++] = tx_packets;
+	data[cnt++] = tx_bytes;
+	data[cnt++] = rx_packets;
+	data[cnt++] = rx_bytes;
+	data[cnt++] = tx_errors;
+	data[cnt++] = tx_dropped;
+	data[cnt++] = rx_dropped;
+
 	for (i = 0; i < total_rings; i++) {
 		instr_queue =  oct_dev->instr_queue[i];
 		data[cnt++] = instr_queue->stats.instr_processed;

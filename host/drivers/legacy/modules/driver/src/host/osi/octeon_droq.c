@@ -1062,15 +1062,14 @@ static inline void octeon_droq_drop_packets(octeon_droq_t * droq, uint32_t cnt)
   * @param lastpkt    - indicates whether this is last packet to push
   * @param napi       - NAPI handler
   */
-void octnet_push_packet(struct net_device *pndev,
+void octnet_push_packet(octeon_droq_t *droq,
 		   void *skbuff,
 		   uint32_t len,
 		   octeon_resp_hdr_t * resp_hdr, void *napi)
 {
+	struct net_device *pndev = droq->pndev;
 	struct sk_buff     *skb   = (struct sk_buff *)skbuff;
 	int rc;
-
-	octnet_priv_t *priv = GET_NETDEV_PRIV(pndev);
 
 	skb->dev = pndev;
 #ifndef CONFIG_PPORT
@@ -1082,7 +1081,7 @@ void octnet_push_packet(struct net_device *pndev,
 			     ntohs(*(__be16 *)skb->data));
 		/* TODO: This is in octnic; should be moved here */
 		free_recv_buffer(skb);
-		atomic64_inc((atomic64_t *) & priv->stats.rx_errors);
+		droq->stats.dropped_nodispatch++;
 		return;
 	}
 #endif
@@ -1095,10 +1094,10 @@ void octnet_push_packet(struct net_device *pndev,
 	rc = napi_gro_receive(napi, skb);
 
 	if (rc != GRO_DROP) {
-		priv->stats.rx_bytes += len;
-		atomic64_inc((atomic64_t *) & priv->stats.rx_packets);	/* atomic increment: multi-core support:66xx */
+		droq->stats.bytes_st_received += len;
+		droq->stats.pkts_st_received++;
 	} else {
-		atomic64_inc((atomic64_t *) & priv->stats.rx_dropped);	/* atomic increment: multi-core support:66xx */
+		droq->stats.dropped_nomem++;
 	}
 }
 
@@ -1227,7 +1226,7 @@ octeon_droq_fast_process_packets(octeon_device_t * oct,
 			}
 		}
 
-		octnet_push_packet(droq->pndev, nicbuf,
+		octnet_push_packet(droq, nicbuf,
 				   pkt_len, resp_hdr, &droq->napi);
 	}  /* for ( each packet )... */
 

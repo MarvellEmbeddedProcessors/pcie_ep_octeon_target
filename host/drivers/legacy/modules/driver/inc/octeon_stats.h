@@ -76,6 +76,10 @@ typedef struct {
 	uint64_t pkts_received;
 			    /**< Number of packets received in this queue. */
 	uint64_t bytes_received;
+			    /**< Bytes received by this queue submitted to stack */
+	uint64_t pkts_st_received;
+			    /**< Number of packets received in this queue submitted to stack. */
+	uint64_t bytes_st_received;
 			    /**< Bytes received by this queue. */
 	uint64_t dropped_nodispatch;
 				 /**< Packets dropped due to no dispatch function. */
