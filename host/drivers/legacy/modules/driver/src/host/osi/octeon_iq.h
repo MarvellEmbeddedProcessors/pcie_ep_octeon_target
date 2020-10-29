@@ -67,6 +67,41 @@ typedef struct octeon_in_cnt_ism {
     a Octeon device has one such structure to represent it.
 */
 typedef struct {
+  /** Index in input ring where the driver should write the next packet. */
+	uint32_t host_write_index;
+
+  /** Index in input ring where Octeon is expected to read the next packet. */
+	uint32_t octeon_read_index;
+
+  /** This index aids in finding the window in the queue where Octeon 
+      has read the commands. */
+	uint32_t flush_index;
+
+  /** Statistics for this input queue. */
+	oct_iq_stats_t stats;
+
+  /** This field keeps track of the instructions pending in this queue. */
+	cavium_atomic_t instr_pending;
+
+	octeon_noresponse_list_t *nrlist;
+
+	struct oct_noresp_free_list nr_free;
+
+  /** Octeon doorbell register for the ring. */
+	void *doorbell_reg;
+
+  /** Octeon instruction count register for this ring. */
+	void *inst_cnt_reg;
+
+ /* interrupt level register for this ring */
+	void *intr_lvl_reg;
+
+  /** Maximum no. of instructions in this queue. */
+	uint32_t max_count;
+
+	uint32_t pkt_in_done;
+	uint32_t pkts_processed;
+
   /** Flag that indicates if the queue uses 64 byte commands. */
 	uint32_t iqcmd_64B:1;
 
@@ -80,41 +115,10 @@ typedef struct {
 
 	uint32_t status:8;
 
-  /** Maximum no. of instructions in this queue. */
-	uint32_t max_count;
-
-  /** Index in input ring where the driver should write the next packet. */
-	uint32_t host_write_index;
-
-  /** Index in input ring where Octeon is expected to read the next packet. */
-	uint32_t octeon_read_index;
-
-  /** This index aids in finding the window in the queue where Octeon 
-      has read the commands. */
-	uint32_t flush_index;
-
-  /** This field keeps track of the instructions pending in this queue. */
-	cavium_atomic_t instr_pending;
-
-	uint32_t pkt_in_done;
-	uint32_t pkts_processed;
 	uint32_t reset_instr_cnt;
 
   /** Pointer to the Virtual Base addr of the input ring. */
 	uint8_t *base_addr;
-
-	octeon_noresponse_list_t *nrlist;
-
-	struct oct_noresp_free_list nr_free;
-
-  /** Octeon doorbell register for the ring. */
-	void *doorbell_reg;
-
-  /** Octeon instruction count register for this ring. */
-	void *inst_cnt_reg;
-
-	/* interrupt level register for this ring */
-	void *intr_lvl_reg;
 
   /** Moved from OCTEOn Device Structure */
 	uint32_t pend_list_size;
@@ -134,9 +138,6 @@ typedef struct {
       fill_cnt is non-zero, ring the doorbell again. */
 	unsigned long db_timeout;
 
-  /** Statistics for this input queue. */
-	oct_iq_stats_t stats;
-
   /** DMA mapped base address of the input descriptor ring. */
 	unsigned long base_addr_dma;
 	
@@ -146,7 +147,7 @@ typedef struct {
 
   /** Application context */
 	void *app_ctx;
-} octeon_instr_queue_t;
+} ____cacheline_aligned_in_smp octeon_instr_queue_t;
 
 typedef octeon_instr_queue_t octeon_iq_t;
 

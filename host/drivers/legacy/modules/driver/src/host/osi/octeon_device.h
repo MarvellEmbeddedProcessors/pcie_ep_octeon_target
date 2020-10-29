@@ -361,6 +361,15 @@ struct iq_intr_wq {
  *  components.
  */
 struct _OCTEON_DEVICE {
+	int num_iqs;
+
+	/** The input instruction queues */
+	octeon_instr_queue_t *instr_queue[MAX_OCTEON_INSTR_QUEUES];
+
+	int num_oqs;
+
+	/** The DROQ output queues  */
+	octeon_droq_t *droq[MAX_OCTEON_OUTPUT_QUEUES];
 
    /** Lock for this Octeon device */
 	cavium_spinlock_t oct_lock;
@@ -402,10 +411,14 @@ struct _OCTEON_DEVICE {
 	/* TODO: remove this unused flag */
 	cavium_atomic_t in_interrupt;
 
-	int num_iqs;
 
-	/** The input instruction queues */
-	octeon_instr_queue_t *instr_queue[MAX_OCTEON_INSTR_QUEUES];
+	cavium_tasklet_struct_t comp_tasklet;
+
+	uint64_t napi_mask;
+
+	void *poll_list;
+
+	cavium_spinlock_t poll_lock;
 
 	/** Moved to IQ structure */
 //   uint32_t                 pend_list_size;
@@ -413,19 +426,6 @@ struct _OCTEON_DEVICE {
 
    /** The doubly-linked list of instruction response */
 	octeon_response_list_t response_list[MAX_RESPONSE_LISTS];
-
-	int num_oqs;
-
-	/** The DROQ output queues  */
-	octeon_droq_t *droq[MAX_OCTEON_OUTPUT_QUEUES];
-
-	cavium_tasklet_struct_t comp_tasklet;
-
-	uint64_t napi_mask;
-
-	void *poll_list;
-	cavium_spinlock_t poll_lock;
-
    /** A table maintaining maps of core-addr to BAR1 mapped address. */
 	octeon_range_table_t range_table[MAX_OCTEON_MAPS];
 
@@ -512,7 +512,7 @@ struct _OCTEON_DEVICE {
 
 	/* module handler status */
 	cavium_atomic_t mod_status[OCTEON_MAX_MODULES];
-};
+} ____cacheline_aligned_in_smp;
 
 #define CHIP_FIELD(oct, TYPE, field)             \
 	(((octeon_##TYPE##_t *)(oct->chip))->field)

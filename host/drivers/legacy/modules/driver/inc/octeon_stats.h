@@ -66,7 +66,7 @@ typedef struct {
 	uint64_t sgentry_sent;/**< Gather entries sent through this queue. */
 	uint64_t lastbytes_sent;
 			     /**< Bytes sent through this queue at last proc stats display */
-} oct_iq_stats_t;
+} ____cacheline_aligned_in_smp oct_iq_stats_t;
 
 #define OCT_IQ_STATS_SIZE   (sizeof(oct_iq_stats_t))
 
@@ -93,7 +93,7 @@ typedef struct {
 				 /**< packets with data got ready after interrupt arrived */
 	uint64_t dropped_zlp;
 				 /**< packets dropped due to zero length */
-} oct_droq_stats_t;
+} ____cacheline_aligned_in_smp oct_droq_stats_t;
 
 #define OCT_DROQ_STATS_SIZE   (sizeof(oct_droq_stats_t))
 

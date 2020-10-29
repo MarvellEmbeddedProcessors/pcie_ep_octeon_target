@@ -120,17 +120,62 @@ typedef struct octeon_droq_ism {
     Octeon DROQ.
 */
 typedef struct {
+	uint32_t q_no;
 
+	struct napi_struct napi;
+	struct net_device *pndev;
+
+  /** The receive buffer list. This list has the virtual addresses of the
+      buffers.  */
+	octeon_recv_buffer_t *recv_buf_list;
+
+  /** Pointer to the mapped packet credit register.
+       Host writes number of info/buffer ptrs available to this register */
+	void *pkts_credit_reg;
+
+  /** Pointer to the mapped packet sent register.
+      Octeon writes the number of packets DMA'ed to host memory
+      in this register. */
+	void *pkts_sent_reg;
+
+  /** Statistics for this DROQ. */
+	oct_droq_stats_t stats;
+
+  /** Packets pending to be processed - tasklet implementation */
+	uint32_t pkts_pending;
+	uint32_t last_pkt_count;
+
+  /** Index in the ring where the driver should read the next packet */
+	uint32_t host_read_index;
+
+  /** Index in the ring where Octeon will write the next packet */
+	uint32_t octeon_write_index;
+
+  /** Number of  descriptors in this ring. */
+	uint32_t max_count;
+	uint32_t ring_size_mask;
+
+  /** The number of descriptors pending refill. */
+	uint32_t refill_count;
+
+  /** Index in the ring where the driver will refill the descriptor's buffer */
+	uint32_t host_refill_index;
+	uint32_t pkts_per_intr;
+	uint32_t refill_threshold;
+
+  /** The size of each buffer pointed by the buffer pointer. */
+	uint32_t buffer_size;
+	uint32_t max_single_buffer_size;
+
+	octeon_device_t *oct_dev;
   /** A spinlock to protect access to this ring. */
 	cavium_spinlock_t lock;
 
-	uint32_t q_no;
 
 	uint32_t fastpath_on;
 
 	octeon_droq_ops_t ops;
 
-	octeon_device_t *oct_dev;
 
 #ifdef  USE_DROQ_THREADS
 
@@ -147,32 +192,6 @@ typedef struct {
   /** The 8B aligned descriptor ring starts at this address. */
 	octeon_droq_desc_t *desc_ring;
 
-  /** Index in the ring where the driver should read the next packet */
-	uint32_t host_read_index;
-
-  /** Index in the ring where Octeon will write the next packet */
-	uint32_t octeon_write_index;
-
-  /** Index in the ring where the driver will refill the descriptor's buffer */
-	uint32_t host_refill_index;
-
-  /** Packets pending to be processed - tasklet implementation */
-	uint32_t pkts_pending;
-	uint32_t last_pkt_count;
-
-  /** Number of  descriptors in this ring. */
-	uint32_t max_count;
-	uint32_t ring_size_mask;
-
-  /** The number of descriptors pending refill. */
-	uint32_t refill_count;
-
-	uint32_t pkts_per_intr;
-	uint32_t refill_threshold;
-
-  /** The size of each buffer pointed by the buffer pointer. */
-	uint32_t buffer_size;
-	uint32_t max_single_buffer_size;
 
   /** The max number of descriptors in DROQ without a buffer.
       This field is used to keep track of empty space threshold. If the
@@ -183,23 +202,9 @@ typedef struct {
    /** The 8B aligned info ptrs begin from this address. */
 	octeon_droq_info_t *info_list;
 
-  /** The receive buffer list. This list has the virtual addresses of the
-      buffers.  */
-	octeon_recv_buffer_t *recv_buf_list;
-
-  /** Pointer to the mapped packet credit register.
-       Host writes number of info/buffer ptrs available to this register */
-	void *pkts_credit_reg;
-
-  /** Pointer to the mapped packet sent register.
-      Octeon writes the number of packets DMA'ed to host memory
-      in this register. */
-	void *pkts_sent_reg;
 
 	cavium_list_t dispatch_list;
 
-  /** Statistics for this DROQ. */
-	oct_droq_stats_t stats;
 
   /** DMA mapped address of the DROQ descriptor ring. */
 	unsigned long desc_ring_dma;
@@ -216,12 +221,10 @@ typedef struct {
   /** application context */
 	void *app_ctx;
 
-	struct napi_struct napi;
-	struct net_device *pndev;
 
 	octeon_droq_ism_t ism;
 
-} octeon_droq_t;
+} ____cacheline_aligned_in_smp  octeon_droq_t;
 
 #define OCT_DROQ_SIZE   (sizeof(octeon_droq_t))
 

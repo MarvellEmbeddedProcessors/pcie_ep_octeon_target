@@ -1681,7 +1681,6 @@ lio_process_iq_request_list(octeon_device_t *oct,
 
 
 #ifdef OCT_NIC_IQ_USE_NAPI
-/* Can only be called from process context */
 int
 octeon_flush_iq(octeon_device_t *oct, octeon_instr_queue_t *iq,
         uint32_t napi_budget)

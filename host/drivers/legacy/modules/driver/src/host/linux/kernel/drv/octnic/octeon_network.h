@@ -108,6 +108,21 @@ struct octdev_props_t {
 
 /** Octeon per-interface Network Private Data */
 typedef struct {
+	/** Pointer to the octeon device structure. */
+	void *oct_dev;
+
+	/** Link information sent by the core application for this interface. */
+	oct_link_info_t linfo;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,24)
+	struct napi_struct napi;
+#endif
+
+#ifdef OCT_NIC_LOOPBACK
+	int (*priv_xmit)(struct sk_buff *skb, struct net_device *dev);
+#endif
+
+	octnet_os_devptr_t *pndev;
 
 	cavium_spinlock_t lock;
 
@@ -131,21 +146,6 @@ typedef struct {
 	    interface is associated with. */
 	struct octdev_props_t *octprops;
 
-	/** Pointer to the octeon device structure. */
-	void *oct_dev;
-
-	octnet_os_devptr_t *pndev;
-
-#ifdef OCT_NIC_LOOPBACK
-	int (*priv_xmit)(struct sk_buff *skb, struct net_device *dev);
-#endif
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,24)
-	struct napi_struct napi;
-#endif
-
-	/** Link information sent by the core application for this interface. */
-	oct_link_info_t linfo;
 
 	/** Statistics for this interface. */
 	struct net_device_stats stats;
@@ -162,7 +162,7 @@ typedef struct {
 	/* Copy of the flags managed by core app & NIC module. */
 	octnet_ifflags_t core_flags;
 
-} octnet_priv_t;
+} ____cacheline_aligned_in_smp octnet_priv_t;
 #define OCTNET_PRIV_SIZE   (sizeof(octnet_priv_t))
 
 #define OCTNIC_MAX_SG  (ROUNDUP4(MAX_SKB_FRAGS) >> 2)
