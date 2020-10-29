@@ -139,7 +139,7 @@ octnet_prepare_pci_cmd(octeon_device_t * oct,
 		ihx.pkind = oct->pkind;	/* The SDK decided PKIND value */
 		if ((oct->chip_id == OCTEON_CN83XX_PF) ||
 		    (oct->chip_id == OCTEON_CN83XX_VF))
-			ihx.fsz += 8;	/* extra: 8B for PKI_IH3 */
+			ihx.fsz += 4;	/* extra: 4B for PKI_IH3 */
 		ihx.fsz += 8;	/* extra: 8B for Extra Hdr(TSO) */
 #endif
 		if (!setup->s.gather) {
