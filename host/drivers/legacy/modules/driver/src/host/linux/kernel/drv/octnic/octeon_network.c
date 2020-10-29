@@ -643,27 +643,6 @@ int octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 		ndata.buftype = NORESP_BUFTYPE_NET_SG;
 	}
 
-	{
-		octeon_device_t *oct = (octeon_device_t *) priv->oct_dev;
-		if ((oct->chip_id == OCTEON_CN83XX_PF)
-		    || (oct->chip_id == OCTEON_CN83XX_VF)
-		    || (oct->chip_id == OCTEON_CN93XX_PF)
-		    || (oct->chip_id == OCTEON_CN98XX_PF)) {
-
-			if (skb_shinfo(skb)->gso_size) {
-				tso_info_t *tx_info;
-				octeon_instr3_64B_t *cmd_o3;
-
-				cmd_o3 = (octeon_instr3_64B_t *) & (ndata.cmd);
-				tx_info = (tso_info_t *) & (cmd_o3->exhdr[0]);
-
-				tx_info->s.gso_size = skb_shinfo(skb)->gso_size;
-				tx_info->s.gso_segs = skb_shinfo(skb)->gso_segs;
-				//printk("gso_size: %d, gso_segs: %d\n", tx_info->s.gso_size, tx_info->s.gso_segs);
-			}
-		}
-	}
-
 	status = octnet_send_nic_data_pkt(priv->oct_dev, &ndata, !skb->xmit_more);
 	if (status == NORESP_SEND_FAILED)
 		goto oct_xmit_failed;

@@ -67,10 +67,6 @@ typedef struct octeon_in_cnt_ism {
     a Octeon device has one such structure to represent it.
 */
 typedef struct {
-
-  /** A spinlock to protect access to the input ring.  */
-	cavium_spinlock_t lock;
-
   /** Flag that indicates if the queue uses 64 byte commands. */
 	uint32_t iqcmd_64B:1;
 

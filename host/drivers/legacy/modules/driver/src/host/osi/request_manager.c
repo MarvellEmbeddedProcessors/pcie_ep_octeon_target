@@ -384,11 +384,9 @@ update_iq_indices(octeon_device_t * oct, octeon_instr_queue_t * iq)
 static inline void
 flush_instr_queue(octeon_device_t * oct, octeon_instr_queue_t * iq)
 {
-	cavium_spin_lock_softirqsave(&iq->lock);
 	update_iq_indices(oct, iq);
 
 	process_noresponse_list(oct, iq);
-	cavium_spin_unlock_softirqrestore(&iq->lock);
 }
 
 #ifdef OCT_NIC_IQ_USE_NAPI
@@ -453,16 +451,6 @@ oct_poll_fn_status_t check_db_timeout(void *octptr, unsigned long iq_no)
 		return OCT_POLL_FN_CONTINUE;
 	}
 	iq->last_db_time = cavium_jiffies;
-
-#if 0
-	/* Get the lock and prevent tasklets. This routine gets called from
-	   the poll thread. Instructions can now be posted in tasklet context */
-	cavium_spin_lock_softirqsave(&iq->lock);
-	if (iq->fill_cnt != 0)
-		ring_doorbell(oct, iq);
-
-	cavium_spin_unlock_softirqrestore(&iq->lock);
-#endif
 
 	/* Flush the instruction queue */
 	if (iq->do_auto_flush)
@@ -702,8 +690,6 @@ __do_instruction_processing(octeon_device_t * oct,
 		cmd->irh = *irh;
 	}
 
-	cavium_spin_lock_softirqsave(&iq->lock);
-
 	if (!iq->iqcmd_64B) {
 		q_index = post_command32B(oct, iq,
 					  (si->alloc_flags &
@@ -746,8 +732,6 @@ __do_instruction_processing(octeon_device_t * oct,
 		    || (si->alloc_flags & OCTEON_SOFT_INSTR_DB_NOW))
 			ring_doorbell(oct, iq);
 
-		cavium_spin_unlock_softirqrestore(&iq->lock);
-
 		if (resp_order != OCTEON_RESP_NORESPONSE) {
 			uint32_t resp_list;
 
@@ -760,8 +744,6 @@ __do_instruction_processing(octeon_device_t * oct,
 	} else {
 
 		iq->stats.instr_dropped++;
-
-		cavium_spin_unlock_softirqrestore(&iq->lock);
 
 		cavium_error(
 			     "OCTEON[%d]: No space in IQ[%d] to post instruction\n",
@@ -1514,8 +1496,6 @@ octeon_send_noresponse_command(octeon_device_t * oct,
 	iq_post_status_t st;
 	octeon_instr_queue_t *iq = oct->instr_queue[iq_no];
 
-	cavium_spin_lock_softirqsave(&iq->lock);
-
 	st = __post_command2(oct, iq, cmd);
 
 	if (cavium_likely(st.status != IQ_SEND_FAILED)) {
@@ -1531,8 +1511,6 @@ octeon_send_noresponse_command(octeon_device_t * oct,
 			ring_doorbell(oct, iq);
 		INCR_INSTRQUEUE_PKT_COUNT(oct, iq_no, instr_dropped, 1);
 	}
-
-	cavium_spin_unlock_softirqrestore(&iq->lock);
 
 #ifndef OCT_NIC_IQ_USE_NAPI
 	if (iq->do_auto_flush)
@@ -1712,8 +1690,6 @@ octeon_flush_iq(octeon_device_t *oct, octeon_instr_queue_t *iq,
     uint32_t tot_inst_processed = 0;
     int tx_done = 1;
 
-	spin_lock_bh(&iq->lock);
-									    
 	iq->octeon_read_index = oct->fn_list.update_iq_read_idx(iq);
 
 	do {
@@ -1747,8 +1723,6 @@ octeon_flush_iq(octeon_device_t *oct, octeon_instr_queue_t *iq,
 
 	iq->last_db_time = jiffies;
 
-	spin_unlock_bh(&iq->lock);
-
 	//printk("%s: DONE; Q-%d budget=%u; tot_inst_processed=%u read_idx=%u flush=%u\n", __func__, iq->iq_no, napi_budget, tot_inst_processed, iq->octeon_read_index, iq->flush_index);
 	return tx_done;
 }
@@ -1768,8 +1742,6 @@ void octeon_perf_flush_iq(octeon_device_t * oct, octeon_instr_queue_t * iq)
 {
 	uint32_t inst_processed = 0;
 
-	cavium_spin_lock_softirqsave(&iq->lock);
-
 	iq->octeon_read_index = oct->fn_list.update_iq_read_idx(iq);
 
 	if (iq->flush_index != iq->octeon_read_index) {
@@ -1787,8 +1759,6 @@ void octeon_perf_flush_iq(octeon_device_t * oct, octeon_instr_queue_t * iq)
 		cavium_atomic_sub(inst_processed, &iq->instr_pending);
 		iq->stats.instr_processed += inst_processed;
 	}
-	cavium_spin_unlock_softirqrestore(&iq->lock);
-
 	return;
 }
 

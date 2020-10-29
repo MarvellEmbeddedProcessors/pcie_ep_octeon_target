@@ -708,15 +708,7 @@ void cn83xx_handle_pf_mbox_intr(octeon_device_t * oct)
 cvm_intr_return_t cn83xx_pf_msix_interrupt_handler(void *dev)
 {
 	octeon_ioq_vector_t *ioq_vector = (octeon_ioq_vector_t *) dev;
-	octeon_device_t *oct = ioq_vector->oct_dev;
 	octeon_droq_t *droq = ioq_vector->droq;
-	uint64_t intr64;
-
-	intr64 = OCTEON_READ64(ioq_vector->droq->pkts_sent_reg);
-	if (!(intr64 & (0x7ULL << 60)))
-		return CVM_INTR_NONE;
-
-	oct->stats.interrupts++;
 
 	droq->ops.napi_fun((void *)droq);
 	return CVM_INTR_HANDLED;

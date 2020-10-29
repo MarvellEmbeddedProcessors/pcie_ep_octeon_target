@@ -147,9 +147,6 @@ int octeon_init_instr_queue(octeon_device_t * oct, int iq_no)
 	iq->pkts_processed = 0;
 	iq->pkt_in_done = 0;
 
-	/* Initialize the spinlock for this instruction queue */
-	cavium_spin_lock_init(&iq->lock);
-
 	oct->io_qmask.iq |= (1ULL << iq_no);
 
 	/* Set the 32B/64B mode for each input queue */
