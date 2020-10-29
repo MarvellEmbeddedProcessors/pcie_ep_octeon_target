@@ -626,6 +626,9 @@ octnet_setup_nic_device(int octeon_id, oct_link_info_t * link_info, int ifidx)
 	cavium_memset(priv, 0, sizeof(octnet_priv_t));
 
 	priv->ifidx = ifidx;
+#ifdef OCT_NIC_LOOPBACK
+	priv->priv_xmit = __octnet_xmit;
+#endif
 
 	/* Point to the  properties for octeon device to which this interface
 	   belongs. */

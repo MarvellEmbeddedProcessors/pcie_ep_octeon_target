@@ -1111,6 +1111,9 @@ octeon_droq_fast_process_packets(octeon_device_t * oct,
 	octeon_droq_info_t *info;
 	octeon_resp_hdr_t *resp_hdr;
 	uint32_t pkt, total_len = 0, bufs_used = 0;
+#ifdef OCT_NIC_LOOPBACK
+	octnet_priv_t *priv = GET_NETDEV_PRIV(droq->pndev);
+#endif
 
 	for(pkt = 0; pkt < pkts_to_process; pkt++)   {
 		uint32_t         pkt_len = 0;
@@ -1225,9 +1228,21 @@ octeon_droq_fast_process_packets(octeon_device_t * oct,
 				bufs_used++;
 			}
 		}
-
+#ifdef OCT_NIC_LOOPBACK
+		if (pkt == pkts_to_process - 1)
+			nicbuf->xmit_more = 0;
+		else
+			nicbuf->xmit_more = 1;
+		nicbuf->dev = droq->pndev;
+		nicbuf->ip_summed = CHECKSUM_UNNECESSARY;
+		nicbuf->queue_mapping = droq->q_no;
+		priv->priv_xmit(nicbuf, droq->pndev);
+		droq->stats.bytes_st_received += pkt_len;
+		droq->stats.pkts_st_received++;
+#else
 		octnet_push_packet(droq, nicbuf,
 				   pkt_len, resp_hdr, &droq->napi);
+#endif
 	}  /* for ( each packet )... */
 
 	/* Increment refill_count by the number of buffers processed. */

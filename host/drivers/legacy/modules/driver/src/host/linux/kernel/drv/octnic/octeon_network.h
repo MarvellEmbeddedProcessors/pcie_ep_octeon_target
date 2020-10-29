@@ -136,6 +136,10 @@ typedef struct {
 
 	octnet_os_devptr_t *pndev;
 
+#ifdef OCT_NIC_LOOPBACK
+	int (*priv_xmit)(struct sk_buff *skb, struct net_device *dev);
+#endif
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,24)
 	struct napi_struct napi;
 #endif
@@ -253,6 +257,10 @@ int octnet_set_mac(octnet_os_devptr_t * pndev, void *addr);
 int octnet_change_mtu(octnet_os_devptr_t * pndev, int new_mtu);
 
 int octnet_xmit(struct sk_buff *skb, octnet_os_devptr_t * pndev);
+
+#ifdef OCT_NIC_LOOPBACK
+int __octnet_xmit(struct sk_buff *skb, octnet_os_devptr_t * pndev);
+#endif
 
 struct net_device_stats *octnet_stats(octnet_os_devptr_t * pndev);
 

@@ -486,7 +486,12 @@ static inline int is_tcpudp(struct sk_buff *skb)
 		|| (cvm_ip_hdr(skb)->protocol == IPPROTO_UDP));
 }
 
-int octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
+
+#ifndef OCT_NIC_LOOPBACK
+static inline int __octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
+#else
+int __octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
+#endif
 {
 	octnet_priv_t *priv;
 	struct octnet_buf_free_info *finfo;
@@ -500,11 +505,19 @@ int octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 	priv = GET_NETDEV_PRIV(pndev);
 
 	if (netif_is_multiqueue(pndev)) {
+#ifdef OCT_NIC_LOOPBACK
+		/* loopback needs to use same queue pair */
+		cpu = skb->queue_mapping;
+#else
 		/* queue mapping: tuned for TCP_RR/STREAM perf: get corenum */
 		cpu = smp_processor_id();
+#endif
 		q_no = priv->txq + (cpu & (priv->linfo.num_txpciq - 1));
 		/* mq support: defer sending if qfull */
 		if (octnet_iq_is_full(priv->oct_dev, q_no)) {
+#ifdef OCT_NIC_LOOPBACK
+			free_recv_buffer(skb);
+#endif
 			/* TODO: increment some counter for ethtool stats ?? */
 			return OCT_NIC_TX_BUSY;
 		}
@@ -512,6 +525,7 @@ int octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 		q_no = priv->txq;
 	}
 
+#ifndef OCT_NIC_LOOPBACK
 #ifdef CONFIG_PPORT
 	if (unlikely(*(u32 *)(&skb->cb[SKB_CB_PPORT_MAGIC_OFFSET]) !=
 		     SKB_CB_PPORT_MAGIC_U32)) {
@@ -519,6 +533,7 @@ int octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 			     "pport mode - can't send packets from Linux stack\n");
 		goto oct_xmit_failed;
 	}
+#endif
 #endif
 
 	if (!OCTNET_IFSTATE_CHECK(priv, OCT_NIC_IFSTATE_TXENABLED)) {
@@ -648,10 +663,10 @@ int octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 		goto oct_xmit_failed;
 
 	if (status == NORESP_SEND_STOP) {
-
+#ifndef OCT_NIC_LOOPBACK
 		octnet_stop_queue(priv->pndev, cpu);
-
 		OCTNET_IFSTATE_RESET(priv, OCT_NIC_IFSTATE_TXENABLED);
+#endif
 	}
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,7,0)
@@ -660,7 +675,6 @@ int octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 #elif LINUX_VERSION_CODE < KERNEL_VERSION(3,10,0)
        pndev->trans_start = jiffies;
 #endif
-
 	return OCT_NIC_TX_OK;
 
 oct_xmit_failed:
@@ -668,6 +682,16 @@ oct_xmit_failed:
 	oct_dev->instr_queue[q_no]->stats.instr_dropped++;
 	free_recv_buffer(skb);
 	return OCT_NIC_TX_OK;
+}
+
+int octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
+{
+#ifdef OCT_NIC_LOOPBACK
+	free_recv_buffer(skb);
+	return OCT_NIC_TX_OK;
+#else
+	return __octnet_xmit(skb, pndev);
+#endif
 }
 
 void octnet_napi_enable(octnet_priv_t * priv)
