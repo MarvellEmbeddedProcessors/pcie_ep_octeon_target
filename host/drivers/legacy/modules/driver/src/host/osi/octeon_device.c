@@ -2594,7 +2594,12 @@ void octeon_iq_intr_tune(struct work_struct *work)
 			     (jiffies_to_msecs(curr_ts - iq_intr_wq->last_ts)*10);
 		if (print)
 			printk("%s: IQ-%d set to %d\n", __func__, i, intr_level);
-		OCTEON_WRITE32(iq->intr_lvl_reg, intr_level);
+		/* 10 microseconds or packet count */
+		if ((oct->chip_id == OCTEON_CN93XX_PF) ||
+		    (oct->chip_id == OCTEON_CN98XX_PF))
+			OCTEON_WRITE64(iq->intr_lvl_reg, (1UL << 62) | (10UL << 32) | intr_level);
+		else
+			OCTEON_WRITE32(iq->intr_lvl_reg, intr_level);
 		OCTEON_WRITE64(iq->inst_cnt_reg, 1UL << 59);
 		iq_intr_wq->last_pkt_cnt[i] = iq->stats.instr_processed;
 	}
@@ -2623,5 +2628,6 @@ void octeon_enable_irq(octeon_droq_t *droq, octeon_instr_queue_t *iq)
 	}
 	mmiowb();
 	OCTEON_WRITE64(droq->pkts_sent_reg, 1UL << 59);
+	OCTEON_WRITE64(iq->inst_cnt_reg, 1UL << 59);
 }
 /* $Id: octeon_device.c 165632 2017-08-31 09:12:31Z mchalla $ */

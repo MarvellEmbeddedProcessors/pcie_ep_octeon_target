@@ -438,8 +438,8 @@ static void cn93xx_setup_iq_regs(octeon_device_t * oct, int iq_no)
 	    + CN93XX_SDP_R_IN_INT_LEVELS(iq_no);
 
 	cavium_print(PRINT_DEBUG,
-		     "InstQ[%d]:dbell reg @ 0x%p instcnt_reg @ 0x%p\n", iq_no,
-		     iq->doorbell_reg, iq->inst_cnt_reg);
+		     "InstQ[%d]:dbell reg @ 0x%p instcnt_reg @ 0x%p 0x%p\n", iq_no,
+		     iq->doorbell_reg, iq->inst_cnt_reg, iq->intr_lvl_reg);
 
 	/* Store the current instruction counter (used in flush_iq calculation) */
 	iq->reset_instr_cnt = OCTEON_READ32(iq->inst_cnt_reg);
@@ -560,6 +560,11 @@ static void cn93xx_enable_input_queue(octeon_device_t * oct, int iq_no)
 	       && loop--) {
 		cavium_sleep_timeout(1);
 	}
+
+	reg_val = octeon_read_csr64(oct,  CN93XX_SDP_R_IN_INT_LEVELS(iq_no));
+	reg_val |= (0x1ULL << 62);
+	octeon_write_csr64(oct, CN93XX_SDP_R_IN_INT_LEVELS(iq_no), reg_val);
+
 	/* Can directly enable as, waiting for IDLE while configuring BADDR */
 	reg_val = octeon_read_csr64(oct,
 				    CN93XX_SDP_R_IN_ENABLE(iq_no));
