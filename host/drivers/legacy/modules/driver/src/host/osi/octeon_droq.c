@@ -1181,6 +1181,7 @@ octeon_droq_fast_process_packets(octeon_device_t * oct,
 			(void)recv_buf_put(nicbuf, pkt_len);
 			bufs_used++;
 		} else {
+			int info_len = info->length;
 			nicbuf  = cav_net_buff_rx_alloc(info->length, droq->app_ctx);
 			if(cavium_unlikely(!nicbuf)) { 
 				cavium_error("%s buffer alloc failed\n",
@@ -1188,40 +1189,35 @@ octeon_droq_fast_process_packets(octeon_device_t * oct,
 				/* TODO: "drop and throw error" or
 				 * "try again until succeed" ??
 				 */
+				droq->stats.dropped_nomem++;
 				break;
 			}
 			pkt_len = 0;
 			/* nicbuf allocation can fail. We'll handle it inside the loop. */
-			while(pkt_len < info->length) {
+			while(pkt_len < info_len) {
 				int copy_len = 0;
+				uint8_t copy_offset;
 				uint8_t *data;
 
-				copy_len = ((pkt_len + droq->buffer_size) >
-					    info->length) ?
-					    (info->length - pkt_len) :
-					    droq->buffer_size;
-				if(cavium_likely(nicbuf)) {
-					octeon_pci_unmap_single(oct->pci_dev, (unsigned long)droq->desc_ring[droq->host_read_index].buffer_ptr, droq->buffer_size, CAVIUM_PCI_DMA_FROMDEVICE);
-
-					if(!pkt_len) {
-						copy_len = ((pkt_len + droq->buffer_size - sizeof(octeon_droq_info_t)) > info->length)?(info->length - pkt_len):(droq->buffer_size - sizeof(octeon_droq_info_t));
-
-						cavium_memcpy( recv_buf_put(nicbuf, copy_len), 
-							((get_recv_buffer_data(droq->recv_buf_list[droq->host_read_index].buffer, droq->app_ctx)) + sizeof(octeon_droq_info_t)),
-								copy_len);
-					} else {
-						copy_len = ((pkt_len + droq->buffer_size) > info->length)?(info->length - pkt_len):droq->buffer_size;
-					
-						cavium_memcpy( recv_buf_put(nicbuf, copy_len), 
-							get_recv_buffer_data(droq->recv_buf_list[droq->host_read_index].buffer, droq->app_ctx), 
-								copy_len);
-					}
-					/* Remap the buffers after copy is done */
-					data = get_recv_buffer_data(droq->recv_buf_list[droq->host_read_index].buffer,droq->app_ctx);
-					droq->desc_ring[droq->host_read_index].buffer_ptr = (uint64_t)cnnic_pci_map_single(oct->pci_dev, data, droq->buffer_size, CAVIUM_PCI_DMA_FROMDEVICE, droq->app_ctx);
+				if (pkt_len) {
+					if ((info_len - pkt_len) > droq->buffer_size)
+						copy_len = droq->buffer_size;
+					else
+						copy_len = info_len - pkt_len;
+					copy_offset = 0;
 				} else {
-					droq->stats.dropped_nomem++;
+					copy_len = droq->buffer_size - sizeof(octeon_droq_info_t);
+					copy_offset = sizeof(octeon_droq_info_t);
 				}
+				octeon_pci_unmap_single(oct->pci_dev, (unsigned long)droq->desc_ring[droq->host_read_index].buffer_ptr, droq->buffer_size, CAVIUM_PCI_DMA_FROMDEVICE);
+
+				cavium_memcpy(recv_buf_put(nicbuf, copy_len),
+					      (get_recv_buffer_data(droq->recv_buf_list[droq->host_read_index].buffer, droq->app_ctx)) + copy_offset, copy_len);
+				/* Remap the buffers after copy is done */
+				data = get_recv_buffer_data(droq->recv_buf_list[droq->host_read_index].buffer, droq->app_ctx);
+				memset(data, 0, 16);
+				droq->desc_ring[droq->host_read_index].buffer_ptr =
+					(uint64_t)cnnic_pci_map_single(oct->pci_dev, data, droq->buffer_size, CAVIUM_PCI_DMA_FROMDEVICE, droq->app_ctx);
 
 				pkt_len += copy_len;
 				INCR_INDEX_BY1(droq->host_read_index, droq->max_count);
