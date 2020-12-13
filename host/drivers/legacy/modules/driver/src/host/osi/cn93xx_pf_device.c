@@ -32,7 +32,8 @@ extern void mv_facility_irq_handler(uint64_t event_word);
 
 extern int num_rings_per_pf;
 extern int num_rings_per_vf;
-static int num_rings_per_pf_pt, num_rings_per_vf_pt;
+static int num_rings_per_pf_pt, num_rings_per_vf_pt, pf_srn_pt;
+extern void cn93xx_iq_intr_handler(octeon_ioq_vector_t * ioq_vector);
 
 void cn93xx_dump_iq_regs(octeon_device_t * oct)
 {
@@ -1068,14 +1069,15 @@ union ring {
                 u64 rpvf:8;
                 u64 rppf:8;
                 u64 numvf:8;
-                u64 rsvd:10;
+                u64 pf_srn:8;
+                u64 rsvd:2;
                 u64 raz:28;
         } s;
 };
 
 static int resume_cn93xx_setup(octeon_device_t * oct)
 {
-	uint64_t npfs = 0, rppf = 0, pf_srn = 0;
+	uint64_t npfs = 0, rppf = 0, pf_srn = pf_srn_pt;
 	uint64_t nvfs = 0, rpvf = 0, vf_srn = 0;
 	int i, j, srn;
 #ifndef ETHERPCI
@@ -1184,7 +1186,8 @@ static int resume_cn93xx_setup(octeon_device_t * oct)
 
 	oct->sriov_info.rings_per_vf = rpvf;
 	/** All the remaining queues are handled by Physical Function */
-	oct->sriov_info.pf_srn = oct->octeon_id * num_rings_per_pf_pt;
+	//oct->sriov_info.pf_srn = oct->octeon_id * num_rings_per_pf_pt;
+	oct->sriov_info.pf_srn = pf_srn_pt;
 	oct->sriov_info.rings_per_pf = rppf;
 
 	oct->sriov_info.sriov_enabled = 0;
@@ -1229,9 +1232,10 @@ octeon_wait_fw_info(struct work_struct *work)
 	rinfo.u = octeon_read_csr64(oct, CN93XX_SDP_R_IN_PKT_CNT(0));
 	if (rinfo.s.dir == FW_TO_HOST) {
 		if (fw_hs_wrk->exhg_state == NO_EXHG) {
-			printk("rpf %d rvf %d nvf %d\n", rinfo.s.rppf,
-					rinfo.s.rpvf, rinfo.s.numvf);
+			printk("pf_srn %d rpf %d rvf %d nvf %d\n", rinfo.s.pf_srn,
+			       rinfo.s.rppf, rinfo.s.rpvf, rinfo.s.numvf);
 
+			pf_srn_pt = rinfo.s.pf_srn;
 			num_rings_per_pf_pt = num_rings_per_pf;
 			num_rings_per_vf_pt = num_rings_per_vf;
 			if (num_rings_per_pf_pt != 1)
