@@ -23,19 +23,22 @@
 #define MRVL_CPU_PART_OCTEONTX2_98XX	0x0B1
 
 #define FDT_NAME         "pcie-ep"
-static unsigned int  host_sid = 0x030000;
-module_param(host_sid, uint, 0644);
+static unsigned int  host_sid[2] = {0x030000, 0x050000};
+static int host_sid_arr_count = 0;
+module_param_array(host_sid, uint, &host_sid_arr_count, 0644);
 MODULE_PARM_DESC(host_sid, "host stream id (((0x3 + PEM_NUM) << 16) + Host_requester id");
 
-static unsigned int  pem_num = 0;
-module_param(pem_num, uint, 0644);
+static unsigned int  pem_num[2] = {0,2};
+static int pem_num_arr_cnt = 0;
+module_param_array(pem_num, uint, &pem_num_arr_cnt, 0644);
 MODULE_PARM_DESC(pem_num, "PEM number to use");
 
-static unsigned int  epf_num = 0;
-module_param(epf_num, uint, 0644);
+static unsigned int  epf_num[2] = {0,0};
+static int epf_num_arr_cnt = 0;
+module_param_array(epf_num, uint, &epf_num_arr_cnt, 0644);
 MODULE_PARM_DESC(epf_num, "epf number to use");
 
-static uint64_t sdp_num = 0;
+static uint64_t sdp_num[2] = {0,1};
 
 #define CN93xx_SDP_BASE(a) (0x86E080000000ULL | a << 36)
 #define CN93XX_SDPX_EPFX_SCRATCH_OFFSET(epf) (0x000205E0ULL | (epf << 25))
@@ -177,7 +180,7 @@ err:
  * 1. populate entry-8 for ring memory
  * 2. populate entry-15 for GICD CSRs, so that host can write through BARs
  */
-static int npu_base_setup(struct npu_bar_map *bar_map)
+static int npu_base_setup(struct npu_bar_map *bar_map, int instance)
 {
 	phys_addr_t barmap_mem_phys;
 	phys_addr_t phys_addr_i;
@@ -222,10 +225,10 @@ static int npu_base_setup(struct npu_bar_map *bar_map)
 		int ii = i - NPU_BARMAP_FIREWALL_FIRST_ENTRY;
 		phys_addr_i = barmap_mem_phys + (ii * NPU_BARMAP_ENTRY_SIZE);
 		if (part_num == CAVIUM_CPU_PART_T83)
-			bar_idx_addr = PEMX_REG_BASE_83XX(pem_num) + PEM_BAR1_INDEX_OFFSET(i);
+			bar_idx_addr = PEMX_REG_BASE_83XX(pem_num[instance]) + PEM_BAR1_INDEX_OFFSET(i);
 		else if (part_num == MRVL_CPU_PART_OCTEONTX2_96XX ||
 			 part_num == MRVL_CPU_PART_OCTEONTX2_98XX)
-			bar_idx_addr = PEMX_REG_BASE_93XX(pem_num) + PEM_BAR4_INDEX_OFFSET(i);
+			bar_idx_addr = PEMX_REG_BASE_93XX(pem_num[instance]) + PEM_BAR4_INDEX_OFFSET(i);
 		else {
 			printk("Error: Invalid part_num = %lu\n", part_num);
 			return -1;
@@ -240,10 +243,10 @@ static int npu_base_setup(struct npu_bar_map *bar_map)
 	 * local memory write to interrupt NPU for any work on any virtual ring
 	 */
 	if (part_num == CAVIUM_CPU_PART_T83)
-		bar_idx_addr = PEMX_REG_BASE_83XX(pem_num) + PEM_BAR1_INDEX_OFFSET(15);
+		bar_idx_addr = PEMX_REG_BASE_83XX(pem_num[instance]) + PEM_BAR1_INDEX_OFFSET(15);
 	else if (part_num == MRVL_CPU_PART_OCTEONTX2_96XX ||
 		 part_num == MRVL_CPU_PART_OCTEONTX2_98XX)
-		bar_idx_addr = PEMX_REG_BASE_93XX(pem_num)  + PEM_BAR4_INDEX_OFFSET(15);
+		bar_idx_addr = PEMX_REG_BASE_93XX(pem_num[instance])  + PEM_BAR4_INDEX_OFFSET(15);
 
 	bar_idx_val = ((NPU_GICD_BASE >> 22) << 4) | 1;
 	printk("Writing BAR entry-15 to map GICD; addr=%llx, val=%llx\n",
@@ -251,10 +254,10 @@ static int npu_base_setup(struct npu_bar_map *bar_map)
 	npu_csr_write(bar_idx_addr, bar_idx_val);
 
 	if (part_num == CAVIUM_CPU_PART_T83)
-		oei_trig_remap_addr = ioremap(CN83XX_SDP0_EPFX_OEI_TRIG_ADDR(epf_num), 8);
+		oei_trig_remap_addr = ioremap(CN83XX_SDP0_EPFX_OEI_TRIG_ADDR(epf_num[instance]), 8);
 	else if (part_num == MRVL_CPU_PART_OCTEONTX2_96XX ||
 		 part_num == MRVL_CPU_PART_OCTEONTX2_98XX)
-		oei_trig_remap_addr = ioremap(CN93XX_SDPX_EPFX_OEI_TRIG_ADDR(sdp_num, epf_num), 8);
+		oei_trig_remap_addr = ioremap(CN93XX_SDPX_EPFX_OEI_TRIG_ADDR(sdp_num[instance], epf_num[instance]), 8);
 
 	if (oei_trig_remap_addr == NULL) {
 		printk("Failed to ioremap oei_trig space\n");
@@ -262,14 +265,14 @@ static int npu_base_setup(struct npu_bar_map *bar_map)
 	}
 	if (part_num == MRVL_CPU_PART_OCTEONTX2_96XX ||
 	    part_num == MRVL_CPU_PART_OCTEONTX2_98XX) {
-		disport_addr = PEMX_REG_BASE_93XX(pem_num) + PEM_DIS_PORT_OFFSET;
+		disport_addr = PEMX_REG_BASE_93XX(pem_num[instance]) + PEM_DIS_PORT_OFFSET;
 		npu_csr_write(disport_addr, 1);
 	}
 
 	return 0;
 }
 
-static void npu_handshake_ready(struct npu_bar_map *bar_map)
+static void npu_handshake_ready(struct npu_bar_map *bar_map, int instance)
 {
 	uint64_t scratch_val;
 	uint64_t scratch_addr;
@@ -278,10 +281,10 @@ static void npu_handshake_ready(struct npu_bar_map *bar_map)
 	printk("Writing to scratch register\n");
 	part_num = read_cpuid_part_number();
 	if (part_num == CAVIUM_CPU_PART_T83)
-		scratch_addr = CN83xx_SDP_BASE + CN83XX_SDP0_SCRATCH_OFFSET(epf_num);
+		scratch_addr = CN83xx_SDP_BASE + CN83XX_SDP0_SCRATCH_OFFSET(epf_num[instance]);
 	else if (part_num == MRVL_CPU_PART_OCTEONTX2_96XX ||
 		 part_num == MRVL_CPU_PART_OCTEONTX2_98XX)
-		scratch_addr = CN93xx_SDP_BASE(sdp_num) + CN93XX_SDPX_EPFX_SCRATCH_OFFSET(epf_num);
+		scratch_addr = CN93xx_SDP_BASE(sdp_num[instance]) + CN93XX_SDPX_EPFX_SCRATCH_OFFSET(epf_num[instance]);
 	else
 		return;
 	scratch_val = ((uint64_t)(NPU_BARMAP_FIREWALL_FIRST_ENTRY *
@@ -305,6 +308,11 @@ static int npu_base_probe(struct platform_device *pdev)
 	unsigned long part_num;
 	struct device *smmu_dev;
 	struct iommu_domain *host_domain;
+	int instance = 0;
+
+	ret = device_property_read_u32(dev, "instance", &instance);
+	if (ret)
+		instance = 0;
 
 	part_num = read_cpuid_part_number();
 	printk("CPU Part: 0x%lx\n", part_num);
@@ -346,7 +354,7 @@ static int npu_base_probe(struct platform_device *pdev)
 
 		dev_dbg(dev, "NEW dev->iommu_fwspec %p\n", dev->iommu_fwspec);
 
-		ret = iommu_fwspec_add_ids(dev, &host_sid, 1);
+		ret = iommu_fwspec_add_ids(dev, &host_sid[instance], 1);
 		if (ret) {
 			dev_err(dev, "Error %d from iommu_fwspec_add_ids()\n",
 				ret);
@@ -372,12 +380,7 @@ static int npu_base_probe(struct platform_device *pdev)
 		}
 	}
 
-	/* on 98xx SDP number changes as per the PEM used */
-	if (part_num == MRVL_CPU_PART_OCTEONTX2_98XX) {
-		sdp_num = pem_num / 2;
-	}
-
-	printk("SDP block = %lld\n", sdp_num);
+	printk("SDP block = %lld\n", sdp_num[instance]);
 
 	irq = platform_get_irq(pdev, 0);
 	if (irq < 0) {
@@ -401,18 +404,18 @@ static int npu_base_probe(struct platform_device *pdev)
 		irq_info[i].cpumask = NULL;
 	}
 
-	if (npu_bar_map_init(&bar_map, pem_num, first_irq, irq_count)) {
+	if (npu_bar_map_init(&bar_map, pem_num[instance], first_irq, irq_count)) {
 		printk("bar map int failed\n");
 		return -1;
 	}
 
-	if (npu_base_setup(&bar_map)) {
+	if (npu_base_setup(&bar_map, instance)) {
 		printk("Base setup failed\n");
 		return -1;
 	}
 
 	plat_dev = dev;
-	npu_handshake_ready(&bar_map);
+	npu_handshake_ready(&bar_map, instance);
 	mv_facility_conf_init(dev, npu_barmap_mem, &bar_map);
 	npu_device_access_init();
 	return 0;
