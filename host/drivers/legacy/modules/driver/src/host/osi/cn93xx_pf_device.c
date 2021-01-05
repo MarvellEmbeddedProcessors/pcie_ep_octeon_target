@@ -11,7 +11,7 @@
 
 #define FW_TO_HOST 0x2
 #define HOST_TO_FW 0x1
-int g_app_mode = CVM_DRV_APP_START;
+int g_app_mode[2] = {CVM_DRV_APP_START, CVM_DRV_APP_START};
 enum info_exhg_state {
 	/* State where F/W isn't posted anything */
 	NO_EXHG,
@@ -25,7 +25,7 @@ struct fw_handshake_wrk {
 	octeon_device_t *oct;
 	enum info_exhg_state exhg_state;
 };
-struct fw_handshake_wrk hs_wrk;
+struct fw_handshake_wrk hs_wrk[2];
 
 extern int octeon_device_init(octeon_device_t *, int);
 extern void mv_facility_irq_handler(uint64_t event_word);
@@ -1229,6 +1229,7 @@ octeon_wait_fw_info(struct work_struct *work)
 	fw_hs_wq = container_of(work,struct cavium_wq, wk.work.work);
 	fw_hs_wrk = (struct fw_handshake_wrk *)fw_hs_wq->wk.ctxptr;
 	oct = fw_hs_wrk->oct;
+	printk("OCTEON id = %d\n", oct->octeon_id);
 	rinfo.u = octeon_read_csr64(oct, CN93XX_SDP_R_IN_PKT_CNT(0));
 	if (rinfo.s.dir == FW_TO_HOST) {
 		if (fw_hs_wrk->exhg_state == NO_EXHG) {
@@ -1266,6 +1267,7 @@ octeon_wait_fw_info(struct work_struct *work)
 			/* Relinquish the ring as the exchange is complete */
 			regval = 0;
 
+			printk("exchg complete for %d\n", oct->octeon_id);
 			if(oct->chip_id == OCTEON_CN93XX_PF) {
 				regval = (0  << CN93XX_SDP_MAC_PF_RING_CTL_NPFS_BIT_POS);
 				regval |= (0 << CN93XX_SDP_MAC_PF_RING_CTL_SRN_BIT_POS);
@@ -1282,7 +1284,7 @@ octeon_wait_fw_info(struct work_struct *work)
 			resume_cn93xx_setup(fw_hs_wrk->oct);
 			octeon_device_init(fw_hs_wrk->oct, 1);
 			/* Enabling NIC module to continue */
-			g_app_mode = CVM_DRV_NIC_APP;
+			g_app_mode[oct->octeon_id] = CVM_DRV_NIC_APP;
 
 			return;
 		}
@@ -1427,9 +1429,10 @@ enum setup_stage setup_cn98xx_octeon_pf_device(octeon_device_t * oct)
 			regval);
 
  	oct->sdp_wq.wq = alloc_workqueue("sdp_epmode_fw_hs", WQ_MEM_RECLAIM, 0);
-	hs_wrk.oct = oct;
-	hs_wrk.exhg_state = NO_EXHG;
-	oct->sdp_wq.wk.ctxptr = &hs_wrk;
+
+	hs_wrk[oct->octeon_id].oct = oct;
+	hs_wrk[oct->octeon_id].exhg_state = NO_EXHG;
+	oct->sdp_wq.wk.ctxptr = &hs_wrk[oct->octeon_id];
         INIT_DELAYED_WORK(&oct->sdp_wq.wk.work, octeon_wait_fw_info);
         queue_delayed_work(oct->sdp_wq.wq, &oct->sdp_wq.wk.work, 0);
 
@@ -1576,9 +1579,9 @@ enum setup_stage setup_cn93xx_octeon_pf_device(octeon_device_t * oct)
 			regval);
 
  	oct->sdp_wq.wq = alloc_workqueue("sdp_epmode_fw_hs", WQ_MEM_RECLAIM, 0);
-	hs_wrk.oct = oct;
-	hs_wrk.exhg_state = NO_EXHG;
-	oct->sdp_wq.wk.ctxptr = &hs_wrk;
+	hs_wrk[oct->octeon_id].oct = oct;
+	hs_wrk[oct->octeon_id].exhg_state = NO_EXHG;
+	oct->sdp_wq.wk.ctxptr = &hs_wrk[oct->octeon_id];
         INIT_DELAYED_WORK(&oct->sdp_wq.wk.work, octeon_wait_fw_info);
         queue_delayed_work(oct->sdp_wq.wq, &oct->sdp_wq.wk.work, 0);
 

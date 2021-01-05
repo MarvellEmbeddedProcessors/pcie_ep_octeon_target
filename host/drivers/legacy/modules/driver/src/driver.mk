@@ -108,7 +108,7 @@ ifeq ($(call kernel_compare, 3, 4, 110), 1)
 endif
 
 #Enable this flag for using host driver with only one PF
-OCTDRVFLAGS += -DUSE_SINGLE_PF
+#OCTDRVFLAGS += -DUSE_SINGLE_PF
 
 #Enable this flag for using host driver with emulator
 #OCTDRVFLAGS += -DBUILD_FOR_EMULATOR

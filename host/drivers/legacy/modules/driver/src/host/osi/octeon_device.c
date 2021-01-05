@@ -11,7 +11,7 @@
 extern int octeon_msix;
 extern int cn83xx_pf_setup_global_oq_reg(octeon_device_t *, int);
 extern int cn83xx_pf_setup_global_iq_reg(octeon_device_t *, int);
-extern int g_app_mode;
+extern int g_app_mode[];
 
 /* On 83xx this is called DPIx_SLI_PRTx_CFG but address is same */
 #define DPI0_EBUS_PORTX_CFG(a) (0x86E000004100ULL | (a)<<3)
@@ -1675,7 +1675,6 @@ octeon_wait_for_npu_base(void *octptr, unsigned long arg UNUSED)
 		}
 		printk("%s: CN83xx NPU is ready; MAGIC=0x%llX; memmap=0x%llX\n",
 		       __func__, reg_val & 0xffffffff, reg_val >> 32);
-	printk("hw_addr = 0x%llx\n", (unsigned long long)octeon_dev->mmio[1].hw_addr);
 		npu_bar_map_save(octeon_dev->mmio[1].hw_addr + (reg_val >> 32));
 		npu_barmap_dump((void *)&npu_memmap_info);
 		npu_mem_and_intr_test(octeon_dev, 1, &npu_memmap_info);
@@ -1692,9 +1691,8 @@ octeon_wait_for_npu_base(void *octptr, unsigned long arg UNUSED)
 		if((reg_val & 0xffffffff) != NPU_BASE_READY_MAGIC) {
 			return OCT_POLL_FN_CONTINUE;
 		}
-		printk("%s: CN83xx NPU is ready; MAGIC=0x%llX; memmap=0x%llX\n",
+		printk("%s: CN9xxx NPU is ready; MAGIC=0x%llX; memmap=0x%llX\n",
 		       __func__, reg_val & 0xffffffff, reg_val >> 32);
-		printk("hw_addr = 0x%llx\n", (unsigned long long)octeon_dev->mmio[2].hw_addr);
 		npu_bar_map_save(octeon_dev->mmio[2].hw_addr + (reg_val >> 32));
 		npu_barmap_dump((void *)&npu_memmap_info);
 		npu_mem_and_intr_test(octeon_dev, 2, &npu_memmap_info);
@@ -1775,8 +1773,8 @@ octeon_get_app_mode(void *octptr, unsigned long arg UNUSED)
        octeon_dev->chip_id == OCTEON_CN98XX_PF) {
 	//octeon_dev->app_mode = CVM_DRV_BASE_APP;
 	reg_val = 0;
-        if(((g_app_mode & 0xffff) != CVM_DRV_BASE_APP) && 
-            ((g_app_mode & 0xffff) != CVM_DRV_NIC_APP)) {
+        if(((g_app_mode[octeon_dev->octeon_id] & 0xffff) != CVM_DRV_BASE_APP) && 
+            ((g_app_mode[octeon_dev->octeon_id] & 0xffff) != CVM_DRV_NIC_APP)) {
 		return OCT_POLL_FN_CONTINUE;
 	}
 	octeon_dev->app_mode = CVM_DRV_NIC_APP;
