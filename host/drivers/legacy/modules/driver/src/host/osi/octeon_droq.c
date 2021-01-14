@@ -1194,6 +1194,10 @@ octeon_droq_fast_process_packets(octeon_device_t * oct,
 			}
 			pkt_len = 0;
 			/* nicbuf allocation can fail. We'll handle it inside the loop. */
+
+			/* initiating a csr read helps to flush pending dma */
+			droq->sent_reg_val = OCTEON_READ32(droq->pkts_sent_reg);
+			smp_rmb();
 			while(pkt_len < info_len) {
 				int copy_len = 0;
 				uint8_t copy_offset;

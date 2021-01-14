@@ -138,6 +138,15 @@ typedef struct {
       in this register. */
 	void *pkts_sent_reg;
 
+  /** Fix for DMA incompletion during pkt reads.
+      This variable is used to initiate a sent_reg_read
+      that completes pending dma
+      this variable is used as lvalue so compiler cannot optimize
+      the reads */
+	uint32_t sent_reg_val;
+
+
+
   /** Statistics for this DROQ. */
 	oct_droq_stats_t stats;
 
