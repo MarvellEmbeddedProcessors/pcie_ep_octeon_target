@@ -1069,7 +1069,6 @@ void octnet_push_packet(octeon_droq_t *droq,
 {
 	struct net_device *pndev = droq->pndev;
 	struct sk_buff     *skb   = (struct sk_buff *)skbuff;
-	int rc;
 
 	skb->dev = pndev;
 #ifndef CONFIG_PPORT
@@ -1091,14 +1090,10 @@ void octnet_push_packet(octeon_droq_t *droq,
 	else
 		skb->ip_summed = CHECKSUM_NONE;
 
-	rc = napi_gro_receive(napi, skb);
+	napi_gro_receive(napi, skb);
 
-	if (rc != GRO_DROP) {
-		droq->stats.bytes_st_received += len;
-		droq->stats.pkts_st_received++;
-	} else {
-		droq->stats.dropped_nomem++;
-	}
+	droq->stats.bytes_st_received += len;
+	droq->stats.pkts_st_received++;
 }
 
 #define OCTEON_PKTPUSH_THRESHOLD	128	/* packet push threshold: TCP_RR/STREAM perf. */
