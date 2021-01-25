@@ -12,6 +12,7 @@
 #define FW_TO_HOST 0x2
 #define HOST_TO_FW 0x1
 int g_app_mode[2] = {CVM_DRV_APP_START, CVM_DRV_APP_START};
+u8 g_vf_srn;
 enum info_exhg_state {
 	/* State where F/W isn't posted anything */
 	NO_EXHG,
@@ -1092,7 +1093,7 @@ static int resume_cn93xx_setup(octeon_device_t * oct)
 	if(oct->sriov_info.num_vfs) {
 		/* VF is enabled, Assign ring to VF */
 		nvfs = oct->sriov_info.num_vfs;
-		vf_srn = pf_srn + (npfs * num_rings_per_pf_pt);
+		vf_srn = g_vf_srn;
 	} else {
 		/* No VF enabled, Assign ring to PF */
 		nvfs = 0;
@@ -1237,6 +1238,7 @@ octeon_wait_fw_info(struct work_struct *work)
 			       rinfo.s.rppf, rinfo.s.rpvf, rinfo.s.numvf);
 
 			pf_srn_pt = rinfo.s.pf_srn;
+			g_vf_srn = rinfo.s.pf_srn + rinfo.s.rppf;
 			num_rings_per_pf_pt = num_rings_per_pf;
 			num_rings_per_vf_pt = num_rings_per_vf;
 			if (num_rings_per_pf_pt != 1)
