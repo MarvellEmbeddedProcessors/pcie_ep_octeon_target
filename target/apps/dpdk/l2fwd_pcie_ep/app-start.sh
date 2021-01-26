@@ -54,6 +54,7 @@ fi
 CONF_FILE="/etc/l2fwd_conf.csv"
 COREMASK=0xf
 GENERATOR_MODE=0
+ENABLE_GEN_JUMBO=1
 REFLECTOR_MODE=0
 DEBUG_MODE=0
 
@@ -63,6 +64,11 @@ if [[ $GENERATOR_MODE -eq 1 ]]; then
 elif [[ $REFLECTOR_MODE -eq 1 ]]; then
         ARGS+=" -r"
 fi
+
+if [[ $ENABLE_GEN_JUMBO -eq 1 ]]; then
+        ARGS+=" -j"
+fi
+
 if [[ $DEBUG_MODE -eq 1 ]]; then
         ARGS+=" -d"
 fi
