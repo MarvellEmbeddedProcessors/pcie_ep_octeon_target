@@ -100,15 +100,6 @@ struct lcore_queue_conf lcore_queue_conf[RTE_MAX_LCORE];
 
 static struct rte_eth_dev_tx_buffer *tx_buffer[RTE_MAX_ETHPORTS][MAX_QUEUE_PER_PORT];
 
-static struct rte_eth_conf port_conf = {
-	.rxmode = {
-		.split_hdr_size = 0,
-	},
-	.txmode = {
-		.mq_mode = ETH_MQ_TX_NONE,
-	},
-};
-
 struct rte_mempool * l2fwd_pktmbuf_pool = NULL;
 
 /* Per-port statistics struct */
@@ -876,6 +867,38 @@ main(int argc, char **argv)
 	unsigned int nb_lcores = 0;
 	unsigned int nb_mbufs;
 	unsigned i, j, k;
+	uint8_t default_key[] = {
+		0xFE, 0xED, 0x0B, 0xAD, 0xFE, 0xED, 0x0B, 0xAD,
+		0xAD, 0x0B, 0xED, 0xFE, 0xAD, 0x0B, 0xED, 0xFE,
+		0x13, 0x57, 0x9B, 0xEF, 0x24, 0x68, 0xAC, 0x0E,
+		0x91, 0x72, 0x53, 0x11, 0x82, 0x64, 0x20, 0x44,
+		0x12, 0xEF, 0x34, 0xCD, 0x56, 0xBC, 0x78, 0x9A,
+		0x9A, 0x78, 0xBC, 0x56, 0xCD, 0x34, 0xEF, 0x12
+	};
+
+	struct rte_eth_conf port_conf = {
+		.rxmode = {
+			.mq_mode = ETH_MQ_RX_RSS,
+			.max_rx_pkt_len = RTE_ETHER_MAX_LEN,
+			.split_hdr_size = 0,
+			.offloads = (DEV_RX_OFFLOAD_TCP_CKSUM |
+					DEV_RX_OFFLOAD_IPV4_CKSUM |
+					DEV_RX_OFFLOAD_UDP_CKSUM),
+		},
+		.rx_adv_conf = {
+			.rss_conf = {
+				.rss_key = default_key,
+				.rss_hf = (ETH_RSS_IP | ETH_RSS_UDP |
+						ETH_RSS_TCP),
+			},
+		},
+		.txmode = {
+			.mq_mode = ETH_MQ_TX_NONE,
+			.offloads = (DEV_TX_OFFLOAD_TCP_CKSUM |
+					DEV_TX_OFFLOAD_IPV4_CKSUM |
+					DEV_TX_OFFLOAD_UDP_CKSUM),
+		},
+	};
 
 	/* init EAL */
 	ret = rte_eal_init(argc, argv);
@@ -973,13 +996,45 @@ main(int argc, char **argv)
 
 		ret = rte_eth_dev_info_get(portid, &dev_info);
 		if (ret != 0)
-			rte_exit(EXIT_FAILURE,
-				"Error during getting device (port %u) info: %s\n",
-				portid, strerror(-ret));
+			rte_panic("Error during getting device (port %u) info: %s\n",
+				  portid, strerror(-ret));
+
+		if (!(dev_info.rx_offload_capa & DEV_RX_OFFLOAD_SCATTER))
+			printf("SCATTER not supported in driver\n");
+		else
+			local_port_conf.rxmode.offloads |=
+						 DEV_RX_OFFLOAD_SCATTER;
+
+		if (!(dev_info.tx_offload_capa & DEV_TX_OFFLOAD_MULTI_SEGS))
+			printf("MULTI_SEG not supported in driver\n");
+		else
+			local_port_conf.txmode.offloads |=
+						 DEV_TX_OFFLOAD_MULTI_SEGS;
+
+		if (dev_info.rx_offload_capa & DEV_RX_OFFLOAD_RSS_HASH) {
+			printf("setting rx hash for port id %d\n", portid);
+			local_port_conf.rxmode.offloads
+				|= DEV_RX_OFFLOAD_RSS_HASH;
+		}
+
+		local_port_conf.rx_adv_conf.rss_conf.rss_hf &=
+			dev_info.flow_type_rss_offloads;
+		if (local_port_conf.rx_adv_conf.rss_conf.rss_hf !=
+				port_conf.rx_adv_conf.rss_conf.rss_hf) {
+			printf("Port %u modified RSS hash function based on hardware support,"
+			       "requested:%#"PRIx64" configured:%#"PRIx64"",
+				portid,
+				port_conf.rx_adv_conf.rss_conf.rss_hf,
+				local_port_conf.rx_adv_conf.rss_conf.rss_hf);
+		}
 
 		if (dev_info.tx_offload_capa & DEV_TX_OFFLOAD_MBUF_FAST_FREE)
 			local_port_conf.txmode.offloads |=
 				DEV_TX_OFFLOAD_MBUF_FAST_FREE;
+
+		/* local_port_conf.link_speeds =
+			rte_eth_devices[portid].data->dev_conf.link_speeds;
+		*/
 		ret = rte_eth_dev_configure(portid, l2fwd_queues_per_port, l2fwd_queues_per_port, &local_port_conf);
 		if (ret < 0)
 			rte_exit(EXIT_FAILURE, "Cannot configure device: err=%d, port=%u\n",
@@ -989,7 +1044,7 @@ main(int argc, char **argv)
 		if ((port_type[portid] == PORT_TYPE_NPU_PCI_PF) ||
 		    (port_type[portid] == PORT_TYPE_NPU_PCI_VF)) {
 			/* fix MTU for jumbo frames */
-			ret = rte_eth_dev_set_mtu(portid, 1600);
+			ret = rte_eth_dev_set_mtu(portid, dev_info.max_mtu);
 			if (ret < 0)
 				 rte_exit(EXIT_FAILURE, "Cannot set mtu to 1500\n");
 		}
@@ -1000,6 +1055,12 @@ main(int argc, char **argv)
 			rte_exit(EXIT_FAILURE,
 				 "Cannot adjust number of descriptors: err=%d, port=%u\n",
 				 ret, portid);
+
+		/* Update Hash with new RSS Key */
+		local_port_conf.rx_adv_conf.rss_conf.rss_key_len =
+							dev_info.hash_key_size;
+		rte_eth_dev_rss_hash_update(portid,
+					&local_port_conf.rx_adv_conf.rss_conf);
 
 		ret = rte_eth_macaddr_get(portid,
 					  &l2fwd_ports_eth_addr[portid]);
@@ -1045,11 +1106,6 @@ main(int argc, char **argv)
 					 portid);
 		}
 
-		ret = rte_eth_dev_set_ptypes(portid, RTE_PTYPE_UNKNOWN, NULL,
-					     0);
-		if (ret < 0)
-			printf("Port %u, Failed to disable Ptype parsing\n",
-					portid);
 		/* Start device */
 		ret = rte_eth_dev_start(portid);
 		if (ret < 0)
