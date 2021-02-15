@@ -1125,7 +1125,7 @@ octeon_droq_fast_process_packets(octeon_device_t * oct,
 			prefetch(droq->recv_buf_list[(droq->host_read_index+1) & droq->ring_size_mask].data);
 
 		if(cavium_unlikely(*((volatile uint64_t *)&info->length) == 0)) {
-			int retry = 10;
+			int retry = 100;
 
 			cavium_print(PRINT_DEBUG,
 				     "OCTEON DROQ[%d]: host_read_idx: %d; Data not ready yet, "
@@ -1140,18 +1140,7 @@ octeon_droq_fast_process_packets(octeon_device_t * oct,
 			if (cavium_unlikely(!info->length)) {
 				printk("OCTEON DROQ[%d]: host_read_idx: %d; Retry failed !!\n",
 				       droq->q_no, droq->host_read_index);
-				/* May be zero length packet; drop it */
-				octeon_pci_unmap_single(oct->pci_dev,
-					(unsigned long)droq->desc_ring[droq->host_read_index].buffer_ptr,
-					droq->buffer_size, CAVIUM_PCI_DMA_FROMDEVICE);
-				nicbuf = droq->recv_buf_list[droq->host_read_index].buffer;
-				free_recv_buffer(nicbuf);
-				droq->recv_buf_list[droq->host_read_index].buffer = 0;
-				//INCR_INDEX_BY1(droq->host_read_index, droq->max_count);
-				droq->host_read_index = (droq->host_read_index + 1) & droq->ring_size_mask;
-				bufs_used++;
-				droq->stats.dropped_zlp++;
-				continue;
+				BUG();
 			}
 		}
 
@@ -1178,19 +1167,14 @@ octeon_droq_fast_process_packets(octeon_device_t * oct,
 			bufs_used++;
 		} else {
 			int info_len = info->length;
+			/* nicbuf allocation can fail. We'll handle it inside the loop. */
 			nicbuf  = cav_net_buff_rx_alloc(info->length, droq->app_ctx);
-			if(cavium_unlikely(!nicbuf)) { 
+			if (cavium_unlikely(!nicbuf)) {
 				cavium_error("%s buffer alloc failed\n",
 				     __CVM_FUNCTION__);
-				/* TODO: "drop and throw error" or
-				 * "try again until succeed" ??
-				 */
 				droq->stats.dropped_nomem++;
-				break;
 			}
 			pkt_len = 0;
-			/* nicbuf allocation can fail. We'll handle it inside the loop. */
-
 			/* initiating a csr read helps to flush pending dma */
 			droq->sent_reg_val = OCTEON_READ32(droq->pkts_sent_reg);
 			smp_rmb();
@@ -1211,8 +1195,9 @@ octeon_droq_fast_process_packets(octeon_device_t * oct,
 				}
 				cnnic_pci_dma_sync_single_for_cpu(oct->pci_dev, (unsigned long)droq->desc_ring[droq->host_read_index].buffer_ptr, droq->buffer_size, CAVIUM_PCI_DMA_FROMDEVICE);
 
-				cavium_memcpy(recv_buf_put(nicbuf, copy_len),
-					      (get_recv_buffer_data(droq->recv_buf_list[droq->host_read_index].buffer, droq->app_ctx)) + copy_offset, copy_len);
+				if (cavium_likely(nicbuf))
+					cavium_memcpy(recv_buf_put(nicbuf, copy_len),
+						      (get_recv_buffer_data(droq->recv_buf_list[droq->host_read_index].buffer, droq->app_ctx)) + copy_offset, copy_len);
 				/* Remap the buffers after copy is done */
 				data = get_recv_buffer_data(droq->recv_buf_list[droq->host_read_index].buffer, droq->app_ctx);
 				/* clear info ptr */
@@ -1223,21 +1208,23 @@ octeon_droq_fast_process_packets(octeon_device_t * oct,
 				bufs_used++;
 			}
 		}
+		if (cavium_likely(nicbuf)) {
 #ifdef OCT_NIC_LOOPBACK
-		if (pkt == pkts_to_process - 1)
-			nicbuf->xmit_more = 0;
-		else
-			nicbuf->xmit_more = 1;
-		nicbuf->dev = droq->pndev;
-		nicbuf->ip_summed = CHECKSUM_UNNECESSARY;
-		nicbuf->queue_mapping = droq->q_no;
-		priv->priv_xmit(nicbuf, droq->pndev);
-		droq->stats.bytes_st_received += pkt_len;
-		droq->stats.pkts_st_received++;
+			if (pkt == pkts_to_process - 1)
+				nicbuf->xmit_more = 0;
+			else
+				nicbuf->xmit_more = 1;
+			nicbuf->dev = droq->pndev;
+			nicbuf->ip_summed = CHECKSUM_UNNECESSARY;
+			nicbuf->queue_mapping = droq->q_no;
+			priv->priv_xmit(nicbuf, droq->pndev);
+			droq->stats.bytes_st_received += pkt_len;
+			droq->stats.pkts_st_received++;
 #else
-		octnet_push_packet(droq, nicbuf,
-				   pkt_len, resp_hdr, &droq->napi);
+			octnet_push_packet(droq, nicbuf,
+					   pkt_len, resp_hdr, &droq->napi);
 #endif
+		}
 	}  /* for ( each packet )... */
 
 	/* Increment refill_count by the number of buffers processed. */
