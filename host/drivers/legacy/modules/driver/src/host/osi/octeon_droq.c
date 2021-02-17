@@ -946,6 +946,12 @@ octeon_droq_refill(octeon_device_t * octeon_dev UNUSED, octeon_droq_t * droq)
 #if (defined(ETHERPCI) & !defined(BUFPTR_ONLY_MODE))
 		data += 8;
 #endif
+
+#ifndef BUFPTR_ONLY_MODE
+		/* Reset any previous values in the length field. */
+		droq->info_list[droq->host_refill_index].length = 0;
+#endif
+
 		droq->recv_buf_list[droq->host_refill_index].data = data;
 		if (map) {
 			desc_ring[droq->host_refill_index].buffer_ptr =
@@ -955,11 +961,6 @@ octeon_droq_refill(octeon_device_t * octeon_dev UNUSED, octeon_droq_t * droq)
 							    CAVIUM_PCI_DMA_FROMDEVICE,
 							    droq->app_ctx);
 		}
-#endif
-
-#ifndef BUFPTR_ONLY_MODE
-		/* Reset any previous values in the length field. */
-		droq->info_list[droq->host_refill_index].length = 0;
 #endif
 
 		droq->host_refill_index = (droq->host_refill_index + 1) & droq->ring_size_mask;
@@ -1208,16 +1209,15 @@ octeon_droq_fast_process_packets(octeon_device_t * oct,
 					copy_len = droq->buffer_size - sizeof(octeon_droq_info_t);
 					copy_offset = sizeof(octeon_droq_info_t);
 				}
-				octeon_pci_unmap_single(oct->pci_dev, (unsigned long)droq->desc_ring[droq->host_read_index].buffer_ptr, droq->buffer_size, CAVIUM_PCI_DMA_FROMDEVICE);
+				cnnic_pci_dma_sync_single_for_cpu(oct->pci_dev, (unsigned long)droq->desc_ring[droq->host_read_index].buffer_ptr, droq->buffer_size, CAVIUM_PCI_DMA_FROMDEVICE);
 
 				cavium_memcpy(recv_buf_put(nicbuf, copy_len),
 					      (get_recv_buffer_data(droq->recv_buf_list[droq->host_read_index].buffer, droq->app_ctx)) + copy_offset, copy_len);
 				/* Remap the buffers after copy is done */
 				data = get_recv_buffer_data(droq->recv_buf_list[droq->host_read_index].buffer, droq->app_ctx);
+				/* clear info ptr */
 				memset(data, 0, 16);
-				droq->desc_ring[droq->host_read_index].buffer_ptr =
-					(uint64_t)cnnic_pci_map_single(oct->pci_dev, data, droq->buffer_size, CAVIUM_PCI_DMA_FROMDEVICE, droq->app_ctx);
-
+				cnnic_pci_dma_sync_single_for_device(oct->pci_dev, (unsigned long)droq->desc_ring[droq->host_read_index].buffer_ptr, droq->buffer_size, CAVIUM_PCI_DMA_FROMDEVICE);
 				pkt_len += copy_len;
 				INCR_INDEX_BY1(droq->host_read_index, droq->max_count);
 				bufs_used++;
