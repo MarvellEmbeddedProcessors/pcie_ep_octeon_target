@@ -47,6 +47,8 @@
 #define DPI_MAX_COMP_ENTRIES	1024
 #define DPI_BURST_REQ	10
 
+#define DPI_MAX_DATA_SZ_PER_PTR	65535
+
 static volatile bool force_quit;
 
 static struct dpi_cring_data_s cring[DPI_MAX_VFS];
@@ -518,6 +520,215 @@ free_buf:
 	return 0;
 }
 
+static int fill_dpi_cmd(int dma_port, int ptr_sz, int xtype,
+			struct dpi_dma_req_compl_s **comp_data,
+			uint8_t **fptr, union dpi_dma_ptr_u *wptr,
+			union dpi_dma_ptr_u *rptr,
+			struct dpi_dma_buf_ptr_s *cmd,
+			struct dpi_dma_queue_ctx_s *ctx)
+{
+	int i;
+
+	*comp_data = rte_malloc("dummy", ptr_sz, 128);
+	if (!*comp_data) {
+		printf("Unable to allocate internal memory for comp data\n");
+		return -ENOMEM;
+	}
+	memset(*comp_data, 0, ptr_sz);
+
+	for (i = 0; i < ptrs_per_instr; i++) {
+		fptr[i] = (uint8_t *)rte_malloc("dummy", ptr_sz, 128);
+		if (!fptr[i]) {
+			printf("Unable to allocate internal memory\n");
+			return i;
+		}
+		buffer_fill(fptr[i], ptr_sz, 0);
+
+		wptr[i].s.length = ptr_sz;
+		wptr[i].s.ptr = (uint64_t)rte_malloc_virt2iova(fptr[i]);
+		rptr[i].s.length = ptr_sz;
+		rptr[i].s.ptr = (uint64_t)raddr + (i * ptr_sz);
+
+		if (xtype == DPI_XTYPE_INBOUND) {
+			cmd->wptr[i] = &wptr[i];
+			cmd->rptr[i] = &rptr[i];
+		} else {
+			cmd->wptr[i] = &rptr[i];
+			cmd->rptr[i] = &wptr[i];
+		}
+	}
+	cmd->rptr_cnt = ptrs_per_instr;
+	cmd->wptr_cnt = ptrs_per_instr;
+	cmd->comp_ptr = *comp_data;
+
+	ctx->xtype = xtype;
+	ctx->pt = 0;
+	ctx->pem_id = pem_id;
+	ctx->c_ring = &cring[dma_port];
+
+	return 0;
+}
+
+static inline void run_dpi_cmd(int dma_port, struct rte_rawdev_buf **bufp,
+				 struct dpi_dma_queue_ctx_s *ctx)
+{
+	int ret;
+	void *d_buf[1];
+
+	ret = rte_rawdev_enqueue_buffers(dma_port,
+					 (struct rte_rawdev_buf **)bufp,
+					 1,
+					 ctx);
+	if (ret >= 0) {
+		do {
+			ret = rte_rawdev_dequeue_buffers(dma_port,
+				(struct rte_rawdev_buf **)&d_buf, 1,
+				ctx);
+			if (ret)
+				break;
+		} while(!force_quit);
+	}
+}
+
+static inline int dma_test_latency(int dma_port, int xtype)
+{
+	uint8_t *fptr[DPI_MAX_POINTER] = {0};
+	union dpi_dma_ptr_u rptr[DPI_MAX_POINTER] = {0};
+	union dpi_dma_ptr_u wptr[DPI_MAX_POINTER] = {0};
+	struct dpi_dma_buf_ptr_s cmd = {0};
+	struct rte_rawdev_buf buf = { &cmd };
+	struct rte_rawdev_buf *bufp[1] = { &buf };
+	struct dpi_dma_req_compl_s *comp_data = NULL;
+	struct dpi_dma_queue_ctx_s ctx = {0};
+	int i, b;
+	int ptr_sz = data_size / ptrs_per_instr;
+	uint64_t s_tsc, e_tsc = 0, latency = 0, bs_tsc, be_tsc;
+
+	printf("\n%s latency.\n",
+		(xtype == DPI_XTYPE_INBOUND) ? "Inbound" : "Outbound");
+
+	i = fill_dpi_cmd(dma_port, ptr_sz, xtype, &comp_data,
+			 fptr, wptr, rptr, &cmd, &ctx);
+	if (i != 0)
+		goto free_bufs;
+
+	bs_tsc = rte_rdtsc();
+	for (b = 0; b < n_iter; b++) {
+		s_tsc = rte_rdtsc();
+		run_dpi_cmd(dma_port, bufp, &ctx);
+		e_tsc = rte_rdtsc();
+		if (force_quit) {
+			printf("Test abandoned.\n");
+			goto free_bufs;
+		}
+
+		latency += (e_tsc - s_tsc);
+	}
+	be_tsc = rte_rdtsc();
+	printf("Avg. burst: [%06ld cycles][%04ld usecs]\n"
+		"Total     : [%06ld cycles][%04ld usecs]\n",
+		latency / n_iter, ((latency / n_iter) * 1000000) / timer_period,
+		be_tsc - bs_tsc, ((be_tsc - bs_tsc) * 1000000) / timer_period);
+
+free_bufs:
+	for (i = 0; i < ptrs_per_instr; i++) {
+		if (fptr[i])
+			rte_free(fptr[i]);
+	}
+	if (comp_data)
+		rte_free(comp_data);
+
+	return 0;
+}
+
+static inline int dma_test_roundtrip_latency(int dma_port, int xtype)
+{
+	uint8_t *fptr_in[DPI_MAX_POINTER] = {0};
+	union dpi_dma_ptr_u rptr_in[DPI_MAX_POINTER] = {0};
+	union dpi_dma_ptr_u wptr_in[DPI_MAX_POINTER] = {0};
+	struct dpi_dma_buf_ptr_s cmd_in = {0};
+	struct rte_rawdev_buf buf_in = { &cmd_in };
+	struct rte_rawdev_buf *bufp_in[1] = { &buf_in };
+	struct dpi_dma_req_compl_s *comp_data_in = NULL;
+	struct dpi_dma_queue_ctx_s ctx_in = {0};
+	uint8_t *fptr_out[DPI_MAX_POINTER] = {0};
+	union dpi_dma_ptr_u rptr_out[DPI_MAX_POINTER] = {0};
+	union dpi_dma_ptr_u wptr_out[DPI_MAX_POINTER] = {0};
+	struct dpi_dma_buf_ptr_s cmd_out = {0};
+	struct rte_rawdev_buf buf_out = { &cmd_out };
+	struct rte_rawdev_buf *bufp_out[1] = { &buf_out };
+	struct dpi_dma_req_compl_s *comp_data_out = NULL;
+	struct dpi_dma_queue_ctx_s ctx_out = {0};
+	int i, b;
+	int ptr_sz = data_size / ptrs_per_instr;
+	uint64_t s_tsc, e_tsc = 0, latency = 0, bs_tsc, be_tsc;
+
+	printf("\n%s roundtrip latency.\n",
+		(xtype == DPI_XTYPE_INBOUND) ? "Inbound" : "Outbound");
+
+	i = fill_dpi_cmd(dma_port, ptr_sz, DPI_XTYPE_INBOUND,
+			 &comp_data_in, fptr_in, wptr_in, rptr_in, &cmd_in,
+			 &ctx_in);
+	if (i != 0)
+		goto free_bufs;
+
+	i = fill_dpi_cmd(dma_port, ptr_sz, DPI_XTYPE_OUTBOUND,
+			 &comp_data_out, fptr_out, wptr_out, rptr_out,
+			 &cmd_out, &ctx_out);
+	if (i != 0)
+		goto free_bufs;
+
+	if (xtype == DPI_XTYPE_INBOUND) {
+		bs_tsc = rte_rdtsc();
+		for (b = 0; b < n_iter; b++) {
+			s_tsc = rte_rdtsc();
+			run_dpi_cmd(dma_port, bufp_in, &ctx_in);
+			run_dpi_cmd(dma_port, bufp_out, &ctx_out);
+			e_tsc = rte_rdtsc();
+			if (force_quit) {
+				printf("Test abandoned.\n");
+				goto free_bufs;
+			}
+
+			latency += (e_tsc - s_tsc);
+		}
+		be_tsc = rte_rdtsc();
+	} else {
+		bs_tsc = rte_rdtsc();
+		for (b = 0; b < n_iter; b++) {
+			s_tsc = rte_rdtsc();
+			run_dpi_cmd(dma_port, bufp_out, &ctx_out);
+			run_dpi_cmd(dma_port, bufp_in, &ctx_in);
+			e_tsc = rte_rdtsc();
+			if (force_quit) {
+				printf("Test abandoned.\n");
+				goto free_bufs;
+			}
+
+			latency += (e_tsc - s_tsc);
+		}
+		be_tsc = rte_rdtsc();
+	}
+	printf("Avg. burst: [%06ld cycles][%04ld usecs]\n"
+		"Total     : [%06ld cycles][%04ld usecs]\n",
+		latency / n_iter, ((latency / n_iter) * 1000000) / timer_period,
+		be_tsc - bs_tsc, ((be_tsc - bs_tsc) * 1000000) / timer_period);
+
+free_bufs:
+	for (i = 0; i < ptrs_per_instr; i++) {
+		if (fptr_in[i])
+			rte_free(fptr_in[i]);
+		if (fptr_out[i])
+			rte_free(fptr_out[i]);
+	}
+	if (comp_data_in)
+		rte_free(comp_data_in);
+	if (comp_data_out)
+		rte_free(comp_data_out);
+
+	return 0;
+}
+
 static int dpi_create_mempool(void)
 {
 	char pool_name[25];
@@ -576,6 +787,13 @@ static void dpi_usage(const char *prgname)
                "             1: Inbound\n"
 	       "             2: Outbound\n"
 	       "             3: Dual - both inbound and outbound (supported only in perf test)\n"
+               "             4: Inbound Latency\n"
+	       "             5: Outbound Latency\n"
+	       "             6: Inbound roundtrip Latency\n"
+	       "             7: Outbound roundtrip Latency\n"
+	       "             8: All modes 4, 5, 6, 7\n"
+	       "		Max data size for latency tests :\n"
+	       "			(65535*15) = 983025 bytes\n"
 	       "  -i <iteration>: No.of iterations\n"
 	       "  -s <data size>: Size of data to be DMA'ed (Default is 256)\n"
 	       "  -b <pem number>: PEM connected to host\n"
@@ -636,6 +854,7 @@ static int dpi_parse_args(int argc, char **argv)
 			break;
 		case 'm':
 			mode = atoi(optarg);
+			printf("Mode: %d\n", mode);
 			break;
 		case 'i':
 			n_iter = atoi(optarg);
@@ -740,6 +959,51 @@ int main(int argc, char **argv)
 	}
 
 	if (!perf_mode) {
+		if (mode >= 4 && mode <= 8) {
+			ptrs_per_instr = data_size / DPI_MAX_DATA_SZ_PER_PTR;
+			if (data_size % DPI_MAX_DATA_SZ_PER_PTR)
+				ptrs_per_instr++;
+			if (ptrs_per_instr > DPI_MAX_POINTER) {
+				printf("Data too big.\n"
+					"Max data size: (%d bytes/ptr * "
+					"%d ptrs) = %d bytes\n",
+					DPI_MAX_DATA_SZ_PER_PTR,
+					DPI_MAX_POINTER,
+					DPI_MAX_DATA_SZ_PER_PTR *
+					DPI_MAX_POINTER);
+				goto close_devs;
+			}
+
+			printf("\nData size: %ld, bursts: %d, "
+				"ptrs/burst: %d, sz/ptr: %ld\n",
+				data_size, n_iter, ptrs_per_instr,
+				data_size / ptrs_per_instr);
+
+			for (i = 0; i < nb_ports; i++) {
+				printf("\nPort %d\n", i);
+				if (mode == 4)
+					dma_test_latency(i, DPI_XTYPE_INBOUND);
+				else if (mode == 5)
+					dma_test_latency(i, DPI_XTYPE_OUTBOUND);
+				else if (mode == 6)
+					dma_test_roundtrip_latency(i,
+							DPI_XTYPE_INBOUND);
+				else if (mode == 7)
+					dma_test_roundtrip_latency(i,
+							DPI_XTYPE_OUTBOUND);
+				else {
+					dma_test_latency(i, DPI_XTYPE_INBOUND);
+					dma_test_roundtrip_latency(i,
+							DPI_XTYPE_INBOUND);
+					dma_test_latency(i, DPI_XTYPE_OUTBOUND);
+					dma_test_roundtrip_latency(i,
+							DPI_XTYPE_OUTBOUND);
+				}
+				if (force_quit)
+					break;
+			}
+			goto close_devs;
+		}
 		for (i = 0; i < nb_ports; i++) {
 			int j;
 
@@ -774,6 +1038,7 @@ int main(int argc, char **argv)
 		}
 	}
 
+close_devs:
 	for (i = 0; i < nb_ports; i++) {
 		if (rte_rawdev_close(i))
 			printf("Dev close failed for port %d\n", i);
