@@ -60,6 +60,7 @@ int mode, n_iter = 1, perf_mode = 0;
 int ptrs_per_instr = 1;
 static void *chunk_pool;
 uint64_t dma_submit_cnt[DPI_MAX_VFS] = { 0 };
+uint64_t last_dma_submit_cnt[DPI_MAX_VFS] = { 0 };
 uint64_t total_dma_cnt = 0;
 static uint64_t timer_period = 1; /* default period is 1 seconds */
 uint16_t nb_ports;
@@ -196,9 +197,14 @@ static inline void dump_stats(void)
 	uint64_t tot = 0;
 
 	for (i = 0; i < nb_ports; i++) {
-		printf("DMA %d Count %ld %s\n", i, dma_submit_cnt[i],
-		       (mode==3 ? (i%2 ? "Outb":"Inb"):""));
+		printf("DMA %d Count %ld %s %2.2f Gbps\n", i,
+			(dma_submit_cnt[i] - last_dma_submit_cnt[i]),
+			(mode==3 ? (i%2 ? "Outb":"Inb"):""),
+			((dma_submit_cnt[i] - last_dma_submit_cnt[i]) *
+		       		data_size*ptrs_per_instr * 8) /
+		       		1000000000.0);
 		tot += dma_submit_cnt[i];
+		last_dma_submit_cnt[i] = dma_submit_cnt[i];
 	}
 	printf("\ntot %ld tot_dma %ld Total: %ld Perf:%2.2f Gbps\n", tot,
 	       total_dma_cnt, (tot - total_dma_cnt),
