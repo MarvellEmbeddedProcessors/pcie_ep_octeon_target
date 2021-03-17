@@ -1,27 +1,49 @@
 #Copyright (c) 2020 Marvell.
 #SPDX-License-Identifier: BSD-3-Clause
 
+#set this to 2, to use 2 DPI blocks when exists (like, on 98xx
+NUM_DPI=1
+
 # Enable DPI VFs
 NUMVFS=8
-DPIPF=$(ls -d /sys/bus/pci/drivers/octeontx2-dpi/0* 2>/dev/null)
-DPIVFS=$(cat $DPIPF/sriov_numvfs)
+DPIPF=$(lspci -d 177d:a080|awk '{print $1}' | head -${NUM_DPI})
+echo "###### DPI PFs ######"
+echo "$DPIPF"
 
 mkdir -p /dev/huge
 mount -t hugetlbfs nodev /dev/huge
 echo 12 > /sys/kernel/mm/hugepages/hugepages-524288kB/nr_hugepages
 
-if [ "x$DPIVFS" != x"$NUMVFS" ]; then
-	echo $NUMVFS > $DPIPF/sriov_numvfs
-	if [ x"$?" != "x0" ]; then
-		echo -n \
-"""Failed to enable $DPI DMA queues.
-""" >&2
-	exit 1
-fi
-fi
+echo -e "\n"
+echo "Creating DPI VFs ..."
+for PF in $DPIPF
+do
+	DPIVFS=$(cat /sys/bus/pci/devices/$PF/sriov_numvfs)
+	echo "Current number of VFs under DPIPF $PF = $DPIVFS"
+	if [ "x$DPIVFS" != x"$NUMVFS" ]; then
+		echo "Creating $NUMVFS VFs for DPIPF $PF ..."
+		echo 0 > /sys/bus/pci/devices/$PF/sriov_numvfs
+		echo $NUMVFS > /sys/bus/pci/devices/$PF/sriov_numvfs
+		if [ x"$?" != "x0" ]; then
+			echo -n \
+	"""Failed to enable $DPI DMA queues.
+	""" >&2
+		exit 1
+	fi
+	fi
+done
 
 # bind only required NPA and DPI VFs to vfio-pci
-dpi_devs=(0000:05:00.1 0000:05:00.2 0000:05:00.3 0000:05:00.4 0000:05:00.5 0000:05:00.6 0000:05:00.7 0000:05:01.0 0002:0c:00.0)
+DPIVF=$(lspci -d 177d:a081|awk '{print $1}')
+echo -e "\n"
+echo "###### DPI VFs ######"
+echo "$DPIVF"
+
+NPAPF=$(lspci -d 177d:a0fb|awk '{print $1}'|head -1)
+echo -e "\n"
+echo "Using NPA PF $NPAPF ..."
+
+dpi_devs=(${DPIVF} $NPAPF)
 
 for DEV in ${dpi_devs[*]}; do
 	echo $devs
