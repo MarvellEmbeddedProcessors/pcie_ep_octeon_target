@@ -145,6 +145,7 @@ octnet_prepare_pci_cmd(octeon_device_t * oct,
 		if (!setup->s.gather) {
 			ihx.tlen = setup->s.u.datasize + ihx.fsz;
 		} else {
+			ihx.gather = 1;
 			ihx.gsz = setup->s.u.gatherptrs;
 			ihx.tlen = setup->s.rsvd + ihx.fsz;
 		}
