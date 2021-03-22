@@ -420,7 +420,7 @@ int octnet_setup_glist(octnet_priv_t * priv)
 		memset(g, 0, sizeof(struct octnic_gather));
 
 		g->sg_size =
-		    ((ROUNDUP4(OCTNIC_MAX_SG) >> 2) * OCT_SG_ENTRY_SIZE);
+		    (OCTNIC_MAX_SG * OCT_SG_ENTRY_SIZE);
 
 		g->sg = cavium_malloc_dma(g->sg_size + 8, __CAVIUM_MEM_GENERAL);
 		if (g->sg == NULL) {
