@@ -14,13 +14,10 @@
 #include <linux/uaccess.h>
 #include <linux/slab.h>
 #include <linux/iommu.h>
-//#include <linux/watchdog.h>
-//#include <asm/arch_timer.h>
 #include "barmap.h"
 
 #define NPU_BASE_DRV_NAME  "npu_base"
 #define NPU_BASE_DEVICE_ID "NPU base driver"
-#define MRVL_CPU_PART_OCTEONTX2_98XX	0x0B1
 
 #define FDT_NAME         "pcie-ep"
 static unsigned int  host_sid[2] = {0x030000, 0x050000};
@@ -40,24 +37,50 @@ MODULE_PARM_DESC(epf_num, "epf number to use");
 
 static uint64_t sdp_num[2] = {0,1};
 
-#define CN93xx_SDP_BASE(a) (0x86E080000000ULL | a << 36)
-#define CN93XX_SDPX_EPFX_SCRATCH_OFFSET(epf) (0x000205E0ULL | (epf << 25))
-#define CN93XX_SDPX_EPFX_OEI_TRIG_ADDR(sdp, epf) (0x86E0C0000000ULL | (sdp << 36) | (epf << 25))
-#define PEMX_REG_BASE_93XX(pem) (0x8E0000000000ULL | ((uint64_t)pem << 36))
+struct otx_pcie_ep {
+	uint64_t	pem_base;
+	uint64_t	sdp_base;
+	uint64_t	oei_trig_addr;
+	unsigned int	instance;
+	unsigned int	plat_model;
+};
 
-#define CN83xx_SDP_BASE 0x874080000000ULL
-#define CN83XX_SDP0_SCRATCH_OFFSET(epf) (0x00020180ULL | (epf << 23))
-#define CN83XX_SDP0_EPFX_OEI_TRIG_ADDR(epf) (0x874000800000ULL | (epf << 16))
-#define PEMX_REG_BASE_83XX(pem)  (0x87E0C0000000ULL | (pem << 24))
+enum supported_plat {
+	OTX_CN83XX,
+	OTX2_CN9XXX,
+};
 
-#define PEM_BAR1_INDEX_OFFSET(idx) (0x100 + (idx << 3))
-#define PEM_BAR4_INDEX_OFFSET(idx) (0x700 + (idx << 3))
-#define PEM_DIS_PORT_OFFSET 0x50
+#define PEMX_BASE(a, b)		((a) | ((uint64_t)b << 36))
+#define PEM_DIS_PORT_OFFSET	0x50ull
+
+#define SDP_SCRATCH_OFFSET(x) ({			\
+	u64 offset;					\
+							\
+	if (pcie_ep_dev->plat_model == OTX_CN83XX)	\
+		offset = 0x20180ull | (x << 23);	\
+	else if (pcie_ep_dev->plat_model == OTX2_CN9XXX)\
+		offset = 0x205E0ull | (x <<25);		\
+	offset; })					\
+
+#define PEM_BAR_INDEX_OFFSET(x) ({				\
+	u64 offset;					\
+	if (pcie_ep_dev->plat_model == OTX_CN83XX)	\
+		offset = 0x100ull | (x << 3);	\
+	else if (pcie_ep_dev->plat_model == OTX2_CN9XXX)\
+		offset = 0x700ull | (x <<3);		\
+	offset; })					\
 
 #define NPU_HANDSHAKE_SIGNATURE 0xABCDABCD
+
 void *oei_trig_remap_addr;
 void __iomem *nwa_internal_addr;
 EXPORT_SYMBOL(nwa_internal_addr);
+
+#define PCIE_EP_MATCH_DATA(name, imp)	\
+static unsigned int name = imp
+
+PCIE_EP_MATCH_DATA(otx_cn83xx, OTX_CN83XX);
+PCIE_EP_MATCH_DATA(otx2_cn9xxx, OTX2_CN9XXX);
 
 const struct iommu_ops *smmu_ops;
 //TODO: fix the names npu_barmap_mem and npu_bar_map
@@ -180,23 +203,16 @@ err:
  * 1. populate entry-8 for ring memory
  * 2. populate entry-15 for GICD CSRs, so that host can write through BARs
  */
-static int npu_base_setup(struct npu_bar_map *bar_map, int instance)
+static int npu_base_setup(struct npu_bar_map *bar_map, struct otx_pcie_ep *pcie_ep_dev)
 {
 	phys_addr_t barmap_mem_phys;
 	phys_addr_t phys_addr_i;
-	unsigned long part_num;
 	uint64_t bar_idx_val;
 	uint64_t bar_idx_addr;
 	uint64_t disport_addr;
+	unsigned int instance = pcie_ep_dev->instance;
 	int i;
 
-	part_num = read_cpuid_part_number();
-	if ((part_num != CAVIUM_CPU_PART_T83) &&
-	    (part_num != MRVL_CPU_PART_OCTEONTX2_96XX) &&
-	    (part_num != MRVL_CPU_PART_OCTEONTX2_98XX)) {
-		printk("Unsupported CPU type\n");
-		return -1;
-	}
 	npu_barmap_mem = kmalloc(NPU_BARMAP_FIREWALL_SIZE, GFP_KERNEL);
 	if (npu_barmap_mem == NULL) {
 		printk("%s: Failed to allocate memory\n", __func__);
@@ -210,7 +226,7 @@ static int npu_base_setup(struct npu_bar_map *bar_map, int instance)
 	printk("Copying NPU bar map info to base of mapped memory ...\n");
 	memcpy(npu_barmap_mem, (void *)bar_map, sizeof(struct npu_bar_map));
 
-//TODO: remove BAR1 references; 96xx has BAR4
+	//TODO: remove BAR1 references; 96xx has BAR4
 	//TODO: unmap() in unload
 	/* Write memory mapping to PEM BAR1_INDEX */
 	printk("Mapping NPU physical memory to BAR1 entries ...\n");
@@ -221,18 +237,10 @@ static int npu_base_setup(struct npu_bar_map *bar_map, int instance)
 	}
 
 	for (i = NPU_BARMAP_FIREWALL_FIRST_ENTRY;
-	     i < CN83XX_PEM_BAR1_INDEX_MAX_ENTRIES-1; i++) {
+	     i < NPU_PEM_BAR_INDEX_MAX_ENTRIES-1; i++) {
 		int ii = i - NPU_BARMAP_FIREWALL_FIRST_ENTRY;
 		phys_addr_i = barmap_mem_phys + (ii * NPU_BARMAP_ENTRY_SIZE);
-		if (part_num == CAVIUM_CPU_PART_T83)
-			bar_idx_addr = PEMX_REG_BASE_83XX(pem_num[instance]) + PEM_BAR1_INDEX_OFFSET(i);
-		else if (part_num == MRVL_CPU_PART_OCTEONTX2_96XX ||
-			 part_num == MRVL_CPU_PART_OCTEONTX2_98XX)
-			bar_idx_addr = PEMX_REG_BASE_93XX(pem_num[instance]) + PEM_BAR4_INDEX_OFFSET(i);
-		else {
-			printk("Error: Invalid part_num = %lu\n", part_num);
-			return -1;
-		}
+		bar_idx_addr = PEMX_BASE(pcie_ep_dev->pem_base, pem_num[instance]) + PEM_BAR_INDEX_OFFSET(i);
 		bar_idx_val = ((phys_addr_i >> 22) << 4) | 1;
 		printk("Writing BAR entry-%d; addr=%llx, val=%llx\n",
 		       i, bar_idx_addr, bar_idx_val);
@@ -242,51 +250,33 @@ static int npu_base_setup(struct npu_bar_map *bar_map, int instance)
 	/* Map GICD CSR space to BAR1_INDEX(15) so that Host can just do a
 	 * local memory write to interrupt NPU for any work on any virtual ring
 	 */
-	if (part_num == CAVIUM_CPU_PART_T83)
-		bar_idx_addr = PEMX_REG_BASE_83XX(pem_num[instance]) + PEM_BAR1_INDEX_OFFSET(15);
-	else if (part_num == MRVL_CPU_PART_OCTEONTX2_96XX ||
-		 part_num == MRVL_CPU_PART_OCTEONTX2_98XX)
-		bar_idx_addr = PEMX_REG_BASE_93XX(pem_num[instance])  + PEM_BAR4_INDEX_OFFSET(15);
-
+	bar_idx_addr = PEMX_BASE(pcie_ep_dev->pem_base, pem_num[instance]) + PEM_BAR_INDEX_OFFSET(15);
 	bar_idx_val = ((NPU_GICD_BASE >> 22) << 4) | 1;
 	printk("Writing BAR entry-15 to map GICD; addr=%llx, val=%llx\n",
 	       bar_idx_addr, bar_idx_val);
 	npu_csr_write(bar_idx_addr, bar_idx_val);
 
-	if (part_num == CAVIUM_CPU_PART_T83)
-		oei_trig_remap_addr = ioremap(CN83XX_SDP0_EPFX_OEI_TRIG_ADDR(epf_num[instance]), 8);
-	else if (part_num == MRVL_CPU_PART_OCTEONTX2_96XX ||
-		 part_num == MRVL_CPU_PART_OCTEONTX2_98XX)
-		oei_trig_remap_addr = ioremap(CN93XX_SDPX_EPFX_OEI_TRIG_ADDR(sdp_num[instance], epf_num[instance]), 8);
-
+	oei_trig_remap_addr = ioremap(pcie_ep_dev->oei_trig_addr | (epf_num[instance] << 25), 8);
 	if (oei_trig_remap_addr == NULL) {
 		printk("Failed to ioremap oei_trig space\n");
 		return -1;
 	}
-	if (part_num == MRVL_CPU_PART_OCTEONTX2_96XX ||
-	    part_num == MRVL_CPU_PART_OCTEONTX2_98XX) {
-		disport_addr = PEMX_REG_BASE_93XX(pem_num[instance]) + PEM_DIS_PORT_OFFSET;
+	if (pcie_ep_dev->plat_model == OTX2_CN9XXX) {
+		disport_addr = PEMX_BASE(pcie_ep_dev->pem_base, pem_num[instance]) + PEM_DIS_PORT_OFFSET;
 		npu_csr_write(disport_addr, 1);
 	}
 
 	return 0;
 }
 
-static void npu_handshake_ready(struct npu_bar_map *bar_map, int instance)
+static void npu_handshake_ready(struct npu_bar_map *bar_map, struct otx_pcie_ep *pcie_ep_dev)
 {
 	uint64_t scratch_val;
 	uint64_t scratch_addr;
-	unsigned long part_num;
+	int instance = pcie_ep_dev->instance;
 
 	printk("Writing to scratch register\n");
-	part_num = read_cpuid_part_number();
-	if (part_num == CAVIUM_CPU_PART_T83)
-		scratch_addr = CN83xx_SDP_BASE + CN83XX_SDP0_SCRATCH_OFFSET(epf_num[instance]);
-	else if (part_num == MRVL_CPU_PART_OCTEONTX2_96XX ||
-		 part_num == MRVL_CPU_PART_OCTEONTX2_98XX)
-		scratch_addr = CN93xx_SDP_BASE(sdp_num[instance]) + CN93XX_SDPX_EPFX_SCRATCH_OFFSET(epf_num[instance]);
-	else
-		return;
+	scratch_addr = pcie_ep_dev->sdp_base + SDP_SCRATCH_OFFSET(epf_num[instance]);
 	scratch_val = ((uint64_t)(NPU_BARMAP_FIREWALL_FIRST_ENTRY *
 		       NPU_BARMAP_ENTRY_SIZE) << 32) |
 		       NPU_HANDSHAKE_SIGNATURE;
@@ -300,24 +290,71 @@ extern void mv_facility_conf_init(struct device *dev,
 				  struct npu_bar_map *barmap);
 extern int npu_device_access_init(void);
 
+static int pcie_ep_dt_probe(struct platform_device *pdev,
+			    struct otx_pcie_ep *pcie_ep_dev)
+{
+	struct device *dev = &pdev->dev;
+	const unsigned int *data;
+	int ret = 0;
+
+	data = of_device_get_match_data(dev);
+	pcie_ep_dev->plat_model = *data;
+
+	ret = device_property_read_u64(dev, "pem_base",
+				       &pcie_ep_dev->pem_base);
+	if (ret < 0) {
+		dev_err(dev, "cannot read PEM base from DT ret=%d\n", ret);
+		return ret;
+	}
+
+	ret = device_property_read_u64(dev, "sdp_base",
+				       &pcie_ep_dev->sdp_base);
+	if (ret < 0) {
+		dev_err(dev, "cannot read SDP base from DT ret=%d\n", ret);
+		return ret;
+	}
+
+	ret = device_property_read_u64(dev, "oei_trig_addr",
+				       &pcie_ep_dev->oei_trig_addr);
+	if (ret < 0) {
+		dev_err(dev, "cannot read OEI_TRIG addr from DT ret=%d\n", ret);
+		return ret;
+	}
+
+	ret = device_property_read_u32(dev, "instance", &pcie_ep_dev->instance);
+	if (ret < 0)
+		pcie_ep_dev->instance = 0;
+
+	return 0;
+}
+
 static int npu_base_probe(struct platform_device *pdev)
 {
+	struct otx_pcie_ep *pcie_ep_dev;
 	struct device *dev = &pdev->dev;
 	int i, irq, first_irq, irq_count, ret;
 	char *dev_id = NPU_BASE_DEVICE_ID;
-	unsigned long part_num;
 	struct device *smmu_dev;
 	struct iommu_domain *host_domain;
 	int instance = 0;
+	unsigned int plat;
 
-	ret = device_property_read_u32(dev, "instance", &instance);
-	if (ret)
-		instance = 0;
+	pcie_ep_dev = devm_kzalloc(dev, sizeof(*pcie_ep_dev), GFP_KERNEL);
+	if (!pcie_ep_dev)
+		return -ENOMEM;
 
-	part_num = read_cpuid_part_number();
-	printk("CPU Part: 0x%lx\n", part_num);
-	if (part_num == MRVL_CPU_PART_OCTEONTX2_96XX ||
-	    part_num == MRVL_CPU_PART_OCTEONTX2_98XX) {
+	if (dev->of_node) {
+		ret = pcie_ep_dt_probe(pdev, pcie_ep_dev);
+		if (ret < 0)
+			goto exit;
+	}
+
+	platform_set_drvdata(pdev, pcie_ep_dev);
+
+	instance = pcie_ep_dev->instance;
+	plat = pcie_ep_dev->plat_model;
+
+	if (plat == OTX2_CN9XXX) {
 		smmu_dev = bus_find_device_by_name(&platform_bus_type,
 						   NULL,
 						   "830000000000.smmu");
@@ -409,29 +446,32 @@ static int npu_base_probe(struct platform_device *pdev)
 		return -1;
 	}
 
-	if (npu_base_setup(&bar_map, instance)) {
+	if (npu_base_setup(&bar_map, pcie_ep_dev)) {
 		printk("Base setup failed\n");
 		return -1;
 	}
 
 	plat_dev = dev;
-	npu_handshake_ready(&bar_map, instance);
+	npu_handshake_ready(&bar_map, pcie_ep_dev);
 	mv_facility_conf_init(dev, npu_barmap_mem, &bar_map);
 	npu_device_access_init();
 	return 0;
 
 exit:
+	devm_kfree(dev, pcie_ep_dev);
 	return ret ? -ENODEV : 0;
 }
 
 static void npu_base_shutdown(struct platform_device *pdev)
 {
 	printk("%s: called\n", __func__);
+
 	return;
 }
 
 static int npu_base_remove(struct platform_device *pdev)
 {
+	struct otx_pcie_ep *pcie_ep_dev = platform_get_drvdata(pdev);
 	struct device *dev = &pdev->dev;
 
 	printk("%s: called\n", __func__);
@@ -439,6 +479,8 @@ static int npu_base_remove(struct platform_device *pdev)
 	/* remove device from domain */
 	if (smmu_ops)
 		smmu_ops->remove_device(dev);
+
+	devm_kfree(dev, pcie_ep_dev);
 
 	return 0;
 }
@@ -461,8 +503,8 @@ static const struct dev_pm_ops npu_base_pm_ops = {
 };
 
 static const struct of_device_id npu_base_off_match[] = {
-	{ .compatible = "marvell,octeontx-ep", },
-	{ .compatible = "marvell,octeontx2-ep", },
+	{ .compatible = "marvell,octeontx-ep", .data = &otx_cn83xx},
+	{ .compatible = "marvell,octeontx2-ep", .data = &otx2_cn9xxx},
 	{},
 };
 MODULE_DEVICE_TABLE(of, npu_base_off_match);

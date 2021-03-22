@@ -79,11 +79,11 @@ struct npu_irq_info {
 	 NPU_BARMAP_NW_AGENT_SIZE + NPU_BARMAP_RPC_SIZE)
 
 #define NPU_BARMAP_FIREWALL_FIRST_ENTRY 8
-/* entry 8 to entry 14; entry-15 is reserved to map GICD space 
+/* entry 8 to entry 14; entry-15 is reserved to map GICD space
  * for host to interrupt NPU
  */
 #define NPU_BARMAP_FIREWALL_MAX_ENTRY 7
-#define CN83XX_PEM_BAR1_INDEX_MAX_ENTRIES 16
+#define NPU_PEM_BAR_INDEX_MAX_ENTRIES 16
 #define NPU_BARMAP_ENTRY_SIZE (4 * MB)
 #define NPU_BARMAP_MAX_SIZE \
 	(NPU_BARMAP_ENTRY_SIZE * NPU_BARMAP_FIREWALL_MAX_ENTRY)

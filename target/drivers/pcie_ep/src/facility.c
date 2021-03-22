@@ -23,8 +23,6 @@ extern struct npu_irq_info irq_info[MAX_INTERRUPTS];
 extern struct device   *plat_dev;
 
 
-#define CN83XX_SDP0_EPF0_OEI_TRIG (1UL << 23)
-
 union sdp_epf_oei_trig {
 	uint64_t u64;
 	struct {
