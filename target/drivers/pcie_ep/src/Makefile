@@ -18,7 +18,7 @@ obj-m := pcie_ep.o
 pcie_ep-y := $(OBJS)
 
 all:
-	make -C $(KDIR) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) SUBDIRS=`pwd` modules
+	make -C $(KDIR) ARCH=$(ARCH) CROSS_COMPILE=$(CROSS_COMPILE) M=`pwd` modules
 
 clean:
-	make -C $(KDIR) SUBDIRS=`pwd` clean
+	make -C $(KDIR) M=`pwd` clean

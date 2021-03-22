@@ -19,7 +19,7 @@ obj-m += $(MODULE_NAME).o
 $(MODULE_NAME)-y = $(OBJS)
  
 all:
-	make ARCH=arm64 CROSS_COMPILE=$(CROSS) -C $(KDIR) SUBDIRS=$(PWD) modules
+	make ARCH=arm64 CROSS_COMPILE=$(CROSS) -C $(KDIR) M=$(PWD) modules
  
 clean:
-	make -C $(KDIR) SUBDIRS=$(PWD) clean
+	make -C $(KDIR) M=$(PWD) clean
