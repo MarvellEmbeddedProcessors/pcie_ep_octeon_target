@@ -586,13 +586,18 @@ int __octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 		    octeon_map_single_buffer(get_octeon_device_id
 					     (priv->oct_dev), skb->data,
 					     skb->len, CAVIUM_PCI_DMA_TODEVICE);
+		if (octeon_mapping_error(get_octeon_device_id(priv->oct_dev),
+					 ndata.cmd.dptr)) {
+			cavium_error("dma mapping error\n");
+			goto oct_xmit_failed;
+		}
 
 		finfo->dptr = ndata.cmd.dptr;
 
 		ndata.buftype = NORESP_BUFTYPE_NET;
 
 	} else {
-		int i, frags;
+		int i, j, frags;
 		struct skb_frag_struct *frag;
 		struct octnic_gather *g;
 
@@ -624,6 +629,15 @@ int __octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 					     (priv->oct_dev), skb->data,
 					     (skb->len - skb->data_len),
 					     CAVIUM_PCI_DMA_TODEVICE);
+		if (octeon_mapping_error(get_octeon_device_id(priv->oct_dev),
+					 g->sg[0].ptr[0])) {
+			cavium_error("dma mapping error\n");
+			cavium_spin_lock(&priv->lock);
+			cavium_list_add_tail(&g->list, &priv->glist);
+			cavium_spin_unlock(&priv->lock);
+			goto oct_xmit_failed;
+		}
+
 		CAVIUM_ADD_SG_SIZE(&(g->sg[0]), (skb->len - skb->data_len), 0);
 
 		frags = skb_shinfo(skb)->nr_frags;
@@ -641,7 +655,21 @@ int __octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 					    frag->page_offset,
 					    frag->size,
 					    CAVIUM_PCI_DMA_TODEVICE);
-
+			if (octeon_mapping_error(get_octeon_device_id(priv->oct_dev),
+						 g->sg[(i >> 2)].ptr[(i & 3)])) {
+				cavium_error("dma mapping error\n");
+				for (j = 1; j < i; j++) {
+					frag = &skb_shinfo(skb)->frags[j - 1];
+					octeon_unmap_page(get_octeon_device_id(priv->oct_dev),
+					g->sg[j >> 2].ptr[j & 3],
+					frag->size,
+					CAVIUM_PCI_DMA_TODEVICE);
+				}
+				cavium_spin_lock(&priv->lock);
+				cavium_list_add_tail(&g->list, &priv->glist);
+				cavium_spin_unlock(&priv->lock);
+				goto oct_xmit_failed;
+			}
 			CAVIUM_ADD_SG_SIZE(&(g->sg[(i >> 2)]), frag->size,
 					   (i & 3));
 			i++;

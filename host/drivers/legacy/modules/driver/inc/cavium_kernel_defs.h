@@ -253,6 +253,8 @@ octeon_map_page(int octeon_id, cavium_page_t * page, unsigned long offset,
 void
 octeon_unmap_page(int octeon_id, unsigned long dma_addr, uint32_t size,
 		  int direction);
+int
+octeon_mapping_error(int octeon_id, unsigned long dma_addr);
 
 /** Register a change in droq operations. The ops field has a pointer to a
   * function which will called by the DROQ handler for all packets arriving

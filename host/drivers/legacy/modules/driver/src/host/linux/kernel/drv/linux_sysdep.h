@@ -506,6 +506,12 @@ octeon_pci_map_page(cavium_pci_device_t * pci_dev, cavium_page_t * page,
 	return pci_map_page(pci_dev, page, offset, size, direction);
 }
 
+static inline int
+octeon_pci_mapping_error(cavium_pci_device_t *pci_dev, unsigned long dma_addr)
+{
+	return pci_dma_mapping_error(pci_dev, dma_addr);
+}
+
 static inline void
 octeon_pci_unmap_page(cavium_pci_device_t * pci_dev, unsigned long dma_addr,
 		      uint32_t size, int direction)

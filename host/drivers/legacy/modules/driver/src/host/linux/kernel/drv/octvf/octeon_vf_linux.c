@@ -229,6 +229,7 @@ EXPORT_SYMBOL(octeon_map_single_buffer);
 EXPORT_SYMBOL(octeon_unmap_single_buffer);
 EXPORT_SYMBOL(octeon_map_page);
 EXPORT_SYMBOL(octeon_unmap_page);
+EXPORT_SYMBOL(octeon_mapping_error);
 
 EXPORT_SYMBOL(get_octeon_count);
 EXPORT_SYMBOL(get_octeon_device_id);
