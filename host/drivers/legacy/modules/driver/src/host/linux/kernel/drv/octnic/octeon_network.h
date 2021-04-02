@@ -111,6 +111,8 @@ typedef struct {
 	/** Pointer to the octeon device structure. */
 	void *oct_dev;
 
+	char init_name[64];
+
 	/** Link information sent by the core application for this interface. */
 	oct_link_info_t linfo;
 

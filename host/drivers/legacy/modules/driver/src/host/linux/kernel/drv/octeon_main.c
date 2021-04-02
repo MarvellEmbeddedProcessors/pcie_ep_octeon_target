@@ -444,7 +444,7 @@ int octeon_tx_enable_msix_interrupts(octeon_device_t * oct)
 		return 1;
 	}
 
-	srn = oct->sriov_info.pf_srn;
+	//srn = oct->sriov_info.pf_srn;
 
 	for (i = 0; i < non_ioq_intrs; i++) {
 		oct->msix_entries[i].entry = i;
@@ -454,6 +454,7 @@ int octeon_tx_enable_msix_interrupts(octeon_device_t * oct)
 		oct->msix_entries[i].entry = srn + i;
 	}
 
+	cavium_error("%s: OCTEON[%d]: num_irqs = %d, srn = %d\n", __func__, oct->octeon_id, oct->num_irqs, srn);
 	ret = pci_enable_msix_range(oct->pci_dev, oct->msix_entries,
 				    oct->num_irqs, oct->num_irqs);
 	if(ret < 0) {

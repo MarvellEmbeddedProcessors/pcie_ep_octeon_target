@@ -185,6 +185,9 @@ static void octeon_debug_dump(struct net_device *dev)
 	netdev_info(dev, "Buffer size = %u\n", oct->droq[0]->buffer_size);
 	total_rx = 0;
 	for (q = 0; q < oct->num_oqs; q++) {
+		int idx = 0;
+		octeon_droq_desc_t *desc_ring;
+
 		netdev_info(dev, "======== OQ %d ========\n", q);
 		oq = oct->droq[q];
 		if (oq == NULL) {
@@ -205,6 +208,11 @@ static void octeon_debug_dump(struct net_device *dev)
 		netdev_info(dev, "dropped_toomany    = %llu\n", oq->stats.dropped_toomany);
 		netdev_info(dev, "dropped_zlp        = %llu\n", oq->stats.dropped_zlp);
 		netdev_info(dev, "pkts_delayed_data  = %llu\n", oq->stats.pkts_delayed_data);
+
+		desc_ring = oq->desc_ring;
+		for (idx = 0; idx < 32; idx++) {
+			netdev_info(dev, "idx-%d buf_ptr = %llx\n", idx, desc_ring[idx].buffer_ptr);
+		}
 	}
 	netdev_info(dev, "Total Rx    = %llu\n", total_rx);
 }

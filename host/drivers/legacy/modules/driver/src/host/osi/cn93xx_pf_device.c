@@ -33,7 +33,7 @@ extern void mv_facility_irq_handler(uint64_t event_word);
 
 extern int num_rings_per_pf;
 extern int num_rings_per_vf;
-static int num_rings_per_pf_pt, num_rings_per_vf_pt, pf_srn_pt;
+static int num_rings_per_pf_pt[2], num_rings_per_vf_pt[2], pf_srn_pt[2];
 extern void cn93xx_iq_intr_handler(octeon_ioq_vector_t * ioq_vector);
 
 void cn93xx_dump_iq_regs(octeon_device_t * oct)
@@ -592,6 +592,7 @@ static void cn93xx_enable_output_queue(octeon_device_t * oct, int oq_no)
 				    CN93XX_SDP_R_OUT_ENABLE(oq_no));
 	reg_val |= 0x1ULL;
 
+	printk("%s: OCTEON[%d]: oq-%d R_OUT_ENABLED done\n", __func__, oct->octeon_id, oq_no);
 	octeon_write_csr64(oct,
 			   CN93XX_SDP_R_OUT_ENABLE(oq_no), reg_val);
 }
@@ -1078,7 +1079,7 @@ union ring {
 
 static int resume_cn93xx_setup(octeon_device_t * oct)
 {
-	uint64_t npfs = 0, rppf = 0, pf_srn = pf_srn_pt;
+	uint64_t npfs = 0, rppf = 0, pf_srn = pf_srn_pt[oct->octeon_id];
 	uint64_t nvfs = 0, rpvf = 0, vf_srn = 0;
 	int i, j, srn;
 #ifndef ETHERPCI
@@ -1101,7 +1102,8 @@ static int resume_cn93xx_setup(octeon_device_t * oct)
 	}
 
 	/* Only PF0 needs to program these */
-	if(!oct->octeon_id) {
+	//if(!oct->octeon_id) {
+	if (1) {
 		/* FIXME: Who programs RPPF in SDP_MACX_PF_RING_CTL register? */
 		regval = 0;
 		if(oct->chip_id == OCTEON_CN93XX_PF) {
@@ -1166,7 +1168,7 @@ static int resume_cn93xx_setup(octeon_device_t * oct)
 
 		/* Assign ring0 to VF */
 		for (j = 0; j < nvfs; j++) {
-			srn = vf_srn + (j * num_rings_per_vf_pt);
+			srn = vf_srn + (j * num_rings_per_vf_pt[oct->octeon_id]);
 			for (i = 0; i < rpvf; i++) {
 				regval = octeon_read_csr64(oct, CN93XX_SDP_EPVF_RING(srn + i));
 				cavium_print_msg("SDP_EPVF_RING[0x%llx]:0x%llx\n",
@@ -1188,7 +1190,7 @@ static int resume_cn93xx_setup(octeon_device_t * oct)
 	oct->sriov_info.rings_per_vf = rpvf;
 	/** All the remaining queues are handled by Physical Function */
 	//oct->sriov_info.pf_srn = oct->octeon_id * num_rings_per_pf_pt;
-	oct->sriov_info.pf_srn = pf_srn_pt;
+	oct->sriov_info.pf_srn = pf_srn_pt[oct->octeon_id];
 	oct->sriov_info.rings_per_pf = rppf;
 
 	oct->sriov_info.sriov_enabled = 0;
@@ -1237,21 +1239,21 @@ octeon_wait_fw_info(struct work_struct *work)
 			printk("pf_srn %d rpf %d rvf %d nvf %d\n", rinfo.s.pf_srn,
 			       rinfo.s.rppf, rinfo.s.rpvf, rinfo.s.numvf);
 
-			pf_srn_pt = rinfo.s.pf_srn;
+			pf_srn_pt[oct->octeon_id] = rinfo.s.pf_srn;
 			g_vf_srn = rinfo.s.pf_srn + rinfo.s.rppf;
-			num_rings_per_pf_pt = num_rings_per_pf;
-			num_rings_per_vf_pt = num_rings_per_vf;
-			if (num_rings_per_pf_pt != 1)
-				num_rings_per_pf_pt =
+			num_rings_per_pf_pt[oct->octeon_id] = num_rings_per_pf;
+			num_rings_per_vf_pt[oct->octeon_id] = num_rings_per_vf;
+			if (num_rings_per_pf_pt[oct->octeon_id] != 1)
+				num_rings_per_pf_pt[oct->octeon_id] =
 					roundup_pow_of_two(num_rings_per_pf);
-			if (num_rings_per_vf_pt != 1)
-				num_rings_per_vf_pt =
+			if (num_rings_per_vf_pt[oct->octeon_id] != 1)
+				num_rings_per_vf_pt[oct->octeon_id] =
 					roundup_pow_of_two(num_rings_per_vf);
 
-			if (num_rings_per_pf_pt > rinfo.s.rppf)
-				num_rings_per_pf_pt = rinfo.s.rppf;
-			if (num_rings_per_vf_pt > rinfo.s.rpvf)
-				num_rings_per_vf_pt = rinfo.s.rpvf;
+			if (num_rings_per_pf_pt[oct->octeon_id] > rinfo.s.rppf)
+				num_rings_per_pf_pt[oct->octeon_id] = rinfo.s.rppf;
+			if (num_rings_per_vf_pt[oct->octeon_id] > rinfo.s.rpvf)
+				num_rings_per_vf_pt[oct->octeon_id] = rinfo.s.rpvf;
 			if (oct->sriov_info.num_vfs > rinfo.s.numvf)
 				oct->sriov_info.num_vfs = rinfo.s.numvf;
 
@@ -1382,7 +1384,7 @@ enum setup_stage setup_cn98xx_octeon_pf_device(octeon_device_t * oct)
 	octeon_write_csr64(oct, CN93XX_SDP_EPF_RINFO, 0ULL);
 	/* Program MACX_PF_RING_CTL from PF0 only. 
 	 * TODO: Condition check should done on the PF number not on octeon_id */
-	if(!oct->octeon_id) {
+	if(1) {
 		/* Hardcode NPFS = 8, RPPF = 2 and SRN = 0 */
 		regval = 0;
 		regval = (NPFS  << CN93XX_SDP_MAC_PF_RING_CTL_NPFS_BIT_POS);

@@ -574,7 +574,6 @@ octnet_setup_nic_device(int octeon_id, oct_link_info_t * link_info, int ifidx)
 		cavium_error("OCTNIC: Device allocation failed\n");
 		return -ENOMEM;
 	}
-	pndev->dev.init_name = OCTEON_NETDEV_DEV_NAME;
 
 	octprops[octeon_id]->pndev[ifidx] = pndev;
 
@@ -636,6 +635,11 @@ octnet_setup_nic_device(int octeon_id, oct_link_info_t * link_info, int ifidx)
 	priv->octprops = octprops[octeon_id];
 	priv->pndev = pndev;
 	cavium_spin_lock_init(&(priv->lock));
+
+	/* Assign base device init_name */
+	snprintf(priv->init_name, 64, "%s%d",
+		 OCTEON_NETDEV_DEV_NAME, octeon_id);
+	pndev->dev.init_name = (const char *)&priv->init_name;
 
 	/* Record the ethernet port number on the Octeon target for this
 	   interface. */
