@@ -24,6 +24,7 @@ check_cnnic:
 host_drv: 
 	@$(MAKE) check_cnnic;
 	cd $(DRIVER_ROOT)/host/linux/kernel/drv; $(MAKE) all;
+	cd $(DRIVER_ROOT)/host/linux/kernel/drv/octvf; $(MAKE) all;
 
 clean:
 	cd $(DRIVER_ROOT)/host/linux/kernel/drv; $(MAKE) clean; 

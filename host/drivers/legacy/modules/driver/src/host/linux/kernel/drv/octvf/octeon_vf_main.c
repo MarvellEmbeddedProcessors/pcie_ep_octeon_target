@@ -18,6 +18,10 @@ int octeon_msix = 1;
 module_param(octeon_msix, int, 0);
 MODULE_PARM_DESC(octeon_msix, "Flag for enabling MSI-X interrupts");
 
+uint32_t num_rings_per_vf = 1;
+module_param(num_rings_per_vf, int, 0);
+MODULE_PARM_DESC(num_rings_per_vf, "Number of rings per VF");
+
 int num_vfs = 0;
 module_param(num_vfs, int, 0);
 MODULE_PARM_DESC(num_vfs, "Number of Virtual Functions");
@@ -53,42 +57,21 @@ int octeon_enable_msix_interrupts(octeon_device_t * oct);
 void octeon_cleanup_aer_uncorrect_error_status(struct pci_dev *);
 void octeon_stop_io(octeon_device_t * oct);
 
-void octeon_force_io_queues_off(octeon_device_t * oct)
-{
-	if (oct->chip_id == OCTEON_CN83XX_VF) {
-		uint64_t d64 = 0ULL, q_no = 0ULL;
-		cavium_print_msg(" %s : OCTEON_CN83XX VF \n", __FUNCTION__);
-
-		for (q_no = 0; q_no < oct->rings_per_vf; q_no++) {
-			/* Reset the Enable bit for all the 64 IQs  */
-			d64 = 0;
-			octeon_write_csr64(oct,
-					   CN83XX_VF_SDP_EPF_R_IN_ENABLE
-					   (oct->epf_num, q_no), d64);
-			octeon_write_csr64(oct,
-					   CN83XX_VF_SDP_EPF_R_OUT_ENABLE
-					   (oct->epf_num, q_no), d64);
-		}
-	}
-
-}
-
 void octeon_pcierror_quiesce_device(octeon_device_t * oct)
 {
 	int i;
 
-	printk(" %s : \n", __FUNCTION__);
-
 	/* Disable the input and output queues now. No more packets will
 	   arrive from Octeon, but we should wait for all packet processing
 	   to finish. */
-	octeon_force_io_queues_off(oct);
+	if(oct->fn_list.force_io_queues_off)
+		oct->fn_list.force_io_queues_off(oct)
 
 	/* To allow for in-flight requests */
 	cavium_sleep_timeout(100);
 
 	if (wait_for_all_pending_requests(oct)) {
-		cavium_error("OCTEON[%d]: There were pending requests\n",
+		cavium_error("OCTEON_VF[%d]: There were pending requests\n",
 			     oct->octeon_id);
 	}
 
@@ -117,8 +100,6 @@ void octeon_cleanup_aer_uncorrect_error_status(struct pci_dev *dev)
 	int pos = 0x100;
 	u32 status, mask;
 
-	printk("%s : \n", __FUNCTION__);
-
 	pci_read_config_dword(dev, pos + PCI_ERR_UNCOR_STATUS, &status);
 	pci_read_config_dword(dev, pos + PCI_ERR_UNCOR_SEVER, &mask);
 	if (dev->error_state == pci_channel_io_normal)
@@ -141,16 +122,15 @@ void octeon_stop_io(octeon_device_t * oct)
 
 	if (oct->app_mode == CVM_DRV_BASE_APP) {
 
-		if (oct->chip_id == OCTEON_CN83XX_VF) {
+		if (oct->msix_on) {
 			octeon_clear_irq_affinity(oct);
 			octeon_disable_msix_interrupts(oct);
 			octeon_delete_ioq_vector(oct);
 		}
-
 		oct_stop_base_module(oct->octeon_id, oct);
 	}
 
-	cavium_print_msg("OCTEON: Device state is now %s\n",
+	cavium_print_msg("OCTEON_VF: Device state is now %s\n",
 			 get_oct_state_string(&oct->status));
 
 	//cn63xx_cleanup_aer_uncorrect_error_status(oct->pci_dev);
@@ -171,39 +151,26 @@ octeon_pcie_error_detected(struct pci_dev *pdev, pci_channel_state_t state)
 {
 	octeon_device_t *oct = pci_get_drvdata(pdev);
 
-	printk("%s : \n", __FUNCTION__);
-
 	/* Non-correctable Non-fatal errors */
 	if (state == pci_channel_io_normal) {
 		cavium_error
-		    ("OCTEON: Non-correctable non-fatal error reported.\n");
+		    ("OCTEON_VF: Non-correctable non-fatal error reported.\n");
 		octeon_cleanup_aer_uncorrect_error_status(oct->pci_dev);
 		return PCI_ERS_RESULT_CAN_RECOVER;
 	}
 
 	/* Non-correctable Fatal errors */
 	cavium_error
-	    ("OCTEON: PCIe error Non-correctable FATAL reported by AER driver\n");
+	    ("OCTEON_VF: PCIe error Non-correctable FATAL reported by AER driver\n");
 	octeon_stop_io(oct);
 
 	/* Always return a DISCONNECT. There is no support for recovery but only
 	   for a clean shutdown. */
 	return PCI_ERS_RESULT_DISCONNECT;
-
-#if 0
-	if (state == pci_channel_io_perm_failure) {
-		return PCI_ERS_RESULT_DISCONNECT;
-	}
-
-	/* Request a slot reset. */
-	return PCI_ERS_RESULT_NEED_RESET;
-#endif
 }
 
 pci_ers_result_t octeon_pcie_mmio_enabled(struct pci_dev * pdev)
 {
-	printk("%s : \n", __FUNCTION__);
-
 	/* We should never hit this since we never ask for a reset for a Fatal
 	   Error. We always return DISCONNECT in io_error above. */
 	/* But play safe and return RECOVERED for now. */
@@ -219,8 +186,6 @@ pci_ers_result_t octeon_pcie_mmio_enabled(struct pci_dev * pdev)
  */
 pci_ers_result_t octeon_pcie_slot_reset(struct pci_dev * pdev)
 {
-	printk("%s : \n", __FUNCTION__);
-
 	/* We should never hit this since we never ask for a reset for a Fatal
 	   Error. We always return DISCONNECT in io_error above. */
 	/* But play safe and return RECOVERED for now. */
@@ -237,8 +202,6 @@ pci_ers_result_t octeon_pcie_slot_reset(struct pci_dev * pdev)
  */
 void octeon_pcie_resume(struct pci_dev *pdev)
 {
-	printk("%s : \n", __FUNCTION__);
-
 	/* Nothing to be done here. */
 }
 
@@ -248,7 +211,7 @@ void octeon_pcie_resume(struct pci_dev *pdev)
 void octeon_unmap_pci_barx(octeon_device_t * oct, int baridx)
 {
 	cavium_print(PRINT_DEBUG,
-		     "OCTEON[%d]: Freeing PCI mapped regions for Bar%d\n",
+		     "OCTEON_VF[%d]: Freeing PCI mapped regions for Bar%d\n",
 		     oct->octeon_id, baridx);
 
 	if (oct->mmio[baridx].done)
@@ -264,7 +227,7 @@ int octeon_map_pci_barx(octeon_device_t * oct, int baridx, int max_map_len)
 
 	if (pci_request_region(oct->pci_dev, baridx * 2, DRIVER_NAME)) {
 		cavium_error
-		    ("OCTEON[%d]: pci_request_region failed for bar %d\n",
+		    ("OCTEON_VF[%d]: pci_request_region failed for bar %d\n",
 		     oct->octeon_id, baridx);
 		return 1;
 	}
@@ -285,12 +248,12 @@ int octeon_map_pci_barx(octeon_device_t * oct, int baridx, int max_map_len)
 	oct->mmio[baridx].mapped_len = mapped_len;
 
 	cavium_print(PRINT_DEBUG,
-		     "OCTEON[%d]: BAR%d start: 0x%lx mapped %lu of %lu bytes\n",
+		     "OCTEON_VF[%d]: BAR%d start: 0x%lx mapped %lu of %lu bytes\n",
 		     oct->octeon_id, baridx, oct->mmio[baridx].start,
 		     mapped_len, oct->mmio[baridx].len);
 
 	if (!oct->mmio[baridx].hw_addr) {
-		cavium_error("OCTEON[%d]: error ioremap for bar %d\n",
+		cavium_error("OCTEON_VF[%d]: error ioremap for bar %d\n",
 			     oct->octeon_id, baridx);
 		return 1;
 	}
@@ -320,13 +283,14 @@ octeon_msix_intr_handler(int irq UNUSED, void *dev)
 #endif
 {
 	unsigned long flags;
+	cvm_intr_return_t ret;
 	octeon_ioq_vector_t *ioq_vector = (octeon_ioq_vector_t *) dev;
 	octeon_device_t *oct = ioq_vector->oct_dev;
-	cvm_intr_return_t ret;
 
 	local_irq_save(flags);
 	ret = oct->fn_list.msix_interrupt_handler(ioq_vector);
 	local_irq_restore(flags);
+
 	return ret;
 }
 
@@ -349,92 +313,173 @@ void octeon_disable_msix_interrupts(octeon_device_t * oct_dev)
 	}
 }
 
-/*  Enable interrupt in Octeon device as given in the PCI interrupt mask.
-*/
-int octeon_enable_msix_interrupts(octeon_device_t * oct)
+
+
+static char octtx_intr_names[][INTRNAMSIZ] = {
+	"octeontx_epf_irerr_rint",
+	"octeontx_epf_orerr_rint",
+	"octeontx_epf_mbox_rint",
+	"octeontx_epf_oei_rint",
+	"octeontx_epf_dma_rint",
+	"octeontx_epf_misc_rint",
+	"octeontx_epf_pp_vf_rint",
+	"octeontx_epf_dma_vf_rint",
+	"octeontx_epf_rsvd_int0",
+	"octeontx_epf_rsvd_int1",
+	"octeontx_epf_rsvd_int2",
+	"octeontx_epf_rsvd_int3",
+	"octeontx_epf_rsvd_int4",
+	"octeontx_epf_rsvd_int5",
+	"octeontx_epf_rsvd_int6",
+	"octeontx_epf_rsvd_int7",
+	/* IOQ interrupt */
+	"octeontx"
+};
+
+static char octtx2_intr_names[][INTRNAMSIZ] = {
+	"octeontx2_epf_ire_rint",
+	"octeontx2_epf_ore_rint",
+	"octeontx2_epf_vfire_rint0",
+	"octeontx2_epf_vfire_rint1",
+	"octeontx2_epf_vfore_rint0",
+	"octeontx2_epf_vfore_rint1",
+	"octeontx2_epf_mbox_rint0",
+	"octeontx2_epf_mbox_rint1",
+	"octeontx2_epf_oei_rint",
+	"octeontx2_epf_dma_rint",
+	"octeontx2_epf_dma_vf_rint0",
+	"octeontx2_epf_dma_vf_rint1",
+	"octeontx2_epf_pp_vf_rint0",
+	"octeontx2_epf_pp_vf_rint1",
+	"octeontx2_epf_misc_rint",
+	"octeontx2_epf_rsvd",
+	/* IOQ interrupt */
+	"octeontx2"
+};
+
+int octeon_tx_enable_msix_interrupts(octeon_device_t * oct)
 {
-	int irqret, num_ioq_vectors, i = 0;
+	int irqret, num_ioq_vectors, i = 0, srn = 0, ret = 0;
+	int failed_non_irq_index = 0, failed_irq_index = 0;
+	int non_ioq_intrs = 0;
+	char *oct_irq_names = NULL, *irq_names, *ioq_irq_name;
 
-	cavium_atomic_set(&oct->in_interrupt, 0);
-	cavium_atomic_set(&oct->interrupts, 0);
+	num_ioq_vectors = oct->num_oqs;
 
-	if (octeon_msix == 1) {
-
-		oct->num_irqs = oct->rings_per_vf;
-
-		oct->msix_entries =
-		    cavium_alloc_virt(oct->num_irqs *
-				      sizeof(cavium_msix_entry_t));
-		if (oct->msix_entries == NULL) {
-			cavium_error("Memory Alloc failed.\n");
-			return 1;
-		}
-
-		for (i = 0; i < oct->num_irqs; i++)
-			oct->msix_entries[i].entry = i;
-
-		if (pci_enable_msix_range(oct->pci_dev, oct->msix_entries,
-					  oct->num_irqs, oct->num_irqs)) {
-			cavium_error("Unable to Allocate MSI-X interrupts \n");
-			cavium_free_virt(oct->msix_entries);
-			return 1;
-		}
-		cavium_print_msg
-		    ("OCTEON: %d MSI-X interrupts are allocated.\n",
-		     oct->num_irqs);
-
-		num_ioq_vectors = oct->num_irqs;
-
-		for (i = 0; i < num_ioq_vectors; i++) {
-			irqret = request_irq(oct->msix_entries[i].vector,
-					     octeon_msix_intr_handler, 0,
-					     "octeon_vf", oct->ioq_vector[i]);
-			if (irqret) {
-				cavium_error
-				    ("OCTEON: Request_irq failed for MSIX interrupt "
-				     "Error: %d\n", irqret);
-
-				while (i) {
-					i--;
-					free_irq(oct->msix_entries[i].vector,
-						 oct->ioq_vector[i]);
-				}
-				goto free_msix_entries;
-			}
-			oct->droq[i]->irq_num = oct->msix_entries[i].vector;
-
-		}
-
-		oct->msix_on = 1;
-		cavium_print_msg("OCTEON[%d]: MSI-X enabled\n", oct->octeon_id);
-		return 0;
+	if (oct->chip_id == OCTEON_CN83XX_VF) {
+		non_ioq_intrs = OCTEON_NUM_NON_IOQ_INTR;
+		oct_irq_names = octtx_intr_names[0];
+	} else if (oct->chip_id == OCTEON_CN93XX_VF ||
+		   oct->chip_id == OCTEON_CN98XX_VF) {
+		non_ioq_intrs = 0;
+		oct_irq_names = octtx2_intr_names[0];
 	}
 
-	if (octeon_msi == 1) {
-		if (!pci_enable_msi(oct->pci_dev)) {
-			oct->msi_on = 1;
-			cavium_print_msg("OCTEON[%d]: MSI enabled\n",
-					 oct->octeon_id);
-		}
+	oct->num_irqs = num_ioq_vectors + non_ioq_intrs;
+	/* allocate storage for the names assigned to each irq */
+	oct->irq_name_storage =
+		devm_kzalloc(&oct->pci_dev->dev,
+			     (oct->num_irqs * INTRNAMSIZ), GFP_KERNEL);
+	if (!oct->irq_name_storage) {
+		cavium_error("Irq name storage alloc failed...\n");
+		return 1;
 	}
+	irq_names = oct->irq_name_storage;
+	memcpy(irq_names, oct_irq_names, (non_ioq_intrs * INTRNAMSIZ));
 
-	irqret = request_irq(oct->pci_dev->irq, octeon_intr_handler,
-			     CVM_SHARED_INTR, "octeon", oct);
-	if (irqret) {
-		if (oct->msi_on)
-			pci_disable_msi(oct->pci_dev);
-		cavium_error("OCTEON: Request IRQ failed with code: %d\n",
-			     irqret);
+	oct->msix_entries =
+	    cavium_alloc_virt(oct->num_irqs * sizeof(cavium_msix_entry_t));
+
+	if (oct->msix_entries == NULL) {
+		cavium_error("Memory Alloc failed.\n");
 		return 1;
 	}
 
+	srn = 0; /* Always 0 for VF, no non-ioq interrupts */
+
+	for (i = 0; i < non_ioq_intrs; i++) {
+		oct->msix_entries[i].entry = i;
+	}
+
+	for (i = non_ioq_intrs; i < oct->num_irqs; i++) {
+		oct->msix_entries[i].entry = srn + i;
+	}
+
+	ret = pci_enable_msix_range(oct->pci_dev, oct->msix_entries,
+				    oct->num_irqs, oct->num_irqs);
+	if(ret < 0) {
+		cavium_error("Unable to Allocate MSI-X interrupts. returned err: %d \n", ret);
+		cavium_free_virt(oct->msix_entries);
+		return 1;
+	}
+	cavium_print_msg
+	    ("OCTEON: %d MSI-X interrupts are allocated.\n", oct->num_irqs);
+
+	/** For 83XX/93XX, there is OCTEON_NUM_NON_IOQ_INTR non-ioq interrupts */
+	for (i = 0; i < non_ioq_intrs; i++) {
+		irqret = request_irq(oct->msix_entries[i].vector,
+				     octeon_intr_handler, 0,
+				     &irq_names[IRQ_NAME_OFF(i)], oct);
+		if (irqret) {
+			failed_non_irq_index = i;
+			cavium_error
+			    ("OCTEON: Request_irq failed for MSIX interrupt "
+			     "Error: %d\n", irqret);
+
+			goto free_non_irq_entries;
+		}
+	}
+	failed_non_irq_index = non_ioq_intrs;
+
+	for (i = 0; i < num_ioq_vectors; i++) {
+		ioq_irq_name = &irq_names[IRQ_NAME_OFF(i + non_ioq_intrs)];
+		snprintf(ioq_irq_name, INTRNAMSIZ,
+				"%s-vf%u-ioq%d",
+				&oct_irq_names[IRQ_NAME_OFF(non_ioq_intrs)],
+				oct->pf_num, i);
+
+		irqret = request_irq(oct->msix_entries[i + non_ioq_intrs].vector,
+				     octeon_msix_intr_handler, 0,
+				     ioq_irq_name,
+				     oct->ioq_vector[i]);
+		if (irqret) {
+			failed_irq_index = i;
+			cavium_error
+			    ("OCTEON: Request_irq failed for MSIX interrupt "
+			     "Error: %d\n", irqret);
+
+			goto free_irq_entries;
+		}
+		oct->droq[i]->irq_num =
+			oct->msix_entries[i + non_ioq_intrs].vector;
+	}
+
+	oct->msix_on = 1;
+	cavium_print_msg("OCTEON[%d]: MSI-X enabled\n", oct->octeon_id);
 	return 0;
 
-free_msix_entries:
+free_irq_entries:
+	for (i = 0; i < failed_irq_index; i++) {
+		free_irq(oct->msix_entries[i].vector, oct->ioq_vector[i]);
+	}
+free_non_irq_entries:
+	for (i = 0; i < failed_non_irq_index; i++) {
+		free_irq(oct->msix_entries[i].vector, oct);
+	}
 	pci_disable_msix(oct->pci_dev);
 	cavium_free_virt(oct->msix_entries);
 	oct->msix_entries = NULL;
 	return 1;
+}
+
+/*  Enable interrupt in Octeon device as given in the PCI interrupt mask.
+*/
+int octeon_enable_msix_interrupts(octeon_device_t * oct)
+{
+	cavium_atomic_set(&oct->in_interrupt, 0);
+	cavium_atomic_set(&oct->interrupts, 0);
+
+	return octeon_tx_enable_msix_interrupts(oct);
 }
 
 #if  LINUX_VERSION_CODE < KERNEL_VERSION(3,8,0)
@@ -446,14 +491,14 @@ int octeon_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 {
 	octeon_device_t *oct_dev = NULL;
 
-	cavium_print_msg("\n\nOCTEON: Found device %x:%x. Initializing.\n",
+	cavium_print_msg("\n\nOCTEON_VF: Found device %x:%x. Initializing.\n",
 			 (uint32_t) pdev->vendor, (uint32_t) pdev->device);
 
 	oct_dev = octeon_allocate_device(pdev->device);
 	if (oct_dev == NULL)
 		return -ENOMEM;
 
-	cavium_print_msg("OCTEON: Setting up Octeon device %d \n",
+	cavium_print_msg("OCTEON_VF: Setting up Octeon device %d \n",
 			 oct_dev->octeon_id);
 
 	/* Assign octeon_device for this device to the private data area. */
@@ -466,19 +511,10 @@ int octeon_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		octeon_remove(pdev);
 		return -ENOMEM;
 	}
-#if 0
-	//octeon_setup_driver_dispatches(oct_dev->octeon_id);
-#endif
-
-#if 0
-	if (oct_dev->app_mode && (oct_dev->app_mode != CVM_DRV_BASE_APP)
-	    && (oct_dev->app_mode != CVM_DRV_INVALID_APP))
-		octeon_start_module(oct_dev->app_mode, oct_dev->octeon_id);
-#endif
 
 	octeon_state = OCT_DRV_ACTIVE;
 
-	cavium_print_msg("OCTEON: Octeon device %d is ready\n",
+	cavium_print_msg("OCTEON_VF: Octeon device %d is ready\n",
 			 oct_dev->octeon_id);
 	return 0;
 }
@@ -497,7 +533,7 @@ void octeon_destroy_resources(octeon_device_t * oct_dev)
 		cavium_atomic_set(&oct_dev->status, OCT_DEV_IN_RESET);
 
 		oct_dev->app_mode = CVM_DRV_INVALID_APP;
-		cavium_print_msg("OCTEON: Device state is now %s\n",
+		cavium_print_msg("OCTEON_VF: Device state is now %s\n",
 				 get_oct_state_string(&oct_dev->status));
 
 		cavium_sleep_timeout(CAVIUM_TICKS_PER_SEC / 10);
@@ -556,7 +592,7 @@ void octeon_remove(struct pci_dev *pdev)
 	int oct_idx;
 
 	oct_idx = oct_dev->octeon_id;
-	cavium_print_msg("OCTEON: Stopping octeon device %d\n", oct_idx);
+	cavium_print_msg("OCTEON_VF: Stopping octeon device %d\n", oct_idx);
 
 	/* Call the module handler for each module attached to the
 	   base driver. */
@@ -577,7 +613,7 @@ void octeon_remove(struct pci_dev *pdev)
 	   data structure to reflect this. Free the device structure. */
 	octeon_free_device_mem(oct_dev);
 
-	cavium_print_msg("OCTEON: Octeon device %d removed\n", oct_idx);
+	cavium_print_msg("OCTEON_VF: Octeon device %d removed\n", oct_idx);
 }
 
 /* The open() entry point for the octeon driver. This routine is called
@@ -603,7 +639,7 @@ int octeon_release(struct inode *inode UNUSED, struct file *file UNUSED)
 					     __FUNCTION__, current->pid);
 			} else {
 				cavium_error
-				    ("OCTEON[%d] Device is Not in Running State  \n",
+				    ("OCTEON_VF[%d] Device is Not in Running State  \n",
 				     octeon_device[i]->octeon_id);
 				cavium_error
 				    (" SE Application is Not Loaded & Running. \n");
@@ -635,7 +671,7 @@ static int octeon_chip_specific_setup(octeon_device_t * oct)
 	switch (dev_id) {
 
 	case OCTEON_CN83XX_PCIID_VF:
-		cavium_print_msg("OCTEON[%d]: CN83XX PASS%d.%d\n",
+		cavium_print_msg("OCTEON_VF[%d]: CN83XX PASS%d.%d\n",
 				 oct->octeon_id, OCTEON_MAJOR_REV(oct),
 				 OCTEON_MINOR_REV(oct));
 
@@ -643,21 +679,23 @@ static int octeon_chip_specific_setup(octeon_device_t * oct)
 		return setup_cn83xx_octeon_vf_device(oct);
 
 	case OCTEON_CN93XX_PCIID_VF:
-		cavium_print_msg("OCTEON[%d]: CN93XX PASS%d.%d\n",
+		cavium_print_msg("OCTEON_VF[%d]: CN93XX PASS%d.%d\n",
 				 oct->octeon_id, OCTEON_MAJOR_REV(oct),
 				 OCTEON_MINOR_REV(oct));
 
 		oct->chip_id = OCTEON_CN93XX_VF;
 		return setup_cn93xx_octeon_vf_device(oct);
+#if 0
 	case OCTEON_CN98XX_PCIID_VF:
-		cavium_print_msg("OCTEON[%d]: CN98XX PASS%d.%d\n",
+		cavium_print_msg("OCTEON_VF[%d]: CN98XX PASS%d.%d\n",
 				 oct->octeon_id, OCTEON_MAJOR_REV(oct),
 				 OCTEON_MINOR_REV(oct));
 
 		oct->chip_id = OCTEON_CN98XX_VF;
 		return setup_cn98xx_octeon_vf_device(oct);
+#endif
 	default:
-		cavium_error("OCTEON: Unknown device found (dev_id: %x)\n",
+		cavium_error("OCTEON_VF: Unknown device found (dev_id: %x)\n",
 			     dev_id);
 	}
 
@@ -670,13 +708,13 @@ static int octeon_pci_os_setup(octeon_device_t * octeon_dev)
 
 	/* setup PCI stuff first */
 	if (pci_enable_device(octeon_dev->pci_dev)) {
-		cavium_error("OCTEON: pci_enable_device failed\n");
+		cavium_error("OCTEON_VF: pci_enable_device failed\n");
 		return 1;
 	}
 
 	/* Octeon device supports DMA into a 64-bit space */
 	if (pci_set_dma_mask(octeon_dev->pci_dev, PCI_DMA_64BIT)) {
-		cavium_error("OCTEON: pci_set_dma_mask(64bit) failed\n");
+		cavium_error("OCTEON_VF: pci_set_dma_mask(64bit) failed\n");
 		return 1;
 	}
 
@@ -695,7 +733,7 @@ int octeon_setup_droq(int oct_id, int q_no, void *app_ctx)
 	    (octeon_device_t *) get_octeon_device(oct_id);
 	int ret_val = 0;
 
-	cavium_print_msg("OCTEON[%d]: Creating Droq: %d\n",
+	cavium_print_msg("OCTEON_VF[%d]: Creating Droq: %d\n",
 			 octeon_dev->octeon_id, q_no);
 	/* droq creation and local register settings. */
 	ret_val = octeon_create_droq(octeon_dev, q_no, app_ctx);
@@ -715,12 +753,24 @@ int octeon_setup_droq(int oct_id, int q_no, void *app_ctx)
 	return ret_val;
 }
 
+extern oct_poll_fn_status_t
+oct_poll_module_starter(void *octptr, unsigned long arg);
+
+extern oct_poll_fn_status_t
+octeon_hostfw_handshake(void *octptr, unsigned long arg);
+
+extern oct_poll_fn_status_t
+octeon_get_app_mode(void *octptr, unsigned long arg);
+
+extern oct_poll_fn_status_t
+octeon_wait_for_npu_base(void *octptr, unsigned long arg);
+
 /* Device initialization for each Octeon device. */
 int octeon_device_init(octeon_device_t * octeon_dev)
 {
-	int j, ret;
+	int ret;
+	enum setup_stage stage;
 	octeon_poll_ops_t poll_ops;
-//   uint64_t val=0;
 
 	cavium_atomic_set(&octeon_dev->status, OCT_DEV_BEGIN_STATE);
 
@@ -729,25 +779,26 @@ int octeon_device_init(octeon_device_t * octeon_dev)
 	if (octeon_pci_os_setup(octeon_dev))
 		return 1;
 
+	stage = octeon_chip_specific_setup(octeon_dev);
 	/* Identify the Octeon type and map the BAR address space. */
-	if (octeon_chip_specific_setup(octeon_dev)) {
-		cavium_error("OCTEON: Chip specific setup failed\n");
-		return 1;
-	}
-#if 0
-	// cavium_error("OCTEON: REG DUMP BEFORE INIT.....\n");
-	// octeon_dev->fn_list.dump_registers(octeon_dev);
+	if (stage == SETUP_FAIL) {
+#ifndef ETHERPCI
+		cavium_error("OCTEON_VF: Chip specific setup failed\n");
 #endif
+		return 1;
+	} else if (stage == SETUP_IN_PROGRESS) {
+		cavium_print_msg(" Chip specific setup in progress\n");
+		return 0;
+	}
+
+	cavium_print_msg("OCTEON_VF Chip specific setup completed\n");
+
+	if (octeon_msix)
+		octeon_dev->drv_flags |= OCTEON_MSIX_CAPABLE;
 
 	cavium_atomic_set(&octeon_dev->status, OCT_DEV_PCI_MAP_DONE);
 
 	cavium_spin_lock_init(&octeon_dev->oct_lock);
-
-#if 0
-	/* Do a soft reset of the Octeon device. */
-	if (octeon_dev->fn_list.soft_reset(octeon_dev))
-		return 1;
-#endif
 
 	/* Initialize the dispatch mechanism used to push packets arriving on
 	   Octeon Output queues. */
@@ -784,7 +835,7 @@ int octeon_device_init(octeon_device_t * octeon_dev)
 		bufpool_config.ex_tiny_buffer_max = EX_TINY_BUFFER_CHUNKS;
 
 		if (octeon_init_buffer_pool(octeon_dev, &bufpool_config)) {
-			cavium_error("OCTEON: Buffer pool allocation failed\n");
+			cavium_error("OCTEON_VF: Buffer pool allocation failed\n");
 			return 1;
 		}
 		cavium_atomic_set(&octeon_dev->status,
@@ -794,158 +845,65 @@ int octeon_device_init(octeon_device_t * octeon_dev)
 
 	octeon_set_io_queues_off(octeon_dev);
 
-	/* now, pending list is created along with instr queue creation */
-#if 0
-	/* Initialize pending list to hold the requests for which a response is
-	   expected from the software running on Octeon. */
-	if ((ret = octeon_init_pending_list(octeon_dev))) {
-		cavium_error
-		    ("OCTEON: Pending list allocation failed, ret: %d\n", ret);
+	ret = octeon_dev->fn_list.setup_device_regs(octeon_dev);
+	cavium_print_msg("OCTEON_VF:  Setup device regs completed\n");
+	if (ret) {
+		cavium_error("OCTEON_VF: Failed to configure device registers\n");
 		return ret;
+	}
+
+#if 0
+	if (octeon_enable_sriov(octeon_dev)) {
+		cavium_error("OCTEON_VF: Failed to enable SRIOV\n");
+		return 1;
 	}
 #endif
 
 	/* Initialize lists to manage the requests of different types that arrive
 	   from user & kernel applications for this octeon device. */
 	if (octeon_setup_response_list(octeon_dev)) {
-		cavium_error("OCTEON: Response list allocation failed\n");
+		cavium_error("OCTEON_VF: Response list allocation failed\n");
 		return 1;
 	}
 	cavium_atomic_set(&octeon_dev->status, OCT_DEV_RESP_LIST_INIT_DONE);
 
-#if 0
 	if (octeon_setup_mbox(octeon_dev)) {
-		cavium_error("OCTEON: Mailbox setup failed\n");
+		cavium_error("OCTEON_VF: Mailbox setup failed\n");
 		return 1;
-	}
-#endif
-
-	/* The input and output queue registers were setup earlier (the queues were
-	   not enabled). Any additional registers that need to be programmed should
-	   be done now. */
-	ret = octeon_dev->fn_list.setup_device_regs(octeon_dev);
-	if (ret) {
-		cavium_error("OCTEON: Failed to configure device registers\n");
-		return ret;
 	}
 
 	/* Setup the /proc entries for this octeon device. */
 	cavium_init_proc(octeon_dev);
 
-	/* The comp_tasklet speeds up response handling for ORDERED requests. */
-	cavium_print(PRINT_MSG,
-		     "OCTEON: Initializing completion on interrupt tasklet\n");
-	cavium_tasklet_init(&octeon_dev->comp_tasklet,
-			    octeon_request_completion_bh,
-			    (unsigned long)octeon_dev);
-
-	/* Send Credit for Octeon Output queues. Credits are always sent after the
-	   output queue is enabled. */
-	for (j = 0; j < octeon_dev->num_oqs; j++) {
-		OCTEON_WRITE32(octeon_dev->droq[j]->pkts_credit_reg,
-			       octeon_dev->droq[j]->max_count);
-	}
-
-	/* Packets can start arriving on the output queues from this point. */
-	octeon_dev->app_mode = CVM_DRV_INVALID_APP;
-
+	/* No host/firmware communication for VF, so hardcode here.
+	 * This will be replaced with VF/PF mailbox communication.
+	 */
+	octeon_dev->app_mode = CVM_DRV_NIC_APP;
 	cavium_atomic_set(&octeon_dev->status, OCT_DEV_HOST_OK);
+	cavium_atomic_set(&octeon_dev->status, OCT_DEV_CORE_OK);
 
 #if defined(ETHERPCI)
 	cavium_atomic_set(&octeon_dev->hostfw_hs_state, HOSTFW_HS_NUM_INTF);
 #else
 	cavium_atomic_set(&octeon_dev->hostfw_hs_state, HOSTFW_HS_INIT);
-
 #endif
 
-#if 1
-	//Replecement for mail box communication
-	//Need to remove once the mailbox is enabled
-	{
-        uint16_t core_clk, coproc_clk;
-        int num_intf = 0; 
-		static octeon_config_t *default_oct_conf;
-		char app_name[16];
-
-		default_oct_conf = octeon_get_conf(octeon_dev);
-#if 0
-		octeon_dev->app_mode = CVM_DRV_BASE_APP;
-		octeon_dev->pkind = 0;
-
-        num_intf = 0;   //TODO: hardcode the appropriate values
-#endif
-		octeon_dev->app_mode = CVM_DRV_NIC_APP;
-		octeon_dev->pkind = 1;
-
-        num_intf = 1;   //TODO: hardcode the appropriate values
-        core_clk = 1200;
-        coproc_clk = 1000;
-
-        CFG_GET_CORE_TICS_PER_US(default_oct_conf) = core_clk;
-        CFG_GET_COPROC_TICS_PER_US(default_oct_conf) = coproc_clk;
-        CFG_GET_DPI_PKIND(default_oct_conf) = octeon_dev->pkind;
-        CFG_GET_NUM_INTF(default_oct_conf) = num_intf;
-        cavium_atomic_set(&octeon_dev->status, OCT_DEV_CORE_OK);
-
-		//octeon_register_base_handler();
-
-		cavium_strncpy(app_name, sizeof(app_name),
-			       get_oct_app_string(octeon_dev->app_mode),
-			       sizeof(app_name) - 1);
-		cavium_print_msg("Received app type from core: %s\n", app_name);
-		cavium_print_msg("Received Pkind for DPI: 0x%x\n",
-				 octeon_dev->pkind);
-
+#ifdef BUILD_FOR_EMULATOR
+	if(octeon_dev->chip_id == OCTEON_CN93XX_PF) {
+		/* init_ioqs proc entry is used for starting base module in
+		 * case of emulator. Driver can sucessfully return from here. */
+		return 0;
 	}
-#endif
+#else
 
-#if 0
-	//cavium_atomic_set(&octeon_dev->status, OCT_DEV_CORE_OK);
+	if(octeon_dev->chip_id == OCTEON_CN83XX_VF) {
+#define SDP_HOST_LOADED                 0xDEADBEEFULL
+		octeon_write_csr64(octeon_dev, CN83XX_SLI_EPF_SCRATCH(0),
+						   SDP_HOST_LOADED);
 
-	//  if(octeon_dev->app_mode == CVM_DRV_BASE_APP)
-	//        octeon_register_base_handler();
-
-	//   cavium_print_msg("OCTEON: REG DUMP AFTER INIT.....\n");
-	//   octeon_dev->fn_list.dump_registers(octeon_dev);
-#endif
-
-#if 0
-	// cavium_print_msg("INT END BIT:%llx\n",(uint64_t)OCTEON_READ64((uint8_t *)octeon_dev->mmio[0].hw_addr + CN73XX_VF_SLI_PKT_MBOX_INT(0)));
-	//  if(octeon_dev->octeon_id == 127 || octeon_dev->octeon_id == 63)
-	{
-		cavium_print_msg("OCTEON: VF Writing to PF MBOX....\n");
-		OCTEON_WRITE64((uint8_t *) octeon_dev->mmio[0].hw_addr +
-			       CN73XX_SLI_PKT_PF_VF_MBOX_SIG(0, 1),
-			       0x1122334455667788);
-
-		val =
-		    OCTEON_READ64((uint8_t *) octeon_dev->mmio[0].hw_addr +
-				  CN73XX_SLI_PKT_PF_VF_MBOX_SIG(0, 1));
-		cavium_print_msg
-		    ("OCTEON: Write MBOX done writen val :%llx....\n", val);
-	}
-
-	while (val != 0xdeadbeefdeadbeef) {
-		val =
-		    OCTEON_READ64((uint8_t *) octeon_dev->mmio[0].hw_addr +
-				  CN73XX_SLI_PKT_PF_VF_MBOX_SIG(0, 1));
-	}
-	cavium_print_msg("OCTEON: ACK val :%llx....\n", val);
-
-#endif	/** Request the PF driver for core configuration via mailbox. */
-
-	//   octeon_request_core_config(octeon_dev);
-#if 0
-	cavium_atomic_set(&octeon_dev->pfvf_hs_state, PFVF_HS_INIT);
-
-	/* Register a PF-VF (OCTEON) handshake poll function */
-	poll_ops.fn = octeon_pfvf_handshake;
-	poll_ops.fn_arg = 0UL;
-	poll_ops.ticks = CAVIUM_TICKS_PER_SEC;
-	strcpy(poll_ops.name, "PF VF Handshake Thread");
-	octeon_register_poll_fn(octeon_dev->octeon_id, &poll_ops);
+    }else {
+	    /* No driver/target handshake or poll function for VF. */
+    }
 #endif
 	return 0;
 }
-
-/* $Id: octeon_main.c 118535 2015-05-28 08:06:28Z vvelmuri $ */

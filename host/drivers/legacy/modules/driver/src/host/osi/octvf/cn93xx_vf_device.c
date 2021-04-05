@@ -8,9 +8,28 @@
 #include "octeon_macros.h"
 #include "octeon-pci.h"
 
-extern int cn93xx_droq_intr_handler(octeon_ioq_vector_t * ioq_vector);
 
-extern void cn93xx_iq_intr_handler(octeon_ioq_vector_t * ioq_vector);
+#define FW_TO_HOST 0x2
+#define HOST_TO_FW 0x1
+int g_app_mode[2] = {CVM_DRV_APP_START, CVM_DRV_APP_START};
+u8 g_vf_srn;
+enum info_exhg_state {
+	/* State where F/W isn't posted anything */
+	NO_EXHG,
+	/* State where Host posts its ring info */
+	RINFO_HOST,
+	/* State where F/W acks the host ring info */
+	RINFO_FW_ACK
+};
+
+struct fw_handshake_wrk {
+	octeon_device_t *oct;
+	enum info_exhg_state exhg_state;
+};
+struct fw_handshake_wrk hs_wrk[2];
+
+extern int num_rings_per_pf;
+extern int num_rings_per_vf;
 
 void cn93xx_dump_vf_iq_regs(octeon_device_t * oct)
 {
@@ -29,69 +48,70 @@ static int cn93xx_vf_soft_reset(octeon_device_t * oct)
 void cn93xx_dump_regs(octeon_device_t * oct, int qno)
 {
 //	printk("R[%d]_IN_INSTR_DBELL: 0x%016llx\n", qno, octeon_read_csr64(oct,
-//			   CN93XX_SDP_EPF_R_IN_INSTR_DBELL(oct->epf_num, qno)));
-	printk("IQ register dump\n");
+//			   CN93XX_VF_SDP_EPF_R_IN_INSTR_DBELL(oct->epf_num, qno)));
+	printk("VF IQ register dump\n");
 	printk("R[%d]_IN_INSTR_DBELL[0x%llx]: 0x%016llx\n", qno,
-		CN93XX_SDP_R_IN_INSTR_DBELL(qno), octeon_read_csr64(oct,
-		CN93XX_SDP_R_IN_INSTR_DBELL(qno)));
+		CN93XX_VF_SDP_R_IN_INSTR_DBELL(qno), octeon_read_csr64(oct,
+		CN93XX_VF_SDP_R_IN_INSTR_DBELL(qno)));
 	printk("R[%d]_IN_CONTROL[0x%llx]: 0x%016llx\n", qno,
-		CN93XX_SDP_R_IN_CONTROL(qno), octeon_read_csr64(oct,
-		CN93XX_SDP_R_IN_CONTROL(qno)));
+		CN93XX_VF_SDP_R_IN_CONTROL(qno), octeon_read_csr64(oct,
+		CN93XX_VF_SDP_R_IN_CONTROL(qno)));
 	printk("R[%d]_IN_ENABLE[0x%llx]: 0x%016llx\n", qno,
-		CN93XX_SDP_R_IN_ENABLE(qno), octeon_read_csr64(oct,
-		CN93XX_SDP_R_IN_ENABLE(qno)));
+		CN93XX_VF_SDP_R_IN_ENABLE(qno), octeon_read_csr64(oct,
+		CN93XX_VF_SDP_R_IN_ENABLE(qno)));
 	printk("R[%d]_IN_INSTR_BADDR[0x%llx]: 0x%016llx\n", qno,
-		CN93XX_SDP_R_IN_INSTR_BADDR(qno), octeon_read_csr64(oct,
-		CN93XX_SDP_R_IN_INSTR_BADDR(qno)));
+		CN93XX_VF_SDP_R_IN_INSTR_BADDR(qno), octeon_read_csr64(oct,
+		CN93XX_VF_SDP_R_IN_INSTR_BADDR(qno)));
 	printk("R[%d]_IN_INSTR_RSIZE[0x%llx]: 0x%016llx\n", qno,
-		CN93XX_SDP_R_IN_INSTR_RSIZE(qno), octeon_read_csr64(oct,
-		CN93XX_SDP_R_IN_INSTR_RSIZE(qno)));
+		CN93XX_VF_SDP_R_IN_INSTR_RSIZE(qno), octeon_read_csr64(oct,
+		CN93XX_VF_SDP_R_IN_INSTR_RSIZE(qno)));
 	printk("R[%d]_IN_CNTS[0x%llx]: 0x%016llx\n", qno,
-		CN93XX_SDP_R_IN_CNTS(qno), octeon_read_csr64(oct,
-		CN93XX_SDP_R_IN_CNTS(qno)));
+		CN93XX_VF_SDP_R_IN_CNTS(qno), octeon_read_csr64(oct,
+		CN93XX_VF_SDP_R_IN_CNTS(qno)));
 	printk("R[%d]_IN_INT_LEVELS[0x%llx]: 0x%016llx\n", qno,
-		CN93XX_SDP_R_IN_INT_LEVELS(qno), octeon_read_csr64(oct,
-		CN93XX_SDP_R_IN_INT_LEVELS(qno)));
+		CN93XX_VF_SDP_R_IN_INT_LEVELS(qno), octeon_read_csr64(oct,
+		CN93XX_VF_SDP_R_IN_INT_LEVELS(qno)));
 	printk("R[%d]_IN_PKT_CNT[0x%llx]: 0x%016llx\n", qno,
-		CN93XX_SDP_R_IN_PKT_CNT(qno), octeon_read_csr64(oct,
-		CN93XX_SDP_R_IN_PKT_CNT(qno)));
+		CN93XX_VF_SDP_R_IN_PKT_CNT(qno), octeon_read_csr64(oct,
+		CN93XX_VF_SDP_R_IN_PKT_CNT(qno)));
 	printk("R[%d]_IN_BYTE_CNT[0x%llx]: 0x%016llx\n", qno,
-		CN93XX_SDP_R_IN_BYTE_CNT(qno), octeon_read_csr64(oct,
-		CN93XX_SDP_R_IN_BYTE_CNT(qno)));
+		CN93XX_VF_SDP_R_IN_BYTE_CNT(qno), octeon_read_csr64(oct,
+		CN93XX_VF_SDP_R_IN_BYTE_CNT(qno)));
 
-	printk("OQ register dump\n");
+	printk("VF OQ register dump\n");
 	printk("R[%d]_OUT_SLIST_DBELL[0x%llx]: 0x%016llx\n", qno,
-		CN93XX_SDP_R_OUT_SLIST_DBELL(qno), octeon_read_csr64(oct,
-		CN93XX_SDP_R_OUT_SLIST_DBELL(qno)));
+		CN93XX_VF_SDP_R_OUT_SLIST_DBELL(qno), octeon_read_csr64(oct,
+		CN93XX_VF_SDP_R_OUT_SLIST_DBELL(qno)));
 	printk("R[%d]_OUT_CONTROL[0x%llx]: 0x%016llx\n", qno,
-		CN93XX_SDP_R_OUT_CONTROL(qno), octeon_read_csr64(oct,
-		CN93XX_SDP_R_OUT_CONTROL(qno)));
+		CN93XX_VF_SDP_R_OUT_CONTROL(qno), octeon_read_csr64(oct,
+		CN93XX_VF_SDP_R_OUT_CONTROL(qno)));
 	printk("R[%d]_OUT_ENABLE[0x%llx]: 0x%016llx\n", qno,
-		CN93XX_SDP_R_OUT_ENABLE(qno), octeon_read_csr64(oct,
-		CN93XX_SDP_R_OUT_ENABLE(qno)));
+		CN93XX_VF_SDP_R_OUT_ENABLE(qno), octeon_read_csr64(oct,
+		CN93XX_VF_SDP_R_OUT_ENABLE(qno)));
 	printk("R[%d]_OUT_SLIST_BADDR[0x%llx]: 0x%016llx\n", qno,
-		CN93XX_SDP_R_OUT_SLIST_BADDR(qno), octeon_read_csr64(oct,
-		CN93XX_SDP_R_OUT_SLIST_BADDR(qno)));
+		CN93XX_VF_SDP_R_OUT_SLIST_BADDR(qno), octeon_read_csr64(oct,
+		CN93XX_VF_SDP_R_OUT_SLIST_BADDR(qno)));
 	printk("R[%d]_OUT_SLIST_RSIZE[0x%llx]: 0x%016llx\n", qno,
-		CN93XX_SDP_R_OUT_SLIST_RSIZE(qno), octeon_read_csr64(oct,
-		CN93XX_SDP_R_OUT_SLIST_RSIZE(qno)));
+		CN93XX_VF_SDP_R_OUT_SLIST_RSIZE(qno), octeon_read_csr64(oct,
+		CN93XX_VF_SDP_R_OUT_SLIST_RSIZE(qno)));
 	printk("R[%d]_OUT_CNTS[0x%llx]: 0x%016llx\n", qno,
-		CN93XX_SDP_R_OUT_CNTS(qno), octeon_read_csr64(oct,
-		CN93XX_SDP_R_OUT_CNTS(qno)));
+		CN93XX_VF_SDP_R_OUT_CNTS(qno), octeon_read_csr64(oct,
+		CN93XX_VF_SDP_R_OUT_CNTS(qno)));
 	printk("R[%d]_OUT_INT_LEVELS[0x%llx]: 0x%016llx\n", qno,
-		CN93XX_SDP_R_OUT_INT_LEVELS(qno), octeon_read_csr64(oct,
-		CN93XX_SDP_R_OUT_INT_LEVELS(qno)));
+		CN93XX_VF_SDP_R_OUT_INT_LEVELS(qno), octeon_read_csr64(oct,
+		CN93XX_VF_SDP_R_OUT_INT_LEVELS(qno)));
 	printk("R[%d]_OUT_PKT_CNT[0x%llx]: 0x%016llx\n", qno,
-		CN93XX_SDP_R_OUT_PKT_CNT(qno), octeon_read_csr64(oct,
-		CN93XX_SDP_R_OUT_PKT_CNT(qno)));
+		CN93XX_VF_SDP_R_OUT_PKT_CNT(qno), octeon_read_csr64(oct,
+		CN93XX_VF_SDP_R_OUT_PKT_CNT(qno)));
 	printk("R[%d]_OUT_BYTE_CNT[0x%llx]: 0x%016llx\n", qno,
-		CN93XX_SDP_R_OUT_BYTE_CNT(qno), octeon_read_csr64(oct,
-		CN93XX_SDP_R_OUT_BYTE_CNT(qno)));
+		CN93XX_VF_SDP_R_OUT_BYTE_CNT(qno), octeon_read_csr64(oct,
+		CN93XX_VF_SDP_R_OUT_BYTE_CNT(qno)));
 
+#if 0
 	printk("R[%d]_ERR_TYPE[0x%llx]: 0x%016llx\n", qno,
 		CN93XX_SDP_R_ERR_TYPE(qno), octeon_read_csr64(oct,
 		CN93XX_SDP_R_ERR_TYPE(qno)));
-
+#endif
 }
 
 
@@ -243,6 +263,15 @@ static void cn93xx_vf_setup_global_iq_reg(octeon_device_t * oct, int q_no)
 
 	octeon_write_csr64(oct,
 			   CN93XX_VF_SDP_R_IN_CONTROL(q_no), reg_val);
+	reg_val = octeon_read_csr64(oct, CN93XX_VF_SDP_R_IN_CONTROL(q_no));
+
+	if (!(reg_val & CN93XX_R_IN_CTL_IDLE)) {
+		do {
+			reg_val =
+			    octeon_read_csr64(oct,
+					      CN93XX_VF_SDP_R_IN_CONTROL(q_no));
+		} while (!(reg_val & CN93XX_R_IN_CTL_IDLE));
+	}
 }
 
 static void cn93xx_vf_setup_global_oq_reg(octeon_device_t * oct, int q_no)
@@ -307,7 +336,7 @@ uint32_t cn93xx_get_oq_ticks(octeon_device_t * oct, uint32_t time_intr_in_us)
 int cn93xx_vf_reset_input_queues(octeon_device_t * oct)
 {
 	int q_no = 0;
-	cavium_print(PRINT_DEBUG, " %s : OCTEON_CN93XX PF\n", __FUNCTION__);
+	cavium_print(PRINT_DEBUG, " %s : OCTEON_CN93XX VF\n", __FUNCTION__);
 
 	for (q_no = 0; q_no < oct->sriov_info.rings_per_vf; q_no++) {
 		cn93xx_vf_reset_iq(oct, q_no);
@@ -392,13 +421,18 @@ static void cn93xx_setup_vf_iq_regs(octeon_device_t * oct, int iq_no)
 	    + CN93XX_VF_SDP_R_IN_INSTR_DBELL(iq_no);
 	iq->inst_cnt_reg = (uint8_t *) oct->mmio[0].hw_addr
 	    + CN93XX_VF_SDP_R_IN_CNTS(iq_no);
+	iq->intr_lvl_reg = (uint8_t *) oct->mmio[0].hw_addr
+	   + CN93XX_VF_SDP_R_IN_INT_LEVELS(iq_no);
 
 	cavium_print(PRINT_DEBUG,
 		     "InstQ[%d]:dbell reg @ 0x%p instcnt_reg @ 0x%p\n", iq_no,
 		     iq->doorbell_reg, iq->inst_cnt_reg);
 
 	/* Store the current instruction counter (used in flush_iq calculation) */
-	iq->reset_instr_cnt = OCTEON_READ32(iq->inst_cnt_reg);
+	do {
+		iq->reset_instr_cnt = OCTEON_READ32(iq->inst_cnt_reg);
+		OCTEON_WRITE32(iq->inst_cnt_reg, iq->reset_instr_cnt);
+	} while (iq->reset_instr_cnt !=  0);
 
 	/* IN INTR_THRESHOLD is set to max(FFFFFFFF) to diables the IN INTR to raise */
 	reg_val =
@@ -406,6 +440,7 @@ static void cn93xx_setup_vf_iq_regs(octeon_device_t * oct, int iq_no)
 			      CN93XX_VF_SDP_R_IN_INT_LEVELS(iq_no));
 	reg_val = CFG_GET_IQ_INTR_THRESHOLD(cn93xx->conf) & 0xffffffff;
 
+	reg_val = 0xffffffff;
 	octeon_write_csr64(oct,
 			   CN93XX_VF_SDP_R_IN_INT_LEVELS(iq_no), reg_val);
 }
@@ -537,6 +572,11 @@ static void cn93xx_enable_vf_input_queue(octeon_device_t * oct, int q_no)
 	       && loop--) {
 		cavium_sleep_timeout(1);
 	}
+
+	reg_val = octeon_read_csr64(oct,  CN93XX_SDP_R_IN_INT_LEVELS(q_no));
+	reg_val |= (0x1ULL << 62);
+	octeon_write_csr64(oct, CN93XX_SDP_R_IN_INT_LEVELS(q_no), reg_val);
+
 	reg_val = octeon_read_csr64(oct,
 				    CN93XX_VF_SDP_R_IN_ENABLE(q_no));
 	reg_val |= 0x1ULL;
@@ -630,49 +670,13 @@ void cn93xx_handle_vf_mbox_intr(octeon_ioq_vector_t * ioq_vector)
 cvm_intr_return_t
 cn93xx_vf_msix_interrupt_handler(void  *dev)
 {
-	octeon_ioq_vector_t *ioq_vector	= (octeon_ioq_vector_t *)dev;
-	octeon_device_t  *oct    = ioq_vector->oct_dev;
-	uint64_t          intr64;
+	octeon_ioq_vector_t *ioq_vector = (octeon_ioq_vector_t *) dev;
+	octeon_droq_t *droq = ioq_vector->droq;
 
-	cavium_print(PRINT_FLOW," In %s octeon_dev @ %p  \n", 
-				__CVM_FUNCTION__, oct);
-	//intr64 = OCTEON_READ64(ioq_vector->droq->pkts_sent_reg);
-	intr64 = OCTEON_READ64(ioq_vector->droq->pkts_sent_reg);
+	cavium_print(PRINT_FLOW, " In %s octeon_dev @ %p  \n",
+		     __CVM_FUNCTION__, droq->oct_dev);
 
-	/* If our device has interrupted, then proceed. Also check 
-	 * for all f's if interrupt was triggered on an error
-  	 * and the PCI read fails. 
-  	 */
-	if (!intr64 || (intr64 == -1ULL))
-		return CVM_INTR_NONE;
-
-	cavium_atomic_set(&oct->in_interrupt, 1);
-
-
-	oct->stats.interrupts++;
-
-	cavium_atomic_inc(&oct->interrupts);
-
-
-	/* Write count reg in sli_pkt_cnts to clear these int.*/
-	if(intr64 & CN93XX_INTR_R_OUT_INT){
-#ifdef OCT_NIC_USE_NAPI
-        cavium_disable_irq_nosync(ioq_vector->droq->irq_num);
-#endif
-		cn93xx_droq_intr_handler(ioq_vector);
-	}
-	
-	/* Handle PI int, write count in IN_DONE reg to clear these int*/
-    if (intr64 & CN93XX_INTR_R_IN_INT) {
-		cn93xx_iq_intr_handler(ioq_vector);
-	}
-
-	if(intr64 & CN93XX_INTR_R_MBOX_INT){
-		cn93xx_handle_vf_mbox_intr(ioq_vector);
-	}
-
-	cavium_atomic_set(&oct->in_interrupt, 0);
-
+	droq->ops.napi_fun((void *)droq);
 	return CVM_INTR_HANDLED;
 }
 // *INDENT-ON*
@@ -711,21 +715,18 @@ static void cn93xx_reinit_regs(octeon_device_t * oct)
 
 static uint32_t cn93xx_update_read_index(octeon_instr_queue_t * iq)
 {
-	uint32_t new_idx = OCTEON_READ32(iq->inst_cnt_reg);
+	/* Exact copy of PF code */
+	u32 new_idx;
+	u32 last_done;
+	u32 pkt_in_done = OCTEON_READ32(iq->inst_cnt_reg);
 
-	/* The new instr cnt reg is a 32-bit counter that can roll over.
-	 * We have noted the counter's initial value at init time into
-	 * reset_instr_cnt
-	 */
-	if (iq->reset_instr_cnt < new_idx)
-		new_idx -= iq->reset_instr_cnt;
-	else
-		new_idx += (0xffffffff - iq->reset_instr_cnt) + 1;
+	last_done = pkt_in_done - iq->pkt_in_done;
+	iq->pkt_in_done = pkt_in_done;
 
-	/* Modulo of the new index with the IQ size will give us
-	 * the new index.
-	 */
-	new_idx %= iq->max_count;
+#define OCTEON_PKT_IN_DONE_CNT_MASK (0x00000000FFFFFFFFULL)
+	new_idx = (iq->octeon_read_index +
+		   (u32)(last_done & OCTEON_PKT_IN_DONE_CNT_MASK)) %
+		  iq->max_count;
 
 	return new_idx;
 }
@@ -740,7 +741,7 @@ static void cn93xx_enable_vf_interrupt(void *chip, uint8_t intr_flag)
 		octeon_write_csr64(oct,
 				   CN93XX_VF_SDP_R_MBOX_PF_VF_INT(q_no), 0x2ULL);
 	}
-	cavium_print_msg(" MBOX interrupts enabled.\n");
+	cavium_print_msg("VF MBOX interrupts enabled.\n");
 }
 
 static void cn93xx_disable_vf_interrupt(void *chip, uint8_t intr_flag)
@@ -758,7 +759,33 @@ static void cn93xx_disable_vf_interrupt(void *chip, uint8_t intr_flag)
 		octeon_write_csr64(oct,
 				   CN93XX_VF_SDP_R_MBOX_PF_VF_INT(q_no), reg_val);
 	}
-	cavium_print_msg(" MBOX interrupts enabled.\n");
+	cavium_print_msg("VF MBOX interrupts enabled.\n");
+}
+
+
+void cn93xx_force_io_queues_off(octeon_device_t * oct)
+{
+	uint64_t reg_val = 0ULL, q_no = 0ULL, srn = 0ULL, ern = 0ULL;
+
+	cavium_print_msg(" %s : OCTEON_CN93XX VF\n", __FUNCTION__);
+
+	srn = oct->sriov_info.pf_srn;
+	ern = srn + oct->sriov_info.rings_per_vf;
+
+	for (q_no = srn; q_no < ern; q_no++) {
+
+		reg_val = octeon_read_csr64(oct,
+					    CN93XX_SDP_R_IN_ENABLE(q_no));
+		reg_val &= ~0x1ULL;
+		octeon_write_csr64(oct,
+				   CN93XX_SDP_R_IN_ENABLE(q_no), reg_val);
+
+		reg_val = octeon_read_csr64(oct,
+					    CN93XX_SDP_R_OUT_ENABLE(q_no));
+		reg_val &= ~0x1ULL;
+		octeon_write_csr64(oct,
+				   CN93XX_SDP_R_OUT_ENABLE(q_no), reg_val);
+	}
 }
 
 int setup_cn98xx_octeon_vf_device(octeon_device_t * oct)
@@ -787,6 +814,11 @@ int setup_cn98xx_octeon_vf_device(octeon_device_t * oct)
 	oct->rings_per_vf = ((reg_val >> CN93XX_R_IN_CTL_RPVF_POS) &
 			     CN93XX_R_IN_CTL_RPVF_MASK);
 
+	/* Need to set this here, as on PF it is set as part of host/device
+	 * handshake, and there is no handshake for the VF.
+	 */
+	oct->sriov_info.rings_per_vf = oct->rings_per_vf;
+
 	cavium_print_msg("RINGS PER VF ARE:::%d\n", oct->rings_per_vf);
 
 	oct->drv_flags |= OCTEON_MSIX_CAPABLE;
@@ -816,11 +848,17 @@ int setup_cn98xx_octeon_vf_device(octeon_device_t * oct)
 	oct->fn_list.disable_input_queue = cn93xx_disable_vf_input_queue;
 	oct->fn_list.disable_output_queue = cn93xx_disable_vf_output_queue;
 
+
+	oct->fn_list.force_io_queues_off = cn93xx_force_io_queues_off;
+
+
 	oct->fn_list.dump_registers = cn93xx_dump_vf_initialized_regs;
 
 	return 0;
 }
 
+extern oct_poll_fn_status_t
+octeon_get_app_mode(void *octptr, unsigned long arg UNUSED);
 int setup_cn93xx_octeon_vf_device(octeon_device_t * oct)
 {
 	uint64_t reg_val = 0ULL;
@@ -847,10 +885,15 @@ int setup_cn93xx_octeon_vf_device(octeon_device_t * oct)
 	oct->rings_per_vf = ((reg_val >> CN93XX_R_IN_CTL_RPVF_POS) &
 			     CN93XX_R_IN_CTL_RPVF_MASK);
 
+	/* Need to set this here, as on PF it is set as part of host/device
+	 * handshake, and there is no handshake for the VF.
+	 */
+	oct->sriov_info.rings_per_vf = oct->rings_per_vf;
+
 	cavium_print_msg("RINGS PER VF ARE:::%d\n", oct->rings_per_vf);
 
 	oct->drv_flags |= OCTEON_MSIX_CAPABLE;
-	oct->drv_flags |= OCTEON_MBOX_CAPABLE;
+	/* VF does not use MBOX */
 	oct->drv_flags |= OCTEON_MSIX_AFFINITY_CAPABLE;
 
 	oct->fn_list.setup_iq_regs = cn93xx_setup_vf_iq_regs;
@@ -878,7 +921,8 @@ int setup_cn93xx_octeon_vf_device(octeon_device_t * oct)
 
 	oct->fn_list.dump_registers = cn93xx_dump_vf_initialized_regs;
 
-	return 0;
+	octeon_get_app_mode(oct, 0);
+	return SETUP_SUCCESS;
 }
 
 int validate_cn93xx_vf_config_info(cn93xx_vf_config_t * conf93xx)

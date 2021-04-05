@@ -705,6 +705,22 @@ static void cn83xx_disable_vf_interrupt(void *chip, uint8_t intr_flag)
 	cavium_print_msg(" MBOX interrupts enabled.\n");
 }
 
+void cn83xx_force_vf_io_queues_off(octeon_device_t * oct)
+{
+	uint64_t d64 = 0ULL, q_no = 0ULL;
+	cavium_print_msg(" %s : OCTEON_CN83XX VF \n", __FUNCTION__);
+
+	for (q_no = 0; q_no < oct->rings_per_vf; q_no++) {
+		/* Reset the Enable bit for all the 64 IQs  */
+		d64 = 0;
+		octeon_write_csr64(oct,
+				   CN83XX_VF_SDP_EPF_R_IN_ENABLE
+				   (oct->epf_num, q_no), d64);
+		octeon_write_csr64(oct,
+				   CN83XX_VF_SDP_EPF_R_OUT_ENABLE
+				   (oct->epf_num, q_no), d64);
+	}
+}
 int setup_cn83xx_octeon_vf_device(octeon_device_t * oct)
 {
 	uint64_t reg_val = 0ULL;
@@ -762,6 +778,8 @@ int setup_cn83xx_octeon_vf_device(octeon_device_t * oct)
 
 	oct->fn_list.disable_input_queue = cn83xx_disable_vf_input_queue;
 	oct->fn_list.disable_output_queue = cn83xx_disable_vf_output_queue;
+
+	oct->fn_list.force_io_queues_off = cn83xx_force_vf_io_queues_off;
 
 	oct->fn_list.dump_registers = cn83xx_dump_vf_initialized_regs;
 

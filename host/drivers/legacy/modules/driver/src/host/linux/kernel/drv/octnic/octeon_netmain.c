@@ -163,6 +163,7 @@ int octnet_get_inittime_link_status(void *oct, void *props_ptr)
 //	oct_stats_dma_info_t *dma_info;
 	int q_no;
 	int num_q = 0;
+	static int mac_offset = 1;
 
 	octeon_device_t *oct_dev = (octeon_device_t *) oct;
 	props = (struct octdev_props_t *)props_ptr;
@@ -237,7 +238,9 @@ int octnet_get_inittime_link_status(void *oct, void *props_ptr)
 	    || (oct_dev->chip_id == OCTEON_CN83XX_VF))
 		num_q = octnet_get_num_ioqs(oct_dev);
 	else if (oct_dev->chip_id == OCTEON_CN93XX_PF ||
-		 oct_dev->chip_id == OCTEON_CN98XX_PF)
+		 oct_dev->chip_id == OCTEON_CN98XX_PF ||
+		 oct_dev->chip_id == OCTEON_CN93XX_VF ||
+		 oct_dev->chip_id == OCTEON_CN98XX_VF)
 		num_q = octnet_get_num_ioqs(oct_dev);
 
         ls->status = 0;
@@ -245,6 +248,12 @@ int octnet_get_inittime_link_status(void *oct, void *props_ptr)
         ls->link_info[0].ifidx = 0;
         ls->link_info[0].gmxport = 2048;
         ls->link_info[0].hw_addr = (0x20f000b9849 + oct_dev->octeon_id);
+
+	/* Increment MAC addresses for VFs */
+	if (oct_dev->chip_id == OCTEON_CN93XX_VF
+	    || oct_dev->chip_id == OCTEON_CN98XX_VF)
+		ls->link_info[0].hw_addr += mac_offset++;
+
 //        ls->link_info[0].hw_addr = 0x000FB71188BC;
         ls->link_info[0].num_rxpciq = num_q;
         ls->link_info[0].num_txpciq = num_q;
@@ -766,9 +775,12 @@ octeon_config_t *octeon_dev_conf(octeon_device_t * oct)
 
 	case OCTEON_CN83XX_VF:
 		return ((octeon_cn83xx_vf_t *) (oct->chip))->conf;
-	case OCTEON_CN93XX_PF: 
-	case OCTEON_CN98XX_PF: 
+	case OCTEON_CN93XX_PF:
+	case OCTEON_CN98XX_PF:
 		return ((octeon_cn93xx_pf_t *) (oct->chip))->conf;
+	case OCTEON_CN93XX_VF:
+	case OCTEON_CN98XX_VF:
+		return ((octeon_cn93xx_vf_t *) (oct->chip))->conf;
 
 	default:
 		cavium_error("OCTEON: Unknown device found (chip_id: %x)\n",
@@ -811,6 +823,11 @@ static inline uint32_t octnet_get_num_ioqs(octeon_device_t * octeon_dev)
 		octeon_dev->sriov_info.rings_per_pf = num_ioqs;
 
 	} else if (octeon_dev->chip_id == OCTEON_CN83XX_VF) {
+
+		num_ioqs = octeon_dev->rings_per_vf;
+
+	} else if (octeon_dev->chip_id == OCTEON_CN93XX_VF ||
+		   octeon_dev->chip_id == OCTEON_CN98XX_VF) {
 
 		num_ioqs = octeon_dev->rings_per_vf;
 
@@ -963,8 +980,10 @@ octnet_setup_io_queues(octeon_device_t * octeon_dev,
 		for (index = 0; index < num_ioqs; index++) {
 			if ((octeon_dev->chip_id == OCTEON_CN83XX_PF)
 			    || (octeon_dev->chip_id == OCTEON_CN83XX_VF)
+			    || (octeon_dev->chip_id == OCTEON_CN98XX_PF)
+			    || (octeon_dev->chip_id == OCTEON_CN98XX_VF)
 			    || (octeon_dev->chip_id == OCTEON_CN93XX_PF)
-			    || (octeon_dev->chip_id == OCTEON_CN98XX_PF)) {
+			    || (octeon_dev->chip_id == OCTEON_CN93XX_VF)) {
 				/* check and release ioq reset before setting up the ioqs */
 				octeon_reset_ioq(octeon_dev, (baseq + index));
 			}
@@ -1162,6 +1181,8 @@ int octnet_init_nic_module(int octeon_id, void *octeon_dev)
 
     if ((oct->chip_id == OCTEON_CN83XX_PF) || 
         (oct->chip_id == OCTEON_CN83XX_VF) ||
+	(oct->chip_id == OCTEON_CN93XX_VF) ||
+	(oct->chip_id == OCTEON_CN98XX_VF) ||
 	(oct->chip_id == OCTEON_CN93XX_PF) ||
 	(oct->chip_id == OCTEON_CN98XX_PF)) 
         /* dbell needs to be programmed after enabling OQ. */
@@ -1283,7 +1304,7 @@ int octnet_init_nic_module(int octeon_id, void *octeon_dev)
 
 	cavium_atomic_set(&octprops[octeon_id]->ls_flag, LINK_STATUS_FETCHED);
 	octprops[octeon_id]->last_check = cavium_jiffies;
-#if !defined(ETHERPCI)
+#if !defined(ETHERPCI) && !defined(OCTEON_VF)
 	/* Register a poll function to run every second to collect and update
 	   link status. */
 	{

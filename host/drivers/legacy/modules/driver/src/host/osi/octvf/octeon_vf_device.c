@@ -6,6 +6,15 @@
 #include "octeon_macros.h"
 #include "octeon_mem_ops.h"
 #include "oct_config_data.h"
+#include "barmap.h"
+
+
+extern int octeon_msix;
+extern int g_app_mode[];
+
+/* On 83xx this is called DPIx_SLI_PRTx_CFG but address is same */
+#define DPI0_EBUS_PORTX_CFG(a) (0x86E000004100ULL | (a)<<3)
+#define DPI1_EBUS_PORTX_CFG(a) (0x86F000004100ULL | (a)<<3)
 
 char oct_dev_state_str[OCT_DEV_STATES + 1][32] = {
 	"BEGIN", "PCI-MAP-DONE", "DISPATCH-INIT-DONE",
@@ -447,17 +456,24 @@ int octeon_setup_irq_affinity(octeon_device_t * oct)
 
 	if (oct->chip_id == OCTEON_CN83XX_VF)
 		num_ioqs = oct->rings_per_vf;
+	if (oct->chip_id == OCTEON_CN93XX_VF)
+		num_ioqs = oct->rings_per_vf;
 
 	for (i = 0; i < num_ioqs; i++) {
 		ioq_vector = oct->ioq_vector[i];
 
-		/** Set the ioq_vector's cpu mask same as droq_thread's cpu mask */
-		cpu_num = i % cavium_get_cpu_count();
-		cpumask_set_cpu(cpu_num, &ioq_vector->affinity_mask);
+		if (octeon_msix) {
+			cpu_num = i % cavium_get_cpu_count();
 
-		/* assign the cpu mask for the msix interrupt vector */
-		irq_set_affinity_hint(oct->msix_entries[i].vector,
-				      &(oct->ioq_vector[i]->affinity_mask));
+			cpumask_clear(&ioq_vector->affinity_mask);
+			cpumask_set_cpu(cpu_num, &ioq_vector->affinity_mask);
+
+			/* assign the cpu mask for the msix interrupt vector */
+			irq_set_affinity_hint(oct->msix_entries[i].vector,
+					   &(oct->ioq_vector[i]->affinity_mask));
+			cavium_print_msg("%s (VF): queue:%d cpu:%d\n",
+			    __FUNCTION__, i, cpu_num);
+		}
 	}
 
 	return 0;
@@ -649,6 +665,10 @@ void octeon_set_io_queues_off(octeon_device_t * oct)
 					   (oct->epf_num, q_no), reg_val);
 		}
 	}
+
+	/* Something may need to be done for 93xx here.  Nothing
+	 * is done for PFs for any chip.*
+	 */
 }
 
 /*
@@ -675,8 +695,19 @@ void octeon_reset_ioq(octeon_device_t * octeon_dev, int ioq)
 						    (octeon_dev->epf_num, ioq));
 		} while (!(reg_val & CN83XX_R_OUT_CTL_IDLE));
 
-	}
+	} else if (octeon_dev->chip_id == OCTEON_CN93XX_VF ||
+		   octeon_dev->chip_id == OCTEON_CN98XX_VF) {
+		/* wait for IDLE to set to 1 */
+		do {
+			reg_val = octeon_read_csr64(octeon_dev,
+						    CN93XX_SDP_R_IN_CONTROL(ioq));
+		} while (!(reg_val & CN93XX_R_IN_CTL_IDLE));
 
+		do {
+			reg_val = octeon_read_csr64(octeon_dev,
+						    CN93XX_SDP_R_OUT_CONTROL(ioq));
+		} while (!(reg_val & CN93XX_R_OUT_CTL_IDLE));
+	}
 }
 
 void octeon_set_droq_pkt_op(octeon_device_t * oct, int q_no, int enable)
@@ -1233,6 +1264,10 @@ octeon_config_t *octeon_get_conf(octeon_device_t * oct)
 	if (oct->chip_id == OCTEON_CN83XX_VF)
 		default_oct_conf =
 		    (octeon_config_t *) (CHIP_FIELD(oct, cn83xx_vf, conf));
+	else if (oct->chip_id == OCTEON_CN93XX_VF ||
+		 oct->chip_id == OCTEON_CN98XX_VF)
+		default_oct_conf =
+		    (octeon_config_t *) (CHIP_FIELD(oct, cn93xx_vf, conf));
 
 	return default_oct_conf;
 }
@@ -1931,6 +1966,39 @@ int octeon_request_core_config(octeon_device_t * octeon_dev)
 	return 0;
 }
 
+
+void octeon_probe_module_handlers(int octeon_id)
+{
+	octeon_device_t *oct_dev = octeon_device[octeon_id];
+	int modidx;
+
+	/* Call the start method for all existing octeon devices. */
+	for (modidx = 0; modidx < OCTEON_MAX_MODULES; modidx++) {
+		octeon_module_handler_t *handler = &octmodhandlers[modidx];
+
+		if ((oct_dev->app_mode & handler->app_type) &&
+		    (cavium_atomic_read(&oct_dev->mod_status[modidx]) ==
+		     OCTEON_MODULE_HANDLER_INIT_LATER)) {
+			cavium_print_msg("OCTEON[%d]: Starting modules for app_type: %s\n",
+				     octeon_id,
+				     get_oct_app_string(handler->app_type));
+			if (handler->startptr(octeon_id, oct_dev)) {
+				/* Call the stop method */
+				handler->stopptr(octeon_id, oct_dev);
+				cavium_atomic_set(&oct_dev->mod_status[modidx],
+						OCTEON_MODULE_HANDLER_STOPPED);
+				cavium_spin_lock(&octmodhandlers_lock);
+				cavium_memset(handler, 0,
+					      sizeof(octeon_module_handler_t));
+				cavium_spin_unlock(&octmodhandlers_lock);
+				continue;
+			}
+			cavium_atomic_set(&oct_dev->mod_status[modidx],
+					  OCTEON_MODULE_HANDLER_INIT_DONE);
+		}
+	}
+}
+
 oct_poll_fn_status_t
 octeon_pfvf_handshake(void *octptr, unsigned long arg UNUSED)
 {
@@ -2021,4 +2089,587 @@ octeon_pfvf_handshake(void *octptr, unsigned long arg UNUSED)
 	}
 	return OCT_POLL_FN_CONTINUE;
 
+}
+
+void octeon_iq_intr_tune(struct work_struct *work)
+{
+	struct iq_intr_wq *iq_intr_wq = (struct iq_intr_wq *)work;
+	octeon_device_t *oct = iq_intr_wq->oct;
+	int num_ioqs = oct->sriov_info.rings_per_vf;
+	octeon_instr_queue_t *iq;
+	int intr_level, i;
+	uint64_t curr_ts;
+	static int iter = 0;
+	int print = 0;
+
+	iq_intr_wq = &oct->iq_intr_wq;
+	curr_ts = jiffies;
+	iter++;
+	if (iter % 100 == 0)
+		print = 0; /* set to 1 to print interrupt level updates */
+
+	for (i = 0; i < num_ioqs; i++) {
+		iq = oct->instr_queue[i];
+		if (!iq) {
+			printk("%s: IQ-%d is NULL\n", __func__, i);
+			continue;
+		}
+		if (print)
+			printk("%s: IQ-%d curr_ts=%llu last_ts=%llu; msecs=%u last,processed=(%llu - %llu)\n",
+				__func__, i, curr_ts, iq_intr_wq->last_ts,
+				(jiffies_to_msecs(curr_ts - iq_intr_wq->last_ts)*10),
+				iq_intr_wq->last_pkt_cnt[i], iq->stats.instr_processed);
+		if (iq->stats.instr_processed == 0)
+			continue;
+		intr_level = (iq->stats.instr_processed -
+			      iq_intr_wq->last_pkt_cnt[i]) /
+			     (jiffies_to_msecs(curr_ts - iq_intr_wq->last_ts)*10);
+		if (print)
+			printk("%s: IQ-%d set to %d\n", __func__, i, intr_level);
+		/* 10 microseconds or packet count */
+		if ((oct->chip_id == OCTEON_CN93XX_VF) ||
+		    (oct->chip_id == OCTEON_CN98XX_VF))
+			OCTEON_WRITE64(iq->intr_lvl_reg, (1UL << 62) | (10UL << 32) | intr_level);
+		else
+			OCTEON_WRITE32(iq->intr_lvl_reg, intr_level);
+		OCTEON_WRITE64(iq->inst_cnt_reg, 1UL << 59);
+		iq_intr_wq->last_pkt_cnt[i] = iq->stats.instr_processed;
+	}
+	iq_intr_wq->last_ts = curr_ts;
+	queue_delayed_work(iq_intr_wq->wq, &iq_intr_wq->work, msecs_to_jiffies(10));
+}
+
+
+void octeon_enable_irq(octeon_droq_t *droq, octeon_instr_queue_t *iq)
+{
+	/* Copied from octeon_device.c */
+	uint32_t pkts_pend = droq->pkts_pending;
+
+	if (iq->pkts_processed) {
+		OCTEON_WRITE32(iq->inst_cnt_reg, iq->pkts_processed);
+		iq->pkt_in_done -= iq->pkts_processed;
+		iq->pkts_processed = 0;
+	}
+
+	/* TODO: add support 93xx,98xx */
+	/* write processed packet count along with RESEND bit set.
+	 * this will trigger an interrupt if there are still unprocessed
+	 * packets pending
+	 */
+	if (droq->last_pkt_count - pkts_pend) {
+		OCTEON_WRITE32(droq->pkts_sent_reg, droq->last_pkt_count - pkts_pend);
+		droq->last_pkt_count = pkts_pend;
+	}
+	mmiowb();
+	OCTEON_WRITE64(droq->pkts_sent_reg, 1UL << 59);
+	OCTEON_WRITE64(iq->inst_cnt_reg, 1UL << 59);
+}
+
+
+void npu_mem_and_intr_test (octeon_device_t *octeon_dev,
+			    int idx,
+			    struct npu_bar_map *barmap)
+{
+	struct facility_bar_map *facility_map;
+
+	//write to first 4-bytes of every region
+	facility_map = &barmap->facility_map[MV_FACILITY_CONTROL];
+	*(volatile uint32_t *)(octeon_dev->mmio[idx].hw_addr +
+				facility_map->offset) = 0xA5A5A5A5;
+
+	facility_map = &barmap->facility_map[MV_FACILITY_MGMT_NETDEV];
+	*(volatile uint32_t *)(octeon_dev->mmio[idx].hw_addr +
+				facility_map->offset) = 0xA6A6A6A6;
+
+	facility_map = &barmap->facility_map[MV_FACILITY_NW_AGENT];
+	*(volatile uint32_t *)(octeon_dev->mmio[idx].hw_addr +
+				facility_map->offset) = 0x5A5A5A5A;
+
+	facility_map = &barmap->facility_map[MV_FACILITY_RPC];
+	*(volatile uint32_t *)(octeon_dev->mmio[idx].hw_addr +
+				facility_map->offset) = 0xABABABAB;
+	//raise control interrupt
+	facility_map = &barmap->facility_map[MV_FACILITY_CONTROL];
+	printk("Raising interrupt; offset=%x, #spi=%x\n",
+	       barmap->gicd_offset, facility_map->h2t_dbell_start);
+	*(volatile uint32_t *)(octeon_dev->mmio[idx].hw_addr +
+		 barmap->gicd_offset) = facility_map->h2t_dbell_start;
+}
+struct npu_bar_map npu_memmap_info;
+
+static void npu_bar_map_save(void *src)
+{
+	memcpy(&npu_memmap_info, src, sizeof(struct npu_bar_map));
+}
+
+#define NPU_BASE_READY_MAGIC 0xABCDABCD
+bool npu_handshake_done=false;
+extern void mv_facility_conf_init(octeon_device_t *oct);
+extern int host_device_access_init(void);
+oct_poll_fn_status_t
+octeon_wait_for_npu_base(void *octptr, unsigned long arg UNUSED)
+{
+	octeon_device_t *octeon_dev = (octeon_device_t *) octptr;
+	volatile uint64_t reg_val = 0;
+	u8 mps_val, mrrs_val;
+	int mps, mrrs, port = 0, dpi_num = 0;
+
+	/**
+	 * Along with the app mode firmware sends core clock(in MHz),
+	 * co-processor clock(in MHz) and pkind value.
+	 * Bits: 00-31  Signature indicating NPU base driver ready
+	 * Bits: 32-63  offset in BAR1 where the memory map structure is written
+	 **/
+	if(octeon_dev->chip_id == OCTEON_CN83XX_VF) {
+		reg_val = octeon_read_csr64(octeon_dev, CN83XX_SDP_SCRATCH(0));
+		if((reg_val & 0xffffffff) != NPU_BASE_READY_MAGIC) {
+			return OCT_POLL_FN_CONTINUE;
+		}
+		printk("%s: CN83xx NPU is ready; MAGIC=0x%llX; memmap=0x%llX\n",
+		       __func__, reg_val & 0xffffffff, reg_val >> 32);
+		npu_bar_map_save(octeon_dev->mmio[1].hw_addr + (reg_val >> 32));
+		npu_barmap_dump((void *)&npu_memmap_info);
+		npu_mem_and_intr_test(octeon_dev, 1, &npu_memmap_info);
+	//npu_handshake_done = true;
+	//return OCT_POLL_FN_FINISHED;
+		mv_facility_conf_init(octeon_dev);
+
+		/* setup the Host device access for RPC */
+		if (host_device_access_init() < 0)
+			pr_err("host_device_access_init failed\n");
+	} else if(octeon_dev->chip_id == OCTEON_CN93XX_VF ||
+		  octeon_dev->chip_id == OCTEON_CN98XX_VF) {
+		reg_val = octeon_read_csr64(octeon_dev, CN93XX_SDP_EPF_SCRATCH);
+		if((reg_val & 0xffffffff) != NPU_BASE_READY_MAGIC) {
+			return OCT_POLL_FN_CONTINUE;
+		}
+		printk("%s: CN9xxx NPU is ready; MAGIC=0x%llX; memmap=0x%llX\n",
+		       __func__, reg_val & 0xffffffff, reg_val >> 32);
+		npu_bar_map_save(octeon_dev->mmio[2].hw_addr + (reg_val >> 32));
+		npu_barmap_dump((void *)&npu_memmap_info);
+		npu_mem_and_intr_test(octeon_dev, 2, &npu_memmap_info);
+	//npu_handshake_done = true;
+	//return OCT_POLL_FN_FINISHED;
+		mv_facility_conf_init(octeon_dev);
+
+		/* setup the Host device access for RPC */
+		if (host_device_access_init() < 0)
+			pr_err("host_device_access_init failed\n");
+	} else {
+		printk("%s: Chip id 0x%x is not supported\n",
+		       __func__, octeon_dev->chip_id);
+		return OCT_POLL_FN_CONTINUE;
+	}
+
+	/* setup DPI MPS and MRRS accordingly */
+	mps = pcie_get_mps(octeon_dev->pci_dev);
+	mrrs = pcie_get_readrq(octeon_dev->pci_dev);
+	cavium_print_msg(" MPS=%d, MRRS=%d\n",mps, mrrs);
+
+	mps_val = fls(mps) - 8;
+	mrrs_val = fls(mrrs) - 8;
+
+	if (octeon_dev->chip_id == OCTEON_CN83XX_VF)
+		port = octeon_dev->pcie_port;
+	else if (octeon_dev->chip_id == OCTEON_CN93XX_VF)
+		port = octeon_dev->pcie_port / 2; //its either 0 or 1
+	/*
+	 * Due to SDP-38594 the workaround is to pass the PEM number through the
+	 * memmap structure from the EP
+	 */
+	else if (octeon_dev->chip_id == OCTEON_CN98XX_VF) {
+		dpi_num = npu_memmap_info.pem_num / 2;
+		port = npu_memmap_info.pem_num & 0x1;
+	}
+
+	if (!dpi_num) {
+		reg_val = OCTEON_PCI_WIN_READ(octeon_dev, DPI0_EBUS_PORTX_CFG(port));
+		reg_val |= (mps_val << 4) | mrrs_val;
+		OCTEON_PCI_WIN_WRITE(octeon_dev, DPI0_EBUS_PORTX_CFG(port), reg_val);
+	} else {
+		reg_val = OCTEON_PCI_WIN_READ(octeon_dev, DPI1_EBUS_PORTX_CFG(port));
+		reg_val |= (mps_val << 4) | mrrs_val;
+		OCTEON_PCI_WIN_WRITE(octeon_dev, DPI1_EBUS_PORTX_CFG(port), reg_val);
+	}
+
+	npu_handshake_done = true;
+
+	return OCT_POLL_FN_FINISHED;
+}
+
+#define SDP_HOST_LOADED                 0xDEADBEEFULL
+#define SDP_GET_HOST_INFO               0xBEEFDEEDULL
+#define SDP_HOST_INFO_RECEIVED          0xDEADDEULL
+#define SDP_HANDSHAKE_COMPLETED         0xDEEDDEEDULL
+/* 90 byte offset pkind */
+#define OTX2_CUSTOM_PKIND		59
+/* 24 byte offset pkind */
+#define OTX2_GENERIC_PCIE_EP_PKIND	57
+#ifdef CONFIG_PPORT
+#define OTX2_PKIND		OTX2_CUSTOM_PKIND
+#else
+#define OTX2_PKIND		OTX2_GENERIC_PCIE_EP_PKIND
+#endif
+
+oct_poll_fn_status_t
+octeon_get_app_mode(void *octptr, unsigned long arg UNUSED)
+{
+    octeon_device_t *octeon_dev = (octeon_device_t *) octptr;
+    volatile uint64_t reg_val = 0;
+    uint16_t core_clk, coproc_clk;
+    static octeon_config_t *default_oct_conf = NULL;
+    uint64_t epf_rinfo;
+    uint16_t vf_srn;
+
+    if(octeon_dev->chip_id == OCTEON_CN93XX_VF ||
+       octeon_dev->chip_id == OCTEON_CN98XX_VF) {
+
+	/* Hard code configuration. PF/VF communication not implemented yet. */
+	octeon_dev->app_mode = CVM_DRV_NIC_APP;
+	core_clk = 1200;
+	coproc_clk = (reg_val >> 16) & 0xffff;
+	octeon_dev->pkind = OTX2_PKIND;
+    } else {
+
+	reg_val = octeon_read_csr64(octeon_dev, CN83XX_SLI_EPF_SCRATCH(0));
+	if (reg_val == SDP_HOST_LOADED)
+		return OCT_POLL_FN_CONTINUE;
+
+	epf_rinfo = octeon_read_csr64(octeon_dev, CN83XX_SDP_EPF_RINFO(octeon_dev->epf_num));
+	/* vf_srn is just the starting ring number */
+	vf_srn = epf_rinfo & 0x3f;
+	if (reg_val == SDP_GET_HOST_INFO) {
+		reg_val = 0;
+		reg_val = ((uint64_t)CVM_DRV_NIC_APP << 40 |
+			   (uint64_t)octeon_dev->sriov_info.pf_srn << 32 |
+			   (uint64_t)octeon_dev->sriov_info.rings_per_vf << 24 |
+			   (uint64_t)octeon_dev->sriov_info.num_vfs << 16 |
+			   (uint64_t)vf_srn << 8 |
+			   (uint64_t)octeon_dev->sriov_info.rings_per_vf);
+
+		octeon_write_csr64(octeon_dev, CN83XX_SLI_EPF_SCRATCH(0), reg_val);
+	}
+	while (octeon_read_csr64(octeon_dev, CN83XX_SLI_EPF_SCRATCH(0)) == reg_val);
+
+	reg_val = octeon_read_csr64(octeon_dev, CN83XX_SLI_EPF_SCRATCH(0));
+	octeon_write_csr64(octeon_dev, CN83XX_SLI_EPF_SCRATCH(0), SDP_HANDSHAKE_COMPLETED);
+
+	octeon_dev->app_mode = CVM_DRV_NIC_APP;
+	core_clk = 1200;
+	coproc_clk = (reg_val >> 16) & 0xffff;
+	octeon_dev->pkind = 40 + octeon_dev->sriov_info.num_vfs;
+    }
+
+    cavium_print_msg("OCTEON running with Core clock:%d Copro clock:%d\n",
+            core_clk, coproc_clk);
+    cavium_print(PRINT_DEBUG,"Application mode:%d pkind:%d\n",
+            octeon_dev->app_mode, octeon_dev->pkind);
+    if (octeon_dev->chip_id == OCTEON_CN83XX_VF)
+	    default_oct_conf = (octeon_config_t *) (CHIP_FIELD(octeon_dev, cn83xx_vf, conf));
+    else if (octeon_dev->chip_id == OCTEON_CN93XX_VF ||
+	     octeon_dev->chip_id == OCTEON_CN98XX_VF)
+		default_oct_conf = (octeon_config_t *) (CHIP_FIELD(octeon_dev, cn93xx_vf, conf));
+
+    CFG_GET_CORE_TICS_PER_US(default_oct_conf) = core_clk;
+    CFG_GET_COPROC_TICS_PER_US(default_oct_conf) = coproc_clk;
+    CFG_GET_DPI_PKIND(default_oct_conf) = octeon_dev->pkind;
+    cavium_atomic_set(&octeon_dev->status, OCT_DEV_CORE_OK);
+
+    if(octeon_dev->app_mode == CVM_DRV_NIC_APP) {
+        /* Number of interfaces are 1 */
+        CFG_GET_NUM_INTF(default_oct_conf) = 1;
+        cavium_print_msg("Octeon VF is running nic application\n");
+    }
+    octeon_probe_module_handlers(octeon_dev->octeon_id);
+    return OCT_POLL_FN_FINISHED;
+}
+
+/* scratch register address for CN73XX */
+#define CN73XX_SLI_SCRATCH1     0x283C0
+
+oct_poll_fn_status_t
+octeon_hostfw_handshake(void *octptr, unsigned long arg UNUSED)
+{
+
+	int64_t scratch_val = 0LL;
+	uint64_t buf_addr = 0ULL;
+	uint64_t value = 0ULL, scratch_reg_addr = 0ULL;
+	uint32_t indication = 0;
+	static int num_cores = 0, num_intf = 0;
+	static octeon_config_t temp_oct_conf, *default_oct_conf = NULL;
+	octeon_device_t *oct = (octeon_device_t *) octptr;
+	char app_name[16];
+
+
+	switch (oct->chip_id) {
+	case OCTEON_CN83XX_VF:
+		scratch_reg_addr = CN83XX_SDP_SCRATCH(0);
+		break;
+	case OCTEON_CN93XX_VF:
+	case OCTEON_CN98XX_VF:
+		scratch_reg_addr = CN93XX_SDP_EPF_SCRATCH;
+		break;
+	}
+
+	scratch_val = octeon_read_csr64(oct, scratch_reg_addr);
+
+	indication = scratch_val & 0xffff;	//indication is lsb 2 bytes
+	value = (scratch_val & ~0xffffULL) >> 16;	//msb 6 bytes is the value
+
+	switch (cavium_atomic_read(&oct->hostfw_hs_state)) {
+		/* check for Host Firmware Handshake support */
+	case HOSTFW_HS_INIT:
+		if (indication == HOSTFW_HS_APP_INDICATION) {
+			oct->app_mode = value & 0xffffff;
+			cavium_strncpy(app_name, sizeof(app_name),
+				       get_oct_app_string(oct->app_mode),
+				       sizeof(app_name) - 1);
+			cavium_print_msg("Received app type from Octeon: %s\n",
+					 app_name);
+
+			/* NAPI and RX reuse buffers should be disabled for Base mode */
+#if defined(OCT_NIC_USE_NAPI) || defined(OCT_REUSE_RX_BUFS)
+			if ((oct->app_mode == CVM_DRV_BASE_APP)
+			    || (oct->app_mode == CVM_DRV_ZLIB_APP)) {
+				cavium_print_msg
+				    ("\n\n\t\t########################################################\n");
+				cavium_print_msg
+				    ("WARNING: Macros OCT_NIC_USE_NAPI and OCT_REUSE_RX_BUFS");
+				cavium_print_msg
+				    ("\n\t\t\tshould be disabled for BASE mode operations");
+				cavium_print_msg
+				    ("\n\t\t########################################################\n\n");
+				/* this is an error: so exit the hand shake */
+				return OCT_POLL_FN_FINISHED;
+			}
+#endif
+			default_oct_conf = octeon_get_conf(oct);
+
+			if ((value >> 32) == HOSTFW_HS_SUPPORT_INDICATION) {
+				/* Send ack to core */
+				octeon_write_csr64(oct,
+						   scratch_reg_addr,
+						   HOSTFW_HS_ACK);
+
+				cavium_atomic_set(&oct->hostfw_hs_state,
+						  HOSTFW_HS_WAIT_NAMED_BLOCK);
+			} else {
+				octeon_write_csr64(oct,
+						   scratch_reg_addr,
+						   HOSTFW_HS_ACK);
+
+				cavium_atomic_set(&oct->hostfw_hs_state,
+						  HOSTFW_HS_NUM_INTF);
+
+			}
+			CFG_GET_APP_MODE(default_oct_conf) = oct->app_mode;
+		}
+
+		break;
+
+	case HOSTFW_HS_WAIT_NAMED_BLOCK:
+		if (indication == HOSTFW_HS_NB_BLOCK_INDICATION) {
+			/* Extract the num cores, num intf and buffer address from the scratch val. */
+			buf_addr = (scratch_val >> 16);
+			cavium_print
+			    (PRINT_DEBUG,
+			     "Received Named Block from Octeon with addr:  %016llx \n",
+			     buf_addr);
+
+			/* Copy the config params to a temp buffer and do 8-byte swapping before sending to core */
+			cavium_memcpy(&temp_oct_conf, default_oct_conf,
+				      sizeof(octeon_config_t));
+
+			octeon_swap_8B_data((uint64_t *) & temp_oct_conf,
+					    sizeof(octeon_config_t) / 8);
+
+			/* Write the cfg details to core buffer */
+			octeon_pci_write_core_mem(oct, buf_addr,
+						  (uint8_t *) & temp_oct_conf,
+						  sizeof(octeon_config_t), 0);
+			cavium_print(PRINT_DEBUG,
+				     "Host Wrote the cfg details to the NB.\n");
+
+			/* Read back the cfg values from core buffer */
+			octeon_pci_read_core_mem(oct, buf_addr,
+						 (uint8_t *) & temp_oct_conf,
+						 sizeof(octeon_config_t), 0);
+
+			octeon_swap_8B_data((uint64_t *) & temp_oct_conf,
+					    sizeof(temp_oct_conf) / 8);
+
+			if (cavium_memcmp
+			    (&temp_oct_conf, default_oct_conf,
+			     sizeof(octeon_config_t)))
+				cavium_print(PRINT_ERROR,
+					     " Read Write Mismatch in Host Firmware Config Params \n");
+
+			/* Send ack to core */
+			octeon_write_csr64(oct, scratch_reg_addr,
+					   HOSTFW_HS_ACK);
+
+			cavium_print(PRINT_DEBUG,
+				     "Waiting for the cfg read confirmation from the firmware \n");
+			cavium_atomic_set(&oct->hostfw_hs_state,
+					  HOSTFW_HS_WAIT_CFG_READ);
+		}
+
+		break;
+
+	case HOSTFW_HS_WAIT_CFG_READ:
+		if (indication == HOSTFW_HS_READ_DONE_INDICATION) {
+			num_cores = value & 0xff;
+
+			cavium_print
+			    (PRINT_DEBUG,
+			     "Received Read completion indication from the firmware.\n");
+			cavium_print_msg("Firmware is running on %d cores.n",
+					 num_cores);
+
+			/* Send ack to core */
+			octeon_write_csr64(oct, scratch_reg_addr,
+					   HOSTFW_HS_ACK);
+
+			cavium_atomic_set(&oct->hostfw_hs_state,
+					  HOSTFW_HS_NUM_INTF);
+		}
+
+		break;
+
+	case HOSTFW_HS_NUM_INTF:
+		if (indication == HOSTFW_HS_NUM_INTF_INDICATION) {
+#ifdef ETHERPCI
+			value = (scratch_val & ~0xffffULL) >> 32;
+#endif
+			oct->pkind = (uint8_t) value & 0xff;
+			num_intf = (uint8_t) (value >> 8) & 0xff;
+			cavium_print_msg
+			    ("Received Pkind for DPI: 0x%x, num interfaces: %d\n",
+			     oct->pkind, num_intf);
+
+			/* Send ack to core */
+			octeon_write_csr64(oct, scratch_reg_addr,
+					   HOSTFW_HS_ACK);
+#ifndef ETHERPCI
+			CFG_GET_DPI_PKIND(default_oct_conf) = oct->pkind;
+			CFG_GET_NUM_INTF(default_oct_conf) = num_intf;
+			cavium_atomic_set(&oct->hostfw_hs_state,
+					  HOSTFW_HS_CORE_ACTIVE);
+#else
+			cavium_atomic_set(&oct->hostfw_hs_state,
+					  HOSTFW_HS_DONE);
+			cavium_atomic_set(&oct->status, OCT_DEV_CORE_OK);
+			return OCT_POLL_FN_FINISHED;
+#endif
+
+		}
+
+		break;
+	case HOSTFW_HS_CORE_ACTIVE:
+		if (indication == HOSTFW_HS_CORE_ACTIVE_INDICATION) {
+			int oct_id = oct->octeon_id;
+			uint16_t core_clk, coproc_clk;
+
+			cavium_print_msg
+			    ("OCTEON[%d]: Received active indication from core\n",
+			     oct->octeon_id);
+
+			core_clk = (value & 0xffff);
+			coproc_clk = ((value >> 16) & 0xffff);
+			CFG_GET_CORE_TICS_PER_US(default_oct_conf) = core_clk;
+			CFG_GET_COPROC_TICS_PER_US(default_oct_conf) =
+			    coproc_clk;
+
+			cavium_print(PRINT_DEBUG, " coprocessor clock::%x\n",
+				     CFG_GET_COPROC_TICS_PER_US
+				     (default_oct_conf));
+			core_setup[oct_id].corefreq = core_clk * 1000 * 1000;
+			cavium_print_msg
+			    ("OCTEON[%d] is running with core clock: %llu Hz\n",
+			     oct->octeon_id,
+			     CVM_CAST64(core_setup[oct_id].corefreq));
+
+			/* Send ack to core */
+			octeon_write_csr64(oct, scratch_reg_addr,
+					   HOSTFW_HS_ACK);
+
+			if (oct->chip_id == OCTEON_CN83XX_VF)
+				cavium_atomic_set(&oct->hostfw_hs_state,
+						  HOSTPF0_HS_INIT);
+			else
+				cavium_atomic_set(&oct->hostfw_hs_state,
+						  HOSTFW_HS_DONE);
+		}
+		break;
+
+		/*  PF0 gets to these state after PF0-FIRMWARE handshake is done */
+	case HOSTPF0_HS_INIT:
+		if (indication == HOSTFW_HS_SCRATCH_FREE_INDICATION) {
+			uint32_t oct_id = oct->octeon_id;
+			uint64_t oct_idx = 0;
+
+			oct_idx = (oct_id << 0x10) | HOST_HS_OCT_IDX_INDICATION;
+
+			/* Write PF0's oct_idx in scratch reg, PF1 can leverage it
+			 * to read the app_mode , pkind etc.*/
+			octeon_write_csr64(oct, scratch_reg_addr,
+					   oct_idx);
+
+			cavium_atomic_set(&oct->hostfw_hs_state,
+					  HOSTFW_HS_DONE);
+
+		}
+		break;
+
+		/*  PF1 gets to these state by default and polls for PF0-PF1 handshake */
+	case HOSTPF1_HS_INIT:
+		if (indication == HOST_HS_OCT_IDX_INDICATION) {
+			int oct_vf0_idx = 0, oct_vf1_idx = 0;
+			octeon_device_t *oct_vf0 = NULL;
+			oct_vf0_idx = value;
+			oct_vf1_idx = oct->octeon_id;
+
+			oct_vf0 = octeon_device[oct_vf0_idx];
+
+			/* PF0-FW handshake is done, now read the core config from PF0 */
+			if (NULL != oct_vf0) {
+				/* Firmware allocates consecutive pkinds for PF0 & PF1. */
+				oct->pkind = oct_vf0->pkind + 1;
+				oct->app_mode = oct_vf0->app_mode;
+
+				//    cavium_atomic_set(&oct->status, OCT_DEV_CORE_OK);
+
+				cavium_atomic_set(&oct->hostfw_hs_state,
+						  HOSTFW_HS_DONE);
+			} else
+				cavium_print_msg
+				    ("[HS ERROR]: Incorrect oct idx is received.\n");
+		}
+		break;
+
+		/*      Now, we are done with handshake. So unregister this poll thread */
+	case HOSTFW_HS_DONE:
+
+		cavium_atomic_set(&oct->status, OCT_DEV_CORE_OK);
+
+		/* complete the IOQ's creation and misc initialisation (only for CN83XX) */
+		if (((oct->app_mode == CVM_DRV_BASE_APP)
+		     || (oct->app_mode == CVM_DRV_ZLIB_APP))
+		    && (oct->chip_id == OCTEON_CN83XX_VF)) {
+			octeon_register_base_handler();
+		}
+
+		/* restore the state to init */
+		cavium_atomic_set(&oct->hostfw_hs_state, HOSTFW_HS_INIT);
+#if 0
+		if ((oct->pf_num == OCTEON_CN73XX_VF1)
+		    || (oct->pf_num == OCTEON_CN78XX_VF1))
+			cavium_atomic_set(&oct->hostfw_hs_state,
+					  HOSTPF1_HS_INIT);
+#endif
+
+		return OCT_POLL_FN_FINISHED;
+	}
+
+	return OCT_POLL_FN_CONTINUE;
 }

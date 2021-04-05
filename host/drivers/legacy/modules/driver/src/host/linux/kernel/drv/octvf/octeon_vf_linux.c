@@ -120,20 +120,20 @@ int octeon_base_init_module(void)
 	char copts[160], oct_version[sizeof(CNNIC_VERSION) + 100];
 
 	cavium_print_msg
-	    ("-- OCTEON: Loading Octeon PCI driver (base module)\n");
+	    ("-- OCTEON_VF: Loading Octeon PCI driver (base module)\n");
 	cavium_parse_cvs_string(oct_cvs_tag, oct_version, sizeof(oct_version));
-	cavium_print_msg("OCTEON: Driver Version: %s\n", oct_version);
-	cavium_print_msg("OCTEON: System is %s (%d ticks/sec)\n", ENDIAN_MESG,
+	cavium_print_msg("OCTEON_VF: Driver Version: %s\n", oct_version);
+	cavium_print_msg("OCTEON_VF: System is %s (%d ticks/sec)\n", ENDIAN_MESG,
 			 CAVIUM_TICKS_PER_SEC);
 
 	copts[0] = '\0';
 
 	get_base_compile_options(copts);
 	if (strlen(copts))
-		cavium_print_msg("OCTEON: PCI Driver compile options: %s\n",
+		cavium_print_msg("OCTEON_VF: PCI Driver compile options: %s\n",
 				 copts);
 	else
-		cavium_print_msg("OCTEON: PCI Driver compile options: NONE\n");
+		cavium_print_msg("OCTEON_VF: PCI Driver compile options: NONE\n");
 #endif
 
 	octeon_state = OCT_DRV_DEVICE_INIT_START;
@@ -147,19 +147,16 @@ int octeon_base_init_module(void)
 	ret = pci_register_driver(&octeon_pci_driver);
 #endif
 	if (ret < 0) {
-		cavium_error("OCTEON: pci_module_init() returned %d\n", ret);
+		cavium_error("OCTEON_VF: pci_module_init() returned %d\n", ret);
 		cavium_error
-		    ("OCTEON: Your kernel may not be configured for hotplug\n");
+		    ("OCTEON_VF: Your kernel may not be configured for hotplug\n");
 		cavium_error("        and no Octeon devices were detected\n");
 		return ret;
 	}
 
 	octeon_state = OCT_DRV_DEVICE_INIT_DONE;
 
-	if (octeon_init_poll_thread()) {
-		cavium_error("OCTEON: Poll thread creation failed\n");
-		return -ENODEV;
-	}
+	/* No Poll thread for VF */
 
 	octeon_state = OCT_DRV_POLL_INIT_DONE;
 
@@ -167,7 +164,7 @@ int octeon_base_init_module(void)
 	    register_chrdev(OCTEON_VF_DEVICE_MAJOR, VF_DRIVER_NAME,
 			    &octeon_fops);
 	if (ret < 0) {
-		cavium_error("OCTEON: Device Registration failed, error:%d\n",
+		cavium_error("OCTEON_VF: Device Registration failed, error:%d\n",
 			     ret);
 		/* This is the error value returned by register_chrdev() */
 		return ret;
@@ -265,7 +262,6 @@ EXPORT_SYMBOL(octeon_debug_level);
 EXPORT_SYMBOL(octeon_reset_oq_bufsize);
 EXPORT_SYMBOL(octeon_register_droq_ops);
 EXPORT_SYMBOL(octeon_unregister_droq_ops);
-EXPORT_SYMBOL(octeon_process_droq_poll_cmd);
 EXPORT_SYMBOL(octeon_send_short_command);
 EXPORT_SYMBOL(octeon_reset_ioq);
 
@@ -276,12 +272,14 @@ EXPORT_SYMBOL(octeon_perf_flush_iq);
 EXPORT_SYMBOL(octeon_get_conf);
 EXPORT_SYMBOL(octeon_setup_droq);
 EXPORT_SYMBOL(octeon_setup_iq);
+EXPORT_SYMBOL(octeon_init_iq_intr_moderation);
+EXPORT_SYMBOL(octeon_cleanup_iq_intr_moderation);
 EXPORT_SYMBOL(octeon_delete_droq);
 EXPORT_SYMBOL(octeon_delete_instr_queue);
 EXPORT_SYMBOL(octeon_enable_msix_interrupts);
+EXPORT_SYMBOL(octeon_disable_msix_interrupts);
 EXPORT_SYMBOL(octeon_allocate_ioq_vector);
 EXPORT_SYMBOL(octeon_delete_ioq_vector);
-EXPORT_SYMBOL(octeon_disable_msix_interrupts);
 EXPORT_SYMBOL(octeon_setup_irq_affinity);
 EXPORT_SYMBOL(octeon_clear_irq_affinity);
 EXPORT_SYMBOL(wait_for_instr_fetch);
@@ -289,3 +287,8 @@ EXPORT_SYMBOL(wait_for_iq_instr_fetch);
 EXPORT_SYMBOL(wait_for_pending_requests);
 EXPORT_SYMBOL(wait_for_oq_pkts);
 EXPORT_SYMBOL(wait_for_output_queue_pkts);
+
+EXPORT_SYMBOL(octeon_droq_set_netdev);
+EXPORT_SYMBOL(octeon_droq_process_poll_pkts);
+EXPORT_SYMBOL(octeon_enable_irq);
+

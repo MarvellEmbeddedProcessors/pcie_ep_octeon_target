@@ -9,7 +9,45 @@
 
 extern int octeon_init_nr_free_list(octeon_instr_queue_t * iq, int count);
 
+
+#ifdef OCT_NIC_IQ_USE_NAPI
+#else
 extern oct_poll_fn_status_t check_db_timeout(void *octptr, unsigned long iq_no);
+#endif
+
+void octeon_init_iq_intr_moderation(octeon_device_t *oct)
+{
+	struct iq_intr_wq *iq_intr_wq;
+
+	iq_intr_wq = &oct->iq_intr_wq;
+	memset(iq_intr_wq->last_pkt_cnt, 0, sizeof(uint64_t)*64);
+	iq_intr_wq->last_ts = jiffies;
+	iq_intr_wq->oct = oct;
+	iq_intr_wq->wq = alloc_workqueue("octeon_iq_intr_tune",
+					 WQ_MEM_RECLAIM, 0);
+	if (iq_intr_wq->wq == NULL) {
+		cavium_error
+		    ("OCTEON: Cannot create wq for IQ interrupt moderation\n");
+		return;
+	}
+
+	INIT_DELAYED_WORK(&iq_intr_wq->work, octeon_iq_intr_tune);
+	queue_delayed_work(iq_intr_wq->wq, &iq_intr_wq->work, msecs_to_jiffies(10));
+}
+
+void octeon_cleanup_iq_intr_moderation(octeon_device_t *oct)
+{
+	struct iq_intr_wq *iq_intr_wq;
+
+	iq_intr_wq = &oct->iq_intr_wq;
+	if (iq_intr_wq->wq == NULL)
+		return;
+
+	cancel_delayed_work_sync(&iq_intr_wq->work);
+	flush_workqueue(iq_intr_wq->wq);
+	destroy_workqueue(iq_intr_wq->wq);
+	iq_intr_wq->wq = NULL;
+}
 
 /* Return 0 on success, 1 on failure */
 int octeon_init_instr_queue(octeon_device_t * oct, int iq_no)
@@ -17,13 +55,17 @@ int octeon_init_instr_queue(octeon_device_t * oct, int iq_no)
 	octeon_instr_queue_t *iq;
 	octeon_iq_config_t *conf = NULL;
 	uint32_t q_size;
+#ifdef OCT_NIC_IQ_USE_NAPI
+#else	
 #ifndef APP_CMD_POST
 	octeon_poll_ops_t poll_ops;
 #endif
+#endif	
 
 	if (oct->chip_id == OCTEON_CN83XX_VF)
 		conf = &(CFG_GET_IQ_CFG(CHIP_FIELD(oct, cn83xx_vf, conf)));
-	if (oct->chip_id == OCTEON_CN93XX_VF)
+	else if (oct->chip_id == OCTEON_CN93XX_VF ||
+		oct->chip_id == OCTEON_CN98XX_VF)
 		conf = &(CFG_GET_IQ_CFG(CHIP_FIELD(oct, cn93xx_vf, conf)));
 
 	if (!conf) {
@@ -44,6 +86,24 @@ int octeon_init_instr_queue(octeon_device_t * oct, int iq_no)
 		     iq_no);
 		return 1;
 	}
+
+#ifdef OCT_TX2_ISM_INT
+	if (oct->chip_id == OCTEON_CN93XX_VF ||
+	    oct->chip_id == OCTEON_CN98XX_VF) {
+		iq->ism.pkt_cnt_addr =
+		    octeon_pci_alloc_consistent(oct->pci_dev, 8,
+						&iq->ism.pkt_cnt_dma, iq->app_ctx);
+
+		if (cavium_unlikely(!iq->ism.pkt_cnt_addr)) {
+			cavium_error("OCTEON: Output queue %d ism memory alloc failed\n",
+				     iq_no);
+			return 1;
+		}
+
+		cavium_print(PRINT_REGS, "iq[%d]: ism addr: virt: 0x%p, dma: %lx",
+			     q_no, iq->ism.pkt_cnt_addr, iq->ism.pkt_cnt_dma);
+	}
+#endif
 
 	if (conf->num_descs & (conf->num_descs - 1)) {
 		cavium_error
@@ -84,6 +144,8 @@ int octeon_init_instr_queue(octeon_device_t * oct, int iq_no)
 	iq->do_auto_flush = 1;
 	iq->db_timeout = conf->db_timeout;
 	cavium_atomic_set(&iq->instr_pending, 0);
+	iq->pkts_processed = 0;
+	iq->pkt_in_done = 0;
 
 	oct->io_qmask.iq |= (1ULL << iq_no);
 
@@ -94,11 +156,14 @@ int octeon_init_instr_queue(octeon_device_t * oct, int iq_no)
 
 	oct->fn_list.setup_iq_regs(oct, iq_no);
 
+
+#ifdef OCT_NIC_IQ_USE_NAPI
+#else
 #ifndef APP_CMD_POST
-#if 0
+//this path is taken when IQ NAPI is disabled
 	poll_ops.fn = check_db_timeout;
 	poll_ops.fn_arg = (unsigned long)iq_no;
-	poll_ops.ticks = 1;
+	poll_ops.ticks = 1000;
 	cavium_strncpy(poll_ops.name, sizeof(poll_ops.name), "Doorbell Timeout",
 		       sizeof(poll_ops.name) - 1);
 	poll_ops.rsvd = 0xff;
@@ -114,14 +179,28 @@ int octeon_delete_instr_queue(octeon_device_t * oct, int iq_no)
 	uint64_t desc_size = 0, q_size;
 	octeon_instr_queue_t *iq = oct->instr_queue[iq_no];
 
+#ifdef OCT_NIC_IQ_USE_NAPI
+#else	
 	octeon_unregister_poll_fn(oct->octeon_id, check_db_timeout, iq_no);
+#endif	
 
 	if (oct->chip_id == OCTEON_CN83XX_VF)
 		desc_size =
 		    CFG_GET_IQ_INSTR_TYPE(CHIP_FIELD(oct, cn83xx_vf, conf));
-	if (oct->chip_id == OCTEON_CN93XX_VF)
+	else if (oct->chip_id == OCTEON_CN93XX_VF ||
+		 oct->chip_id == OCTEON_CN98XX_VF)
 		desc_size =
 		    CFG_GET_IQ_INSTR_TYPE(CHIP_FIELD(oct, cn93xx_vf, conf));
+
+#ifdef OCT_TX2_ISM_INT
+	if (oct->chip_id == OCTEON_CN93XX_VF ||
+	    oct->chip_id == OCTEON_CN98XX_VF) {
+		if (iq->ism.pkt_cnt_addr)
+			octeon_pci_free_consistent(oct->pci_dev, 8,
+						   iq->ism.pkt_cnt_addr, iq->ism.pkt_cnt_dma,
+						   iq->app_ctx);
+	}
+#endif
 
 	if (iq->plist)
 		octeon_delete_iq_pending_list(oct, iq->plist);

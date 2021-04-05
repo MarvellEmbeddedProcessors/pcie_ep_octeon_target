@@ -34,13 +34,16 @@ endif
 WARNINGS = -Wall -Werror -Wuninitialized -Wunused-function -Werror-implicit-function-declaration
 
 #Disable warnings realted to __DATE__  and __TIME__, if the gcc version greather than 4.8
-GCC_VER := $(shell echo `gcc -dumpversion | cut -f1-2 -d.` \>= 4.9 | sed -e 's/\./*100+/g' | bc )
+GCC_VER := $(shell echo `gcc -dumpversion | cut -f1-2 -d.` \>= 4.9 | bc )
 ifeq ($(GCC_VER),1)
 WARNINGS += -Wno-error=date-time -Wno-date-time
 endif
 
-INCLUDE += -I. -I$(SUBDIRS)/../../../../../common    -I$(SUBDIRS)/../../../../osi   -I$(SUBDIRS)/../../../../osi/octvf \
-	-I$(SUBDIRS)/../../../../../../inc  -I$(SUBDIRS)/../../test -I$(SUBDIRS)/../../drv -I$(SUBDIRS)
+INCLUDE += -I. -I$(SUBDIRS)/../../../../../common    -I$(SUBDIRS)/../../../../osi    \
+	-I$(SUBDIRS)/../../../../osi/octvf \
+	-I$(SUBDIRS)/../../../../../../inc  -I$(SUBDIRS)
+INCLUDE += -I$(SUBDIRS)/../../test -I$(SUBDIRS)/../../drv
+INCLUDE += -I$(SUBDIRS)/../octnic
 
 EXTRA_CFLAGS +=	-D__SMP__ -O2 -finline-functions $(INCLUDE) $(WARNINGS)
 
@@ -69,21 +72,22 @@ endif
 
 OBJS += octeon_vf_linux.o            	\
         octeon_vf_main.o             	\
+	cavium_vf_proc.o             		\
 	../octeon_poll.o           		\
 	../octeon_ioctl.o            		\
-	cavium_vf_proc.o             		\
+	../device_access.o            		\
+	../facility.o            		\
 	../../../../osi/request_manager.o  \
 	../../../../osi/octvf/octeon_vf_iq.o     \
 	../../../../osi/response_manager.o \
 	../../../../osi/pending_list.o     \
 	../../../../osi/octvf/octeon_vf_device.o    \
-	../../../../osi/cn83xx_common.o    \
 	../../../../osi/octvf/cn83xx_vf_device.o    \
-	../../../../osi/cn93xx_common.o    \
 	../../../../osi/octvf/cn93xx_vf_device.o    \
 	../../../../osi/octeon_errata.o    \
 	../../../../osi/octeon_mem_ops.o   \
 	../../../../osi/octeon_mailbox.o   		\
+	../../../../osi/request_manager.o   		\
 	../../../../osi/octvf/octeon_vf_droq.o
 
 OBJNAME := octeon_vf_drv
@@ -108,6 +112,8 @@ endif
 ifeq ($(findstring ETHERPCI,$(COMPILEFOR)), ETHERPCI)
 # For Ethernet over PCI
 EXTRA_CFLAGS += -DETHERPCI
+EXTRA_CFLAGS := $(filter-out -DOCT_NIC_USE_NAPI, $(EXTRA_CFLAGS))
+EXTRA_CFLAGS := $(filter-out -DOCT_REUSE_RX_BUFS, $(EXTRA_CFLAGS))
 endif
 
 

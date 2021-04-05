@@ -61,8 +61,6 @@ void octeon_pcierror_quiesce_device(octeon_device_t * oct)
 {
 	int i;
 
-	printk(" %s : \n", __FUNCTION__);
-
 	/* Disable the input and output queues now. No more packets will
 	   arrive from Octeon, but we should wait for all packet processing
 	   to finish. */
@@ -101,8 +99,6 @@ void octeon_cleanup_aer_uncorrect_error_status(struct pci_dev *dev)
 {
 	int pos = 0x100;
 	u32 status, mask;
-
-	printk("%s : \n", __FUNCTION__);
 
 	pci_read_config_dword(dev, pos + PCI_ERR_UNCOR_STATUS, &status);
 	pci_read_config_dword(dev, pos + PCI_ERR_UNCOR_SEVER, &mask);
@@ -160,8 +156,6 @@ octeon_pcie_error_detected(struct pci_dev *pdev, pci_channel_state_t state)
 {
 	octeon_device_t *oct = pci_get_drvdata(pdev);
 
-	printk("%s : \n", __FUNCTION__);
-
 	/* Non-correctable Non-fatal errors */
 	if (state == pci_channel_io_normal) {
 		cavium_error
@@ -182,8 +176,6 @@ octeon_pcie_error_detected(struct pci_dev *pdev, pci_channel_state_t state)
 
 pci_ers_result_t octeon_pcie_mmio_enabled(struct pci_dev * pdev)
 {
-	printk("%s : \n", __FUNCTION__);
-
 	/* We should never hit this since we never ask for a reset for a Fatal
 	   Error. We always return DISCONNECT in io_error above. */
 	/* But play safe and return RECOVERED for now. */
@@ -199,8 +191,6 @@ pci_ers_result_t octeon_pcie_mmio_enabled(struct pci_dev * pdev)
  */
 pci_ers_result_t octeon_pcie_slot_reset(struct pci_dev * pdev)
 {
-	printk("%s : \n", __FUNCTION__);
-
 	/* We should never hit this since we never ask for a reset for a Fatal
 	   Error. We always return DISCONNECT in io_error above. */
 	/* But play safe and return RECOVERED for now. */
@@ -217,8 +207,6 @@ pci_ers_result_t octeon_pcie_slot_reset(struct pci_dev * pdev)
  */
 void octeon_pcie_resume(struct pci_dev *pdev)
 {
-	printk("%s : \n", __FUNCTION__);
-
 	/* Nothing to be done here. */
 }
 

@@ -28,6 +28,7 @@ void cn93xx_vf_setup_global_output_regs(octeon_device_t * oct);
 void cn93xx_check_config_space_error_regs(octeon_device_t * oct);
 
 int setup_cn93xx_octeon_vf_device(octeon_device_t * oct);
+int setup_cn98xx_octeon_vf_device(octeon_device_t * oct);
 
 int validate_cn93xx_vf_config_info(cn93xx_vf_config_t * conf93xx);
 
