@@ -8,10 +8,6 @@
 #include "octeon_macros.h"
 #include "octeon-pci.h"
 
-extern int cn83xx_droq_intr_handler(octeon_ioq_vector_t * ioq_vector);
-
-extern void cn83xx_iq_intr_handler(octeon_ioq_vector_t * ioq_vector);
-
 void cn83xx_dump_vf_iq_regs(octeon_device_t * oct)
 {
 
@@ -370,6 +366,8 @@ static void cn83xx_setup_vf_iq_regs(octeon_device_t * oct, int iq_no)
 	    + CN83XX_VF_SDP_EPF_R_IN_INSTR_DBELL(oct->epf_num, iq_no);
 	iq->inst_cnt_reg = (uint8_t *) oct->mmio[0].hw_addr
 	    + CN83XX_VF_SDP_EPF_R_IN_CNTS(oct->epf_num, iq_no);
+	iq->intr_lvl_reg = (uint8_t *) oct->mmio[0].hw_addr
+	    + CN83XX_VF_SDP_EPF_R_IN_INT_LEVELS(oct->epf_num, iq_no);
 
 	cavium_print(PRINT_DEBUG,
 		     "InstQ[%d]:dbell reg @ 0x%p instcnt_reg @ 0x%p\n", iq_no,
@@ -612,49 +610,10 @@ void cn83xx_handle_vf_mbox_intr(octeon_ioq_vector_t * ioq_vector)
 cvm_intr_return_t
 cn83xx_vf_msix_interrupt_handler(void  *dev)
 {
-	octeon_ioq_vector_t *ioq_vector	= (octeon_ioq_vector_t *)dev;
-	octeon_device_t  *oct    = ioq_vector->oct_dev;
-	uint64_t          intr64;
+	octeon_ioq_vector_t *ioq_vector = (octeon_ioq_vector_t *) dev;
+	octeon_droq_t *droq = ioq_vector->droq;
 
-	cavium_print(PRINT_FLOW," In %s octeon_dev @ %p  \n", 
-				__CVM_FUNCTION__, oct);
-	//intr64 = OCTEON_READ64(ioq_vector->droq->pkts_sent_reg);
-	intr64 = OCTEON_READ64(ioq_vector->droq->pkts_sent_reg);
-
-	/* If our device has interrupted, then proceed. Also check 
-	 * for all f's if interrupt was triggered on an error
-  	 * and the PCI read fails. 
-  	 */
-	if (!intr64 || (intr64 == -1ULL))
-		return CVM_INTR_NONE;
-
-	cavium_atomic_set(&oct->in_interrupt, 1);
-
-
-	oct->stats.interrupts++;
-
-	cavium_atomic_inc(&oct->interrupts);
-
-
-	/* Write count reg in sli_pkt_cnts to clear these int.*/
-	if(intr64 & CN83XX_INTR_R_OUT_INT){
-#ifdef OCT_NIC_USE_NAPI
-        cavium_disable_irq_nosync(ioq_vector->droq->irq_num);
-#endif
-		cn83xx_droq_intr_handler(ioq_vector);
-	}
-	
-	/* Handle PI int, write count in IN_DONE reg to clear these int*/
-    if (intr64 & CN83XX_INTR_R_IN_INT) {
-		cn83xx_iq_intr_handler(ioq_vector);
-	}
-
-	if(intr64 & CN83XX_INTR_R_MBOX_INT){
-		cn83xx_handle_vf_mbox_intr(ioq_vector);
-	}
-
-	cavium_atomic_set(&oct->in_interrupt, 0);
-
+	droq->ops.napi_fun((void *)droq);
 	return CVM_INTR_HANDLED;
 }
 // *INDENT-ON*
