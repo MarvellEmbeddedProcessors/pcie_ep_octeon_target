@@ -187,5 +187,6 @@ static inline void npu_barmap_dump(struct npu_bar_map *map)
 	       facility_map->h2t_dbell_start, facility_map->h2t_dbell_count);
 
 	printk("GICD offset in BAR = %x\n", map->gicd_offset);
+	printk("PEM number: %u\n", map->pem_num);
 }
 #endif /* _BARMAP_H_ */
