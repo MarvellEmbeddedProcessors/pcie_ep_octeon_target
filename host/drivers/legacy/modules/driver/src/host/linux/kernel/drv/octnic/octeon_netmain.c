@@ -242,7 +242,7 @@ int octnet_get_inittime_link_status(void *oct, void *props_ptr)
         ls->link_count = 1;
         ls->link_info[0].ifidx = 0;
         ls->link_info[0].gmxport = 2048;
-        ls->link_info[0].hw_addr = 0x20f000b9849;
+        ls->link_info[0].hw_addr = (0x20f000b9849 + oct_dev->octeon_id);
 //        ls->link_info[0].hw_addr = 0x000FB71188BC;
         ls->link_info[0].num_rxpciq = num_q;
         ls->link_info[0].num_txpciq = num_q;
