@@ -48,10 +48,11 @@
 #define DPI_BURST_REQ	10
 
 #define DPI_MAX_DATA_SZ_PER_PTR	65535
+#define DPI_MAX_PFS 2
 
 static volatile bool force_quit;
 
-static struct dpi_cring_data_s cring[DPI_MAX_VFS];
+static struct dpi_cring_data_s cring[DPI_MAX_PFS * DPI_MAX_VFS];
 uint64_t raddr, laddr;
 uint64_t data_size = 128;
 uint64_t inb_data_size = 128;
@@ -59,8 +60,8 @@ uint64_t outb_data_size = 128;
 int mode, n_iter = 1, perf_mode = 0;
 int ptrs_per_instr = 1;
 static void *chunk_pool;
-uint64_t dma_submit_cnt[DPI_MAX_VFS] = { 0 };
-uint64_t last_dma_submit_cnt[DPI_MAX_VFS] = { 0 };
+uint64_t dma_submit_cnt[DPI_MAX_PFS * DPI_MAX_VFS] = { 0 };
+uint64_t last_dma_submit_cnt[DPI_MAX_PFS * DPI_MAX_VFS] = { 0 };
 uint64_t total_dma_cnt = 0;
 static uint64_t timer_period = 1; /* default period is 1 seconds */
 uint16_t nb_ports;
@@ -433,7 +434,10 @@ static inline int dma_test_inbound(int dma_port, int buf_size)
 	} while (1);
 
 free_buf:
-	printf("Inbound DMA transfer successfully completed\n");
+	if (!ret)
+		printf("Inbound DMA transfer failed or interrupted\n");
+	else
+		printf("Inbound DMA transfer successfully completed\n");
 //	dump_buffer(fptr, buf_size);
 
 	if (fptr)
