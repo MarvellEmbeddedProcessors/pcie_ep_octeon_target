@@ -950,7 +950,7 @@ int main(int argc, char **argv)
 	for (i = 0; i < nb_ports; i++) {
 		conf.chunk_pool = chunk_pool;
 		rdev_info.dev_private = &conf;
-		ret = rte_rawdev_configure(i, (rte_rawdev_obj_t)&rdev_info);
+		ret = rte_rawdev_configure(i, (rte_rawdev_obj_t)&rdev_info, sizeof(conf));
 		if (ret)
 			rte_exit(EXIT_FAILURE, "Unable to configure DPIVF %d\n",
 				 i);
