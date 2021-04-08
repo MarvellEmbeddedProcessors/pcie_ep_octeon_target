@@ -663,7 +663,6 @@ netdev_tx_t mgmt_tx(struct sk_buff *skb, struct net_device *dev)
 	int count;
 	int cmd_idx;
 	local_dma_addr_t local_addr;
-	int xmit_more;
 
 	tq = &mdev->txqs[q_idx];
 	descq = tq->hw_descq;
@@ -681,7 +680,6 @@ netdev_tx_t mgmt_tx(struct sk_buff *skb, struct net_device *dev)
 	}
 	if (skb->len > descq->buf_size)
 		goto err;
-	xmit_more = skb->xmit_more;
 	//printk("send skb:%p skb->data:%p skb->len %d\n", skb, skb->data, skb->len);
 	cons_idx = READ_ONCE(tq->local_cons_idx);
 	prod_idx = READ_ONCE(descq->prod_idx);
@@ -755,7 +753,7 @@ netdev_tx_t mgmt_tx(struct sk_buff *skb, struct net_device *dev)
 	wmb();
 	tq->pkts++;
 	tq->bytes += skb->len;
-	if (xmit_more && tq->pending < DPIX_MAX_PTR)
+	if (netdev_xmit_more() && tq->pending < DPIX_MAX_PTR)
 		return NETDEV_TX_OK;
 	
 	do_dma_async_dpi_vector(mdev->dma_dev, tq->cmd_list[cmd_idx].local_addr,

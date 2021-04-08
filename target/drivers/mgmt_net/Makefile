@@ -13,9 +13,7 @@ DMA_API_DIR?=$(PWD)/../dpi_dma
 INCLUDE_DIR = -I$(PWD) -I$(FACILITY_DIR) -I$(DMA_API_DIR)
 ccflags-y := $(INCLUDE_DIR)
 
-KBUILD_EXTRA_SYMBOLS=$(BUILD_DIR)/pcie_ep_octeontx-$(PCIE_EP_OCTEONTX_VERSION)/src/Module.symvers
-KBUILD_EXTRA_SYMBOLS+=$(BUILD_DIR)/dpi_dma_octeontx-$(DPI_DMA_OCTEONTX_VERSION)/Module.symvers
-export KBUILD_EXTRA_SYMBOLS
+export KBUILD_EXTRA_SYMBOLS=$(DMA_API_DIR)/Module.symvers $(FACILITY_DIR)/Module.symvers
 
 $(info $$DMA_API_DIR is $(DMA_API_DIR))
  
