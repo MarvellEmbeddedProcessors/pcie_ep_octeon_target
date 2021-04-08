@@ -85,34 +85,10 @@ static void setup_s2m_regx_acc(void)
  */
 void __iomem *host_ioremap(host_dma_addr_t host_addr)
 {
-	void  __iomem *raddrp = NULL;
 	void  __iomem *raddr = NULL;
-	union sli_s2m_op_s  s2m_op;
-	int index;
 
-	/* printk(KERN_DEBUG "host_writel  host_addr 0x%llx val  %u\n",
-		  host_addr, val); */
-	if (part_num == CAVIUM_CPU_PART_T83) {
-		index = host_addr >> 32;
-		if (index > 255) {
-			printk(KERN_ERR "phys addr too big 0x%llx\n", host_addr);
-			return NULL;
-		}
-		s2m_op.u64 = 0;
-		s2m_op.s.region = index;
-		s2m_op.s.io = 1;
-		s2m_op.s.did_hi = 8;
-		s2m_op.s.addr = host_addr & ((1UL << 32) - 1);
-		/* printk(KERN_DEBUG "s2m_op.u64 0x%016llx\n", s2m_op.u64); */
-		raddrp = ioremap((s2m_op.u64 & (~(PAGE_SIZE - 1))), PAGE_SIZE);
-		if (raddrp == NULL) {
-			printk(KERN_ERR "ioremap failed\n");
-			return NULL;
-		}
-		raddr = raddrp + (s2m_op.u64 & (PAGE_SIZE - 1));
-	} else { /* 93XX */
-		raddr = (void  __iomem *)host_addr;
-	}
+	raddr = (void  __iomem *)host_addr;
+
 	return raddr;
 }
 EXPORT_SYMBOL(host_ioremap);
@@ -139,11 +115,7 @@ EXPORT_SYMBOL(host_map_writel);
 
 void host_writel(uint32_t val,  void __iomem *host_addr)
 {
-	if (part_num == CAVIUM_CPU_PART_T83) {
-		writel(val, host_addr);
-	} else {
-		do_dma_to_host(val, (host_dma_addr_t)host_addr);
-	}
+	do_dma_to_host(val, (host_dma_addr_t)host_addr);
 }
 EXPORT_SYMBOL(host_writel);
 

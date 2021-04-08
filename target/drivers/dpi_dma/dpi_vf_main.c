@@ -14,19 +14,14 @@
 #include <linux/dmapool.h>
 
 #include "dpi.h"
-#include "fpa.h"
 #include "dpi_cmd.h"
 #include "npa_api.h"
 #include "dma_api.h"
-#include "octeontx_mbox.h"
-#include "octeontx.h"
 
 #define DRV_NAME "octeontx-dpi-vf"
-#define DRV_VERSION "1.0"
+#define DRV_VERSION "2.0"
 #define PCI_VENDOR_ID_CAVIUM 0x177d
-#define PCI_DEVICE_ID_OCTEONTX_DPI_VF_83XX 0xA058
 #define PCI_DEVICE_ID_OCTEONTX_DPI_VF_93XX 0xA081
-#define PARTNUM_98XX_CPU	0x0B1
 
 #define DPI_CHUNK_SIZE 1024
 #define DPI_DMA_CMD_SIZE 64
@@ -34,10 +29,8 @@
 #define DPI_NB_CHUNKS 4096
 #define FPA_DPI_XAQ_GMID 0x5
 #define DPI_NUM_VFS 1
-#define FPA_NUM_VFS 1
 #define DPI_DMA_CMDX_SIZE 64
 
-#define FPA_PF_ID 0
 #define DPI_PF_ID 0
 
 static unsigned int pem_num = 0;
@@ -47,28 +40,8 @@ MODULE_PARM_DESC(pem_num, "pem number to use");
 #define MAX_PEM 4
 static int lport[MAX_PEM] = { 0, -1, 1, -1 };
 
-static struct fpapf_com_s *fpapf;
-static struct fpavf_com_s *fpavf;
-
 u8 *local_ptr;
 u64 local_iova;
-unsigned long part_num;
-
-static struct dpipf_com_s *dpipf;
-
-extern struct dpipf_com_s dpipf_com;
-
-struct dpipf_com_s {
-        u64 (*create_domain)(u32 id, u16 domain_id, u32 num_vfs,
-                             void *master, void *master_data,
-                             struct kobject *kobj);
-        int (*destroy_domain)(u32 id, u16 domain_id, struct kobject *kobj);
-        int (*reset_domain)(u32, u16);
-        int (*receive_message)(u32, u16 domain_id,
-                               struct mbox_hdr *hdr, union mbox_data *req,
-                               union mbox_data *resp, void *add_data);
-        int (*get_vf_count)(u32 id);
-};
 
 extern struct otx2_dpipf_com_s otx2_dpipf_com;
 static struct otx2_dpipf_com_s *otx2_dpipf;
@@ -95,7 +68,6 @@ struct dpivf_t {
 	u16 vf_id;
 	u16 domain;
 	int id;
-	struct fpavf *fpa;
 	struct dma_pool *comp_buf_pool;
 	u32 aura;
 	u8 *host_writel_ptr;
@@ -109,88 +81,9 @@ DEFINE_PER_CPU(u32*, cpu_lptr);
 DEFINE_PER_CPU(u64, cpu_iova);
 
 static const struct pci_device_id dpi_id_table[] = {
-	{ PCI_DEVICE(PCI_VENDOR_ID_CAVIUM, PCI_DEVICE_ID_OCTEONTX_DPI_VF_83XX) },
 	{ PCI_DEVICE(PCI_VENDOR_ID_CAVIUM, PCI_DEVICE_ID_OCTEONTX_DPI_VF_93XX) },
 	{ 0, }	/* end of table */
 };
-
-int dpivf_master_send_message(struct mbox_hdr *hdr,
-			      union mbox_data *req,
-			      union mbox_data *resp,
-			      void *master_data,
-			      void *add_data)
-{
-	struct dpivf_t *dpi_vf = master_data;
-	int ret;
-
-	if (hdr->coproc == FPA_COPROC) {
-		ret = fpapf->receive_message(
-			FPA_PF_ID, dpi_vf->domain,
-			hdr, req, resp, add_data);
-	} else {
-		dev_err(dpi_vf->dev, "SSO message dispatch, wrong VF type\n");
-		ret = -1;
-	}
-
-	return ret;
-}
-
-static struct octeontx_master_com_t dpi_master_com = {
-	.send_message = dpivf_master_send_message,
-};
-
-static int dpivf_pre_setup(struct dpivf_t *dpi_vf)
-{
-	int err;
-	char kobj_name[16];
-	u64 mask;
-
-	sprintf(kobj_name, "dpi_kobj_%d", dpi_vf->domain);
-	dpi_vf->kobj = kobject_create_and_add(kobj_name, NULL);
-	if (!dpi_vf->kobj) {
-		dev_err(dpi_vf->dev, "Failed to create Kobject\n");
-		goto kobj_fail;
-	}
-
-	mask = dpipf->create_domain(DPI_PF_ID, dpi_vf->domain, DPI_NUM_VFS,
-								NULL, NULL, dpi_vf->kobj);
-	if (!mask) {
-		dev_err(dpi_vf->dev, "Failed to create DPI domain\n");
-		goto dpi_domain_fail;
-	}
-
-	mask = fpapf->create_domain(FPA_PF_ID, dpi_vf->domain, FPA_NUM_VFS, dpi_vf->kobj);
-	if (!mask) {
-		dev_err(dpi_vf->dev, "Failed to create FPA domain\n");
-		goto fpa_domain_fail;
-	}
-
-	dpi_vf->fpa = fpavf->get(dpi_vf->domain, 0, &dpi_master_com, dpi_vf);
-	if (dpi_vf->fpa == NULL) {
-		dev_err(dpi_vf->dev, "Failed to get fpavf\n");
-		goto fpavf_fail;
-	}
-
-	err = fpavf->setup(dpi_vf->fpa, DPI_NB_CHUNKS, DPI_CHUNK_SIZE, dpi_vf->dev);
-	if (err) {
-		dev_err(dpi_vf->dev, "FPA setup failed\n");
-		goto fpavf_setup_fail;
-	}
-
-	return 0;
-
-fpavf_setup_fail:
-	fpavf->put(dpi_vf->fpa);
-fpavf_fail:
-	fpapf->destroy_domain(FPA_PF_ID, dpi_vf->domain, dpi_vf->kobj);
-fpa_domain_fail:
-	dpipf->destroy_domain(DPI_PF_ID, dpi_vf->domain, dpi_vf->kobj);
-dpi_domain_fail:
-	kobject_del(dpi_vf->kobj);
-kobj_fail:
-
-	return -ENODEV;
-}
 
 static int dpi_dma_queue_write(struct dpivf_t *dpi_vf, u16 qid, u16 cmd_count,
 		u64 *cmds)
@@ -233,14 +126,7 @@ static int dpi_dma_queue_write(struct dpivf_t *dpi_vf, u16 qid, u16 cmd_count,
 		u64 dpi_buf, dpi_buf_phys;
 		void *new_buffer;
 
-		//dev_info(dev, "%s:%d Allocating new command buffer\n",
-		//		__func__, __LINE__);
-
-		if (part_num == CAVIUM_CPU_PART_T83)
-			dpi_buf = fpavf->alloc(dpi_vf->fpa, dpi_vf->aura);
-		else
-			dpi_buf = npa_alloc_buf(dpi_vf->aura);
-
+		dpi_buf = npa_alloc_buf(dpi_vf->aura);
 		if (!dpi_buf) {
 			spin_unlock_irqrestore(&qctx->queue_lock, flags);
 			dev_err(dpi_vf->dev, "Failed to allocate");
@@ -280,11 +166,7 @@ static int dpi_dma_queue_write(struct dpivf_t *dpi_vf, u16 qid, u16 cmd_count,
 			*ptr++ = *cmds++;
 		/* queue index may greater than pool size */
 		if (qctx->index >= qctx->pool_size_m1) {
-			if (part_num == CAVIUM_CPU_PART_T83)
-				dpi_buf = fpavf->alloc(dpi_vf->fpa, dpi_vf->aura);
-			else
-				dpi_buf = npa_alloc_buf(dpi_vf->aura);
-
+			dpi_buf = npa_alloc_buf(dpi_vf->aura);
 			if (!dpi_buf) {
 				spin_unlock_irqrestore(&qctx->queue_lock, flags);
 				dev_err(dpi_vf->dev, "Failed to allocate");
@@ -582,10 +464,6 @@ int do_dma_to_host(uint32_t val, host_dma_addr_t host_addr)
 int dpi_vf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 {
 	struct device *dev = &pdev->dev;
-	union mbox_data req;
-	union mbox_data resp;
-	struct mbox_hdr hdr;
-	struct mbox_dpi_cfg cfg;
 	int err, cpu;
 #ifdef TEST_DPI_DMA_API
 	struct page *p, *p1;
@@ -597,14 +475,6 @@ int dpi_vf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	char comp_pool_name[16];
 	static unsigned int domain = FPA_DPI_XAQ_GMID;
 	union dpi_mbox_message_t otx2_mbox_msg;
-
-	part_num = read_cpuid_part_number();
-	if ((part_num != CAVIUM_CPU_PART_T83) &&
-	    (part_num != MRVL_CPU_PART_OCTEONTX2_96XX) &&
-	    (part_num != PARTNUM_98XX_CPU)) {
-		printk("Unsupported CPU type\n");
-		return -EINVAL;
-	}
 
 	dpi_vf = devm_kzalloc(dev, sizeof(struct dpivf_t), GFP_KERNEL);
 	if (!dpi_vf) {
@@ -640,96 +510,66 @@ int dpi_vf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	writeq_relaxed(0x0, dpi_vf->reg_base + DPI_VDMA_EN);
 	writeq_relaxed(0x0, dpi_vf->reg_base + DPI_VDMA_REQQ_CTL);
 	dpi_vf->domain = domain++;
-	if (part_num == CAVIUM_CPU_PART_T83) {
-		err = dpivf_pre_setup(dpi_vf);
-		if (err) {
-			dev_err(dev, "Pre-requisites failed");
-			return -ENODEV;
-		}
-		val = readq_relaxed(dpi_vf->reg_base + DPI_VDMA_SADDR);
-		dpi_vf->vf_id = (val >> 24) & 0xffff;
-		dpi_vf->aura = 0;
-		dpi_buf = fpavf->alloc(dpi_vf->fpa, dpi_vf->aura);
-		if (!dpi_buf) {
-			dev_err(dev, "Failed to allocate");
-			return -ENODEV;
-		}
 
-		cfg.buf_size = DPI_CHUNK_SIZE;
-		cfg.inst_aura = dpi_vf->aura;
-
-		hdr.coproc = DPI_COPROC;
-		hdr.msg = DPI_QUEUE_OPEN;
-		hdr.vfid = dpi_vf->vf_id;
-		/* Opening DPI queue */
-		err = dpipf->receive_message(DPI_PF_ID, dpi_vf->domain, &hdr, &req,
-								&resp, &cfg);
-		if (err) {
-			dev_err(dev, "%d: Failed to allocate dpi queue %d:%d:%d", err,
-					0, dpi_vf->domain, hdr.vfid);
-			return err;
-		}
-	} else {
-		if (otx2_dpi_pfdev == NULL) {
-			struct pci_dev *pcidev = NULL;
-			while ((pcidev = pci_get_device(PCI_ANY_ID, PCI_ANY_ID, pcidev))) {
-				if (pcidev->device == PCI_DEVID_OCTEONTX2_DPI_PF) {
-					otx2_dpi_pfdev = pcidev;
-					break;
-				}
+	if (otx2_dpi_pfdev == NULL) {
+		struct pci_dev *pcidev = NULL;
+		while ((pcidev = pci_get_device(PCI_ANY_ID, PCI_ANY_ID, pcidev))) {
+			if (pcidev->device == PCI_DEVID_OCTEONTX2_DPI_PF) {
+				otx2_dpi_pfdev = pcidev;
+				break;
 			}
 		}
-		if (otx2_dpi_pfdev == NULL) {
-			dev_err(dev, "OTX2_DPI_PF not found\n");
-			return -EINVAL;
-		}
+	}
+	if (otx2_dpi_pfdev == NULL) {
+		dev_err(dev, "OTX2_DPI_PF not found\n");
+		return -EINVAL;
+	}
 
-		dpi_vf->vf_id = pdev->devfn - 1;
-		err = npa_aura_pool_init(DPI_NB_CHUNKS, DPI_CHUNK_SIZE,
-					 &dpi_vf->aura, dpi_vf->dev);
-		if (err) {
-			dev_err(dev, "Failed to init aura pool pair");
-			return err;
-		}
-		dpi_buf = npa_alloc_buf(dpi_vf->aura);
-		if (!dpi_buf) {
-			dev_err(dev, "Failed to allocate");
-			return -ENOMEM;
-		}
+	dpi_vf->vf_id = pdev->devfn - 1;
+	err = npa_aura_pool_init(DPI_NB_CHUNKS, DPI_CHUNK_SIZE,
+				 &dpi_vf->aura, dpi_vf->dev);
+	if (err) {
+		dev_err(dev, "Failed to init aura pool pair");
+		return err;
+	}
+	dpi_buf = npa_alloc_buf(dpi_vf->aura);
+	if (!dpi_buf) {
+		dev_err(dev, "Failed to allocate");
+		return -ENOMEM;
+	}
 
-		otx2_mbox_msg.s.cmd = DPI_QUEUE_OPEN;
-		otx2_mbox_msg.s.vfid = dpi_vf->vf_id;
-		otx2_mbox_msg.s.csize = DPI_CHUNK_SIZE;
-		otx2_mbox_msg.s.aura = dpi_vf->aura;
-		otx2_mbox_msg.s.sso_pf_func = 0;
-		otx2_mbox_msg.s.npa_pf_func = npa_pf_func(dpi_vf->aura);
+	otx2_mbox_msg.s.cmd = DPI_QUEUE_OPEN;
+	otx2_mbox_msg.s.vfid = dpi_vf->vf_id;
+	otx2_mbox_msg.s.csize = DPI_CHUNK_SIZE;
+	otx2_mbox_msg.s.aura = dpi_vf->aura;
+	otx2_mbox_msg.s.sso_pf_func = 0;
+	otx2_mbox_msg.s.npa_pf_func = npa_pf_func(dpi_vf->aura);
 
-		/* Opening DPI queue */
-		err = otx2_dpipf->queue_config(otx2_dpi_pfdev, &otx2_mbox_msg);
-		if (err) {
-			dev_err(dev, "%d: Failed to allocate dpi queue %d:%d:%d", err,
-					0, 0, num_vfs);
-			return err;
+	/* Opening DPI queue */
+	err = otx2_dpipf->queue_config(otx2_dpi_pfdev, &otx2_mbox_msg);
+	if (err) {
+		dev_err(dev, "%d: Failed to allocate dpi queue %d:%d:%d", err,
+			0, 0, num_vfs);
+		return err;
+	}
+
+	if (num_vfs == 0) {
+		u8 *local_ptr;
+		u64 local_iova;
+
+		/* This vf is shared between multiple cores and is used mainly
+		 * by mgmt_net. So this vf will create a dma memory to be used
+		 * for host_writel API, This api is executed on multiple cores
+		 */
+		local_ptr = dma_alloc_coherent(dev,
+					       (num_online_cpus() * sizeof(u64)),
+					       &local_iova, GFP_ATOMIC);
+		for_each_online_cpu(cpu) {
+			per_cpu(cpu_lptr, cpu) = (u32*)(local_ptr + (cpu * sizeof(u64)));
+			per_cpu(cpu_iova, cpu) = local_iova + (cpu * sizeof(u64));
 		}
-
-		if (num_vfs == 0) {
-			u8 *local_ptr;
-			u64 local_iova;
-
-			/* This vf is shared between multiple cores and is used mainly
-			 * by mgmt_net. So this vf will create a dma memory to be used
-			 * for host_writel API, This api is executed on multiple cores
-			 */
-			local_ptr = dma_alloc_coherent(dev,
-							(num_online_cpus() * sizeof(u64)),
-							&local_iova, GFP_ATOMIC);
-			for_each_online_cpu(cpu) {
-				per_cpu(cpu_lptr, cpu) = (u32*)(local_ptr + (cpu * sizeof(u64)));
-				per_cpu(cpu_iova, cpu) = local_iova + (cpu * sizeof(u64));
-			}
-			dpi_vf->host_writel_ptr = local_ptr;
-			dpi_vf->host_writel_iova = local_iova;
-		}
+		dpi_vf->host_writel_ptr = local_ptr;
+		dpi_vf->host_writel_iova = local_iova;
 	}
 
 	dpi_vf->iommu_domain = iommu_get_domain_for_dev(dev);
@@ -785,27 +625,9 @@ int dpi_vf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	return 0;
 }
 
-static void dpivf_pre_setup_undo(struct dpivf_t *dpi_vf)
-{
-	int err;
-
-	/* TODO: Need to check the response */
-	fpavf->free(dpi_vf->fpa, dpi_vf->aura, dpi_vf->qctx[0].dpi_buf, 0);
-	err = fpavf->teardown(dpi_vf->fpa);
-	if (err)
-		dev_err(dpi_vf->dev, "FPA teardown failed\n");
-
-	fpavf->put(dpi_vf->fpa);
-
-	fpapf->destroy_domain(FPA_PF_ID, dpi_vf->domain, dpi_vf->kobj);
-
-	dpipf->destroy_domain(DPI_PF_ID, dpi_vf->domain, dpi_vf->kobj);
-
-	kobject_del(dpi_vf->kobj);
-}
-
 static void dpi_remove(struct pci_dev *pdev)
 {
+	union dpi_mbox_message_t otx2_mbox_msg = {0};
 	struct dpivf_t *dpi_vf;
 	u64 val;
 
@@ -813,37 +635,20 @@ static void dpi_remove(struct pci_dev *pdev)
 	/* Disable Engine */
 	writeq_relaxed(0x0, dpi_vf->reg_base + DPI_VDMA_EN);
 
-	if (part_num == CAVIUM_CPU_PART_T83) {
-		union mbox_data req;
-		union mbox_data resp;
-		struct mbox_hdr hdr;
+	otx2_mbox_msg.s.cmd = DPI_QUEUE_CLOSE;
+	otx2_mbox_msg.s.vfid = dpi_vf->vf_id;
 
-		hdr.coproc = DPI_COPROC;
-		hdr.msg = DPI_QUEUE_CLOSE;
-		hdr.vfid = dpi_vf->vf_id;
-		resp.data = 0xff;
-		/* Closing DPI queue */
-		dpipf->receive_message(DPI_PF_ID, dpi_vf->domain, &hdr, &req, &resp, NULL);
+	/* Closing DPI queue */
+	otx2_dpipf->queue_config(otx2_dpi_pfdev, &otx2_mbox_msg);
+	do {
+		val = readq_relaxed(dpi_vf->reg_base + DPI_VDMA_SADDR);
+	} while (!(val & (0x1ull << 63)));
 
-		dpivf_pre_setup_undo(dpi_vf);
-	} else {
-		union dpi_mbox_message_t otx2_mbox_msg = {0};
+	npa_free_buf(dpi_vf->aura, dpi_vf->qctx[0].dpi_buf);
 
-		otx2_mbox_msg.s.cmd = DPI_QUEUE_CLOSE;
-		otx2_mbox_msg.s.vfid = dpi_vf->vf_id;
-
-		/* Closing DPI queue */
-		otx2_dpipf->queue_config(otx2_dpi_pfdev, &otx2_mbox_msg);
-		do {
-			val = readq_relaxed(dpi_vf->reg_base + DPI_VDMA_SADDR);
-		} while (!(val & (0x1ull << 63)));
-
-		npa_free_buf(dpi_vf->aura, dpi_vf->qctx[0].dpi_buf);
-
-		if (dpi_vf->host_writel_ptr)
-			dma_free_coherent(&pdev->dev, (num_online_cpus() * sizeof(u64)),
-				dpi_vf->host_writel_ptr, dpi_vf->host_writel_iova);
-	}
+	if (dpi_vf->host_writel_ptr)
+		dma_free_coherent(&pdev->dev, (num_online_cpus() * sizeof(u64)),
+				  dpi_vf->host_writel_ptr, dpi_vf->host_writel_iova);
 
 	if (dpi_vf->comp_buf_pool)
 		dma_pool_destroy(dpi_vf->comp_buf_pool);
@@ -859,50 +664,18 @@ static struct pci_driver dpi_vf_driver = {
 
 int dpi_vf_init(void)
 {
-	/*TODO: handle -ve cases */
-	dpipf = try_then_request_module(symbol_get(dpipf_com), "dpipf");
-	if (dpipf == NULL) {
-		printk("Load DPI PF module\n");
+	otx2_dpipf = try_then_request_module(symbol_get(otx2_dpipf_com),
+					     "octeontx2_dpi");
+	if (otx2_dpipf == NULL) {
+		printk("Load OTX2 DPI PF module\n");
 		return -ENOMEM;
 	}
 
-	fpapf = try_then_request_module(symbol_get(fpapf_com), "fpapf");
-	if (fpapf == NULL) {
-		printk("Load FPA PF module\n");
-		goto fpapf_fail;
-	}
-
-	fpavf = try_then_request_module(symbol_get(fpavf_com), "fpavf");
-	if (fpavf == NULL) {
-		printk("Load FPA VF module\n");
-		goto fpavf_fail;
-	}
-
-	otx2_dpipf = try_then_request_module(symbol_get(otx2_dpipf_com),
-											"octeontx2_dpi");
-	if (otx2_dpipf == NULL) {
-		printk("Load OTX2 DPI PF module\n");
-		goto otx2_dpipf_fail;
-	}
-
 	return pci_register_driver(&dpi_vf_driver);
-
-otx2_dpipf_fail:
-	symbol_put(fpavf_com);
-fpavf_fail:
-	symbol_put(fpapf_com);
-fpapf_fail:
-	symbol_put(dpipf_com);
-
-	return -ENOMEM;
 }
 
 void dpi_vf_cleanup(void)
 {
-	symbol_put(fpavf_com);
-	symbol_put(fpapf_com);
-	symbol_put(dpipf_com);
-
 	symbol_put(otx2_dpipf_com);
 
 	pci_unregister_driver(&dpi_vf_driver);
