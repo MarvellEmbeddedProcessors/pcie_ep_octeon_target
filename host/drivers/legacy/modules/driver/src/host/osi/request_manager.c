@@ -331,8 +331,10 @@ __process_iq_noresponse_list(octeon_device_t * oct UNUSED,
 	put_idx = iq->nr_free.put_idx;
 
 	while (old != iq->octeon_read_index) {
-		if (iq->nrlist[old].buftype == NORESP_BUFTYPE_NONE)
+		if (iq->nrlist[old].buftype == NORESP_BUFTYPE_NONE) {
+			BUG_ON(1);
 			goto skip_this;
+		}
 
 		cavium_print(PRINT_DEBUG,
 			     "Adding instr @ %p type %d to freelist @ idx %d\n",
