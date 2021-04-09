@@ -498,21 +498,15 @@ int __octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 	octnic_cmd_setup_t cmdsetup;
 	octeon_device_t *oct_dev;
 	octnic_data_pkt_t ndata;
-	int cpu = 0, status = 0, q_no;
+	int status = 0, q_no;
 
 	cavium_print(PRINT_FLOW, "OCTNIC: network xmit called\n");
 
 	priv = GET_NETDEV_PRIV(pndev);
 
 	if (netif_is_multiqueue(pndev)) {
-#ifdef OCT_NIC_LOOPBACK
-		/* loopback needs to use same queue pair */
-		cpu = skb->queue_mapping;
-#else
-		/* queue mapping: tuned for TCP_RR/STREAM perf: get corenum */
-		cpu = smp_processor_id();
-#endif
-		q_no = priv->txq + (cpu & (priv->linfo.num_txpciq - 1));
+		q_no = priv->txq + (skb->queue_mapping &
+				    (priv->linfo.num_txpciq - 1));
 		/* mq support: defer sending if qfull */
 		if (octnet_iq_is_full(priv->oct_dev, q_no)) {
 #ifdef OCT_NIC_LOOPBACK
@@ -692,7 +686,7 @@ int __octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 
 	if (status == NORESP_SEND_STOP) {
 #ifndef OCT_NIC_LOOPBACK
-		octnet_stop_queue(priv->pndev, cpu);
+		octnet_stop_queue(priv->pndev, q_no);
 		OCTNET_IFSTATE_RESET(priv, OCT_NIC_IFSTATE_TXENABLED);
 #endif
 	}
