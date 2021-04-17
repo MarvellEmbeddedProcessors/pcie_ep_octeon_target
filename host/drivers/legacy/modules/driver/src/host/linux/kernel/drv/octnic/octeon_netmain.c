@@ -29,7 +29,9 @@ octeon_config_t *octeon_dev_conf(octeon_device_t * oct);
 #define LINK_STATUS_REQUESTED    1
 #define LINK_STATUS_FETCHED      2
 
+#ifdef CONFIG_PPORT
 #define OCTEON_NETDEV_DEV_NAME   "mux_dev"
+#endif
 
 static inline void octnet_free_netdev(octnet_os_devptr_t * dev)
 {
@@ -636,10 +638,12 @@ octnet_setup_nic_device(int octeon_id, oct_link_info_t * link_info, int ifidx)
 	priv->pndev = pndev;
 	cavium_spin_lock_init(&(priv->lock));
 
+#ifdef CONFIG_PPORT
 	/* Assign base device init_name */
 	snprintf(priv->init_name, 64, "%s%d",
 		 OCTEON_NETDEV_DEV_NAME, octeon_id);
 	pndev->dev.init_name = (const char *)&priv->init_name;
+#endif
 
 	/* Record the ethernet port number on the Octeon target for this
 	   interface. */
