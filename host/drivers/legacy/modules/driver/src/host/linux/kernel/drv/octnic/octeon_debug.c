@@ -22,7 +22,8 @@ static inline unsigned int skb_frag_off(const skb_frag_t *frag)
 	return frag->page_offset;
 }
 
-static void skb_dump(const char *level, const struct sk_buff *skb, bool full_pkt)
+static void oct_skb_dump(const char *level, const struct sk_buff *skb,
+			 bool full_pkt)
 {
 	struct skb_shared_info *sh = skb_shinfo(skb);
 	struct net_device *dev = skb->dev;
@@ -108,7 +109,7 @@ static void skb_dump(const char *level, const struct sk_buff *skb, bool full_pkt
 	if (full_pkt && skb_has_frag_list(skb)) {
 		printk("skb fraglist:\n");
 		skb_walk_frags(skb, list_skb)
-			skb_dump(level, list_skb, true);
+			oct_skb_dump(level, list_skb, true);
 	}
 }
 
@@ -178,7 +179,7 @@ static void octeon_debug_dump(struct net_device *dev)
 					i++;
 				}
 			}
-			skb_dump(KERN_ERR, skb, true);
+			oct_skb_dump(KERN_ERR, skb, true);
 		}
 	}
 	netdev_info(dev, "#######  Output Queue Info #######");
