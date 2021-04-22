@@ -618,7 +618,8 @@ void octeon_set_io_queues_off(octeon_device_t * oct)
 {
 	if (oct->chip_id == OCTEON_CN83XX_PF) {
 	}
-	else if (oct->chip_id == OCTEON_CN93XX_PF) {
+	else if ((oct->chip_id == OCTEON_CN93XX_PF) ||
+		 (oct->chip_id == OCTEON_CN98XX_PF)) {
 	}
 }
 

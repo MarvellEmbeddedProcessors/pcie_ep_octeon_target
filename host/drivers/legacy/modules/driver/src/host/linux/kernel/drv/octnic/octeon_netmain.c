@@ -960,7 +960,8 @@ octnet_setup_io_queues(octeon_device_t * octeon_dev,
 		for (index = 0; index < num_ioqs; index++) {
 			if ((octeon_dev->chip_id == OCTEON_CN83XX_PF)
 			    || (octeon_dev->chip_id == OCTEON_CN83XX_VF)
-			    || (octeon_dev->chip_id == OCTEON_CN93XX_PF)) {
+			    || (octeon_dev->chip_id == OCTEON_CN93XX_PF)
+			    || (octeon_dev->chip_id == OCTEON_CN98XX_PF)) {
 				/* check and release ioq reset before setting up the ioqs */
 				octeon_reset_ioq(octeon_dev, (baseq + index));
 			}
