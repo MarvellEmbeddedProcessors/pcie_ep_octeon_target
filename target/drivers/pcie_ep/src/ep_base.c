@@ -19,7 +19,6 @@
 #define NPU_BASE_DRV_NAME  "npu_base"
 #define NPU_BASE_DEVICE_ID "NPU base driver"
 
-#define FDT_NAME         "pcie-ep"
 static unsigned int  host_sid[2] = {0x030000, 0x050000};
 static int host_sid_arr_count = 0;
 module_param_array(host_sid, uint, &host_sid_arr_count, 0644);
@@ -160,41 +159,38 @@ int of_irq_count(struct device_node *dev)
 	return nr;
 }
 
-static int get_device_irq_info(const char *name, int *irq_count, int *first_irq)
+static int get_device_irq_info(struct device *dev, int *irq_count, int *first_irq)
 {
 	struct of_phandle_args irq_data;
-	struct device_node *dev;
+	struct device_node *of_node = dev->of_node;
 	int ret = 0, i;
 
-	printk("####### %s: called for %s ########\n", __func__, name);
-	dev = of_find_node_by_name(NULL, name);
-	if (dev == NULL) {
-		printk("can't find FDT dev %s\n", name);
+	printk("####### %s: called ########\n", __func__);
+	if (of_node == NULL) {
+		printk("FDT node is NULL\n");
 		return -EEXIST;
 	}
-	printk("found FDT dev %s\n", name);
+	printk("FDT dev %s\n", of_node->name);
 
-	*irq_count = of_irq_count(dev);
+	*irq_count = of_irq_count(of_node);
 	if (*irq_count == 0) {
-		printk("Error: No interrupts found for device %s\n", name);
+		printk("Error: No interrupts found for device %s\n", of_node->name);
 		ret = -1;
 		goto err;
 	}
 
-	ret = of_irq_parse_one(dev, 0, &irq_data);
+	ret = of_irq_parse_one(of_node, 0, &irq_data);
 	if (ret) {
-		printk("Error: Failed to parse irq at index-0 of device %s; ret=%d\n",
-		       name, ret);
+		printk("Error: Failed to parse irq at index 0, ret=%d\n", ret);
 		goto err;
 	}
 
 	for (i = 0; i < irq_data.args_count; i++)
 		printk("%s: irq-arg[%d]=%u\n", __func__, i, irq_data.args[i]);
 	*first_irq = irq_data.args[1];
-	printk("%s: irq_count = %d, first_irq=%d\n", name, *irq_count, *first_irq);
+	printk("%s: irq_count = %d, first_irq=%d\n", of_node->name, *irq_count, *first_irq);
 
 err:
-	of_node_put(dev);
 	return ret;
 }
 
@@ -431,7 +427,7 @@ static int npu_base_probe(struct platform_device *pdev)
 		}
 	}
 
-	if (get_device_irq_info(FDT_NAME, &irq_count, &first_irq)) {
+	if (get_device_irq_info(dev, &irq_count, &first_irq)) {
 		printk("get irq info failed\n");
 		return -1;
 	}
