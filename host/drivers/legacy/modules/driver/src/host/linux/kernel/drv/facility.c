@@ -14,6 +14,7 @@ extern octeon_device_t *octeon_device[MAX_OCTEON_DEVICES];
 
 /* TODO: should make it use dynamic alloc memory ?? */
 extern struct npu_bar_map npu_memmap_info;
+extern int facility_dev;
 
 /* TODO: should make it use dynamic alloc memory ?? */
 mv_facility_conf_t facility_conf[MV_FACILITY_COUNT];
@@ -29,6 +30,7 @@ void mv_facility_conf_init(octeon_device_t *oct)
 	struct device *dev = &oct->pci_dev->dev;
 	struct facility_bar_map *facility_map;
 
+	facility_dev = oct->octeon_id;
 	memset(&facility_conf, 0,
 	       sizeof(mv_facility_conf_t) * MV_FACILITY_COUNT);
 
@@ -157,7 +159,6 @@ int mv_send_facility_dbell(int type, int dbell)
 
 	facility_map = &npu_memmap_info.facility_map[type];
 
-	/* printk("type=%d, dbell=%d, start=%d\n",type,dbell, facility_map->h2t_dbell_start); */
 	irq = dbell + facility_map->h2t_dbell_start;
 
 	/* check if dbell falls in range */
@@ -166,10 +167,10 @@ int mv_send_facility_dbell(int type, int dbell)
 		     facility_map->h2t_dbell_count)) {
 		if ((octeon_device[0]->chip_id == OCTEON_CN93XX_PF) ||
 		    (octeon_device[0]->chip_id == OCTEON_CN98XX_PF))
-			*(volatile uint32_t *)(octeon_device[0]->mmio[2].hw_addr +
+			*(volatile uint32_t *)(octeon_device[facility_dev]->mmio[2].hw_addr +
 			 	npu_memmap_info.gicd_offset) = irq;
 		else
-			*(volatile uint32_t *)(octeon_device[0]->mmio[1].hw_addr +
+			*(volatile uint32_t *)(octeon_device[facility_dev]->mmio[1].hw_addr +
 			 	npu_memmap_info.gicd_offset) = irq;
 	} else {
 		return -EINVAL;

@@ -1645,6 +1645,7 @@ void npu_mem_and_intr_test (octeon_device_t *octeon_dev,
 }
 
 struct npu_bar_map npu_memmap_info;
+int facility_dev = 0;
 
 static void npu_bar_map_save(void *src)
 {
