@@ -472,7 +472,7 @@ int dpi_vf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 #endif
 	u64 *dpi_buf_ptr, dpi_buf, dpi_buf_phys, val;
 	struct dpivf_t* dpi_vf;
-	char comp_pool_name[16];
+	char comp_pool_name[32];
 	static unsigned int domain = FPA_DPI_XAQ_GMID;
 	union dpi_mbox_message_t otx2_mbox_msg;
 
@@ -631,7 +631,7 @@ static void dpi_remove(struct pci_dev *pdev)
 	struct dpivf_t *dpi_vf;
 	u64 val;
 
-	dpi_vf = pci_get_drvdata(pdev);
+	dpi_vf = dev_get_drvdata(&pdev->dev);
 	/* Disable Engine */
 	writeq_relaxed(0x0, dpi_vf->reg_base + DPI_VDMA_EN);
 
