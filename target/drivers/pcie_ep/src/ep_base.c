@@ -87,7 +87,8 @@ const struct iommu_ops *smmu_ops;
 void *npu_barmap_mem;
 
 /* NPU BAR map structure */
-struct npu_bar_map bar_map;
+#define MAX_SDP_PF 2
+struct npu_bar_map bar_map[MAX_SDP_PF];
 struct npu_irq_info irq_info[MAX_INTERRUPTS];
 
 /* platform device */
@@ -437,20 +438,22 @@ static int npu_base_probe(struct platform_device *pdev)
 		irq_info[i].cpumask = NULL;
 	}
 
-	if (npu_bar_map_init(&bar_map, pem_num[instance], first_irq, irq_count)) {
+	if (npu_bar_map_init(&bar_map[instance], pem_num[instance], first_irq, irq_count)) {
 		printk("bar map int failed\n");
 		return -1;
 	}
 
-	if (npu_base_setup(&bar_map, pcie_ep_dev)) {
+	if ((instance == 0) && npu_base_setup(&bar_map[instance], pcie_ep_dev)) {
 		printk("Base setup failed\n");
 		return -1;
 	}
 
 	plat_dev = dev;
-	npu_handshake_ready(&bar_map, pcie_ep_dev);
-	mv_facility_conf_init(dev, npu_barmap_mem, &bar_map);
-	npu_device_access_init();
+	npu_handshake_ready(&bar_map[instance], pcie_ep_dev);
+	if (instance == 0) {
+		mv_facility_conf_init(dev, npu_barmap_mem, &bar_map[instance]);
+		npu_device_access_init();
+	}
 	return 0;
 
 exit:
