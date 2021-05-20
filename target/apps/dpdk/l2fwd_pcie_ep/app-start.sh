@@ -99,7 +99,7 @@ do
                 echo $NUM_VFS > /sys/bus/pci/devices/${!PF}/sriov_numvfs
 
         else
-                dpdk-devbind.sh -b vfio-pci ${!PF}
+                dpdk-devbind.py -b vfio-pci ${!PF}
                 WHITELIST+=" -w ${!PF}"
                 PORT_CNT=$((PORT_CNT + 1))
         fi
@@ -107,7 +107,7 @@ do
         for (( j=0; j<$NUM_VFS; j++ ))
         do
                 VF="CGX_PF${i}_VF${j}"
-		dpdk-devbind.sh -b vfio-pci ${!VF}
+		dpdk-devbind.py -b vfio-pci ${!VF}
                 WHITELIST+=" -w ${!VF}"
                 PORT_CNT=$((PORT_CNT + 1))
         done
@@ -117,7 +117,7 @@ for (( i=0; i<$NUM_PFS; i++ ))
 do
         PF="SDP0_PF${i}"
         if [ $NUM_VFS -eq 0 ]; then
-                dpdk-devbind.sh -b vfio-pci ${!PF}
+                dpdk-devbind.py -b vfio-pci ${!PF}
                 WHITELIST+=" -w ${!PF}"
                 PORT_CNT=$((PORT_CNT + 1))
         fi
@@ -125,7 +125,7 @@ do
         for (( j=0; j<$NUM_VFS; j++ ))
         do
                 VF="SDP0_PF${i}_VF${j}"
-                dpdk-devbind.sh -b vfio-pci ${!VF}
+                dpdk-devbind.py -b vfio-pci ${!VF}
                 WHITELIST+=" -w ${!VF}"
                 PORT_CNT=$((PORT_CNT + 1))
         done
