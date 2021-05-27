@@ -15,6 +15,8 @@
 #define _MV_FACILITY_H_
 #include <linux/interrupt.h>
 
+#define MAX_FACILITY_INSTANCES	2
+
 /**
  * @brief facility memory address
  *
@@ -52,6 +54,27 @@ enum mv_target {
 	MV_TARGET_EP = 1,
 };
 
+/**
+ * @brief Get number of facility instances
+ *
+ * Returns the number of facility configurations for the given facility type.
+ * @param name          facility name
+ * @return count of facility instances and standard error for failure.
+ */
+int mv_get_facility_instance_count(char *name);
+
+/**
+ * @brief Get facility handle of an instance
+ *
+ * Returns the facility handle based on the instance number and the
+ facility
+ * name passed. this handle should be used for all facility based APIs.
+ *
+ * @param instance      instance number
+ * @param name          facility name
+ * @return              handle on success, error on failure.
+ */
+int mv_get_multi_facility_handle(int instance, char *name);
 
 /**
  * @brief Get Facility handle

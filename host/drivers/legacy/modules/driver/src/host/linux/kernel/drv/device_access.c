@@ -9,15 +9,30 @@
 
 #include "facility.h"
 #include "device_access.h"
+#include "octeon_device.h"
 
-mv_facility_conf_t rpc_facility_conf;
-mv_facility_conf_t nwa_facility_conf;
+//mv_facility_conf_t rpc_facility_conf;
+//mv_facility_conf_t nwa_facility_conf;
+extern octeon_device_t *octeon_device[MAX_OCTEON_DEVICES];
 static bool init_done = false;
+static int facility_instance_cnt;
 
 #define UNUSED  __attribute__((unused))
 
-int mv_get_facility_handle(char *name)
+int mv_get_facility_instance_count(char *name)
 {
+	/* For now return the instance count for any name */
+	return facility_instance_cnt;
+};
+EXPORT_SYMBOL(mv_get_facility_instance_count);
+
+int mv_get_multi_facility_handle(int instance, char *name)
+{
+	int type, handle;
+
+	if (instance >= facility_instance_cnt)
+		return -ENOENT;
+
 	if (strcmp(name, MV_FACILITY_NAME_RPC) &&
 	    strcmp(name, MV_FACILITY_NAME_NETWORK_AGENT))
 		return -ENOENT;
@@ -26,23 +41,51 @@ int mv_get_facility_handle(char *name)
 		return -EAGAIN;
 
 	if (!strcmp(name, MV_FACILITY_NAME_RPC))
-		return rpc_facility_conf.type;
+		type = MV_FACILITY_RPC;
 	else
-		return nwa_facility_conf.type;
+		type = MV_FACILITY_NW_AGENT;
+
+	handle = (uint8_t)(octeon_device[instance]->facility_conf[type].type) & 0xf;
+	handle |= (uint8_t)(octeon_device[instance]->octeon_id) << 4;
+
+	return handle;
+}
+EXPORT_SYMBOL(mv_get_multi_facility_handle);
+
+int mv_get_facility_handle(char *name)
+{
+	int type;
+
+	if (strcmp(name, MV_FACILITY_NAME_RPC) &&
+	    strcmp(name, MV_FACILITY_NAME_NETWORK_AGENT))
+		return -ENOENT;
+
+	if (!init_done)
+		return -EAGAIN;
+
+	if (!strcmp(name, MV_FACILITY_NAME_RPC))
+		type = MV_FACILITY_RPC;
+	else
+		type = MV_FACILITY_NW_AGENT;
+
+	return (octeon_device[0]->facility_conf[type].type);
 }
 EXPORT_SYMBOL(mv_get_facility_handle);
 
 int mv_get_bar_mem_map(int handle, mv_bar_map_t *bar_map)
 {
-	if (handle == MV_FACILITY_RPC) {
-		bar_map->addr.host_addr = rpc_facility_conf.memmap.host_addr;
-		bar_map->memsize = rpc_facility_conf.memsize;
-	} else if (handle == MV_FACILITY_NW_AGENT) {
-		bar_map->addr.host_addr = nwa_facility_conf.memmap.host_addr;
-		bar_map->memsize = nwa_facility_conf.memsize;
-	} else {
+	int inst, type;
+	mv_facility_conf_t *conf;
+
+	inst = FACILITY_INSTANCE(handle);
+	type = FACILITY_TYPE(handle);
+	if (type >= MV_FACILITY_COUNT)
 		return -ENOENT;
-	}
+
+	conf = &octeon_device[inst]->facility_conf[type];
+
+	bar_map->addr.host_addr = conf->memmap.host_addr;
+	bar_map->memsize = conf->memsize;
 
 	return 0;
 }
@@ -55,8 +98,16 @@ int mv_pci_get_dma_dev_count(int handle)
 
 int mv_pci_get_dma_dev(int handle, int index, struct device **dev)
 {
-	if (handle == MV_FACILITY_RPC)
-		*dev = rpc_facility_conf.dma_dev.host_ep_dev;
+	int inst, type;
+	mv_facility_conf_t *conf;
+
+	inst = FACILITY_INSTANCE(handle);
+	type = FACILITY_TYPE(handle);
+
+	conf = &octeon_device[inst]->facility_conf[type];
+
+	if (type == MV_FACILITY_RPC)
+		*dev = conf->dma_dev.host_ep_dev;
 	else
 		return -ENOENT;
 
@@ -66,8 +117,16 @@ EXPORT_SYMBOL(mv_pci_get_dma_dev);
 
 int mv_get_num_dbell(int handle, enum mv_target target, uint32_t *num_dbells)
 {
-	if (handle == MV_FACILITY_RPC && target == MV_TARGET_EP) {
-		*num_dbells = rpc_facility_conf.num_h2t_dbells;
+	int inst, type;
+	mv_facility_conf_t *conf;
+
+	inst = FACILITY_INSTANCE(handle);
+	type = FACILITY_TYPE(handle);
+
+	conf = &octeon_device[inst]->facility_conf[type];
+
+	if (type == MV_FACILITY_RPC && target == MV_TARGET_EP) {
+		*num_dbells = conf->num_h2t_dbells;
 	} else {
 		return -ENOENT;
 	}
@@ -122,53 +181,35 @@ EXPORT_SYMBOL(mv_free_dbell_irq);
 
 int mv_send_dbell(int handle, uint32_t dbell)
 {
-	int ret = 0;
-
-	if (handle == MV_FACILITY_RPC) {
-		ret = mv_send_facility_dbell(handle, dbell);
-	} else {
-		return -ENOENT;
-	}
-
-	return ret;
+	return mv_send_facility_dbell(handle, dbell);
 }
 EXPORT_SYMBOL(mv_send_dbell);
 
-int host_device_access_init(void)
+int host_device_access_init(int id)
 {
-	int ret = 0;
+	mv_facility_conf_t *conf;
 
-	ret = mv_get_facility_conf(MV_FACILITY_RPC, &rpc_facility_conf);
-	if (ret < 0) {
-		pr_err("Error: getting facility configuration %d failed %d\n",
-		       MV_FACILITY_RPC, ret);
-		return ret;
-	}
-
+	conf = &octeon_device[id]->facility_conf[MV_FACILITY_RPC];
 	printk("	%s configuration\n"
 		"Type = %d, Host Addr = 0x%llx Memsize = 0x%x\n"
 		 "Doorbell_count = %d\n",
-		 rpc_facility_conf.name,
-		 rpc_facility_conf.type,
-		 (u64)rpc_facility_conf.memmap.host_addr,
-		 rpc_facility_conf.memsize,
-		 rpc_facility_conf.num_h2t_dbells);
+		 conf->name,
+		 conf->type,
+		 (u64)conf->memmap.host_addr,
+		 conf->memsize,
+		 conf->num_h2t_dbells);
 
-	ret = mv_get_facility_conf(MV_FACILITY_NW_AGENT, &nwa_facility_conf);
-	if (ret < 0) {
-		pr_err("Error: getting facility configuration %d failed %d\n",
-		       MV_FACILITY_RPC, ret);
-		return ret;
-	}
-
+	conf = &octeon_device[id]->facility_conf[MV_FACILITY_NW_AGENT];
 	printk("	%s configuration\n"
 		"Type = %d, Host Addr = 0x%llx Memsize = 0x%x\n"
 		 "Doorbell_count = %d\n",
-		 nwa_facility_conf.name,
-		 nwa_facility_conf.type,
-		 (u64)nwa_facility_conf.memmap.host_addr,
-		 nwa_facility_conf.memsize,
-		 nwa_facility_conf.num_h2t_dbells);
+		 conf->name,
+		 conf->type,
+		 (u64)conf->memmap.host_addr,
+		 conf->memsize,
+		 conf->num_h2t_dbells);
 	init_done = true;
-	return ret;
+	facility_instance_cnt++;
+
+	return 0;
 }

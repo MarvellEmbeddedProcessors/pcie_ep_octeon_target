@@ -12,16 +12,6 @@
 
 extern octeon_device_t *octeon_device[MAX_OCTEON_DEVICES];
 
-/* TODO: should make it use dynamic alloc memory ?? */
-extern struct npu_bar_map npu_memmap_info;
-extern int facility_dev;
-
-/* TODO: should make it use dynamic alloc memory ?? */
-mv_facility_conf_t facility_conf[MV_FACILITY_COUNT];
-
-/* TODO: should make it use dynamic alloc memory ?? */
-mv_facility_event_cb_t facility_handler[MV_FACILITY_COUNT];
-
 static bool facility_conf_init_done = false;
 
 void mv_facility_conf_init(octeon_device_t *oct)
@@ -30,8 +20,7 @@ void mv_facility_conf_init(octeon_device_t *oct)
 	struct device *dev = &oct->pci_dev->dev;
 	struct facility_bar_map *facility_map;
 
-	facility_dev = oct->octeon_id;
-	memset(&facility_conf, 0,
+	memset(&oct->facility_conf, 0,
 	       sizeof(mv_facility_conf_t) * MV_FACILITY_COUNT);
 
 	if((oct->chip_id == OCTEON_CN93XX_PF) ||
@@ -40,60 +29,65 @@ void mv_facility_conf_init(octeon_device_t *oct)
 	else
 		bar1_addr = oct->mmio[1].hw_addr;
 	/* TODO: set name for all facility names */
-	facility_map = &npu_memmap_info.facility_map[MV_FACILITY_CONTROL];
-	facility_conf[MV_FACILITY_CONTROL].type = MV_FACILITY_CONTROL;
-	facility_conf[MV_FACILITY_CONTROL].dma_dev.host_ep_dev = dev;
-	facility_conf[MV_FACILITY_CONTROL].memmap.host_addr =
+	facility_map = &oct->npu_memmap_info.facility_map[MV_FACILITY_CONTROL];
+	oct->facility_conf[MV_FACILITY_CONTROL].type = MV_FACILITY_CONTROL;
+	oct->facility_conf[MV_FACILITY_CONTROL].dma_dev.host_ep_dev = dev;
+	oct->facility_conf[MV_FACILITY_CONTROL].memmap.host_addr =
 				bar1_addr + facility_map->offset;
-	facility_conf[MV_FACILITY_CONTROL].memsize = facility_map->size;
-	facility_conf[MV_FACILITY_CONTROL].num_h2t_dbells =
+	oct->facility_conf[MV_FACILITY_CONTROL].memsize = facility_map->size;
+	oct->facility_conf[MV_FACILITY_CONTROL].num_h2t_dbells =
 				facility_map->h2t_dbell_count;
-	facility_conf[MV_FACILITY_CONTROL].num_t2h_dbells = 0;
-	strncpy(facility_conf[MV_FACILITY_CONTROL].name,
+	oct->facility_conf[MV_FACILITY_CONTROL].num_t2h_dbells = 0;
+	strncpy(oct->facility_conf[MV_FACILITY_CONTROL].name,
 		MV_FACILITY_NAME_CONTROL, FACILITY_NAME_LEN-1);
 
-	facility_map = &npu_memmap_info.facility_map[MV_FACILITY_MGMT_NETDEV];
-	facility_conf[MV_FACILITY_MGMT_NETDEV].type = MV_FACILITY_MGMT_NETDEV;
-	facility_conf[MV_FACILITY_MGMT_NETDEV].dma_dev.host_ep_dev = dev;
-	facility_conf[MV_FACILITY_MGMT_NETDEV].memmap.host_addr =
+	facility_map = &oct->npu_memmap_info.facility_map[MV_FACILITY_MGMT_NETDEV];
+	oct->facility_conf[MV_FACILITY_MGMT_NETDEV].type = MV_FACILITY_MGMT_NETDEV;
+	oct->facility_conf[MV_FACILITY_MGMT_NETDEV].dma_dev.host_ep_dev = dev;
+	oct->facility_conf[MV_FACILITY_MGMT_NETDEV].memmap.host_addr =
 				bar1_addr + facility_map->offset;
-	facility_conf[MV_FACILITY_MGMT_NETDEV].memsize = facility_map->size;
-	facility_conf[MV_FACILITY_MGMT_NETDEV].num_h2t_dbells =
+	oct->facility_conf[MV_FACILITY_MGMT_NETDEV].memsize = facility_map->size;
+	oct->facility_conf[MV_FACILITY_MGMT_NETDEV].num_h2t_dbells =
 				facility_map->h2t_dbell_count;
-	facility_conf[MV_FACILITY_MGMT_NETDEV].num_t2h_dbells = 0;
-	strncpy(facility_conf[MV_FACILITY_MGMT_NETDEV].name,
+	oct->facility_conf[MV_FACILITY_MGMT_NETDEV].num_t2h_dbells = 0;
+	strncpy(oct->facility_conf[MV_FACILITY_MGMT_NETDEV].name,
 		MV_FACILITY_NAME_MGMT_NETDEV, FACILITY_NAME_LEN-1);
 
-	facility_map = &npu_memmap_info.facility_map[MV_FACILITY_NW_AGENT];
-	facility_conf[MV_FACILITY_NW_AGENT].type = MV_FACILITY_NW_AGENT;
-	facility_conf[MV_FACILITY_NW_AGENT].dma_dev.host_ep_dev = dev;
-	facility_conf[MV_FACILITY_NW_AGENT].memmap.host_addr =
+	facility_map = &oct->npu_memmap_info.facility_map[MV_FACILITY_NW_AGENT];
+	oct->facility_conf[MV_FACILITY_NW_AGENT].type = MV_FACILITY_NW_AGENT;
+	oct->facility_conf[MV_FACILITY_NW_AGENT].dma_dev.host_ep_dev = dev;
+	oct->facility_conf[MV_FACILITY_NW_AGENT].memmap.host_addr =
 				bar1_addr + facility_map->offset;
-	facility_conf[MV_FACILITY_NW_AGENT].memsize = facility_map->size;
-	facility_conf[MV_FACILITY_NW_AGENT].num_h2t_dbells =
+	oct->facility_conf[MV_FACILITY_NW_AGENT].memsize = facility_map->size;
+	oct->facility_conf[MV_FACILITY_NW_AGENT].num_h2t_dbells =
 				facility_map->h2t_dbell_count;
-	facility_conf[MV_FACILITY_NW_AGENT].num_t2h_dbells = 0;
-	strncpy(facility_conf[MV_FACILITY_NW_AGENT].name,
+	oct->facility_conf[MV_FACILITY_NW_AGENT].num_t2h_dbells = 0;
+	strncpy(oct->facility_conf[MV_FACILITY_NW_AGENT].name,
 		MV_FACILITY_NAME_NETWORK_AGENT, FACILITY_NAME_LEN-1);
 
-	facility_map = &npu_memmap_info.facility_map[MV_FACILITY_RPC];
-	facility_conf[MV_FACILITY_RPC].type = MV_FACILITY_RPC;
-	facility_conf[MV_FACILITY_RPC].dma_dev.host_ep_dev = dev;
-	facility_conf[MV_FACILITY_RPC].memmap.host_addr =
+	facility_map = &oct->npu_memmap_info.facility_map[MV_FACILITY_RPC];
+	oct->facility_conf[MV_FACILITY_RPC].type = MV_FACILITY_RPC;
+	oct->facility_conf[MV_FACILITY_RPC].dma_dev.host_ep_dev = dev;
+	oct->facility_conf[MV_FACILITY_RPC].memmap.host_addr =
 				bar1_addr + facility_map->offset;
-	facility_conf[MV_FACILITY_RPC].memsize = facility_map->size;
-	facility_conf[MV_FACILITY_RPC].num_h2t_dbells =
+	oct->facility_conf[MV_FACILITY_RPC].memsize = facility_map->size;
+	oct->facility_conf[MV_FACILITY_RPC].num_h2t_dbells =
 				facility_map->h2t_dbell_count;
-	facility_conf[MV_FACILITY_RPC].num_t2h_dbells = 0;
-	strncpy(facility_conf[MV_FACILITY_RPC].name,
+	oct->facility_conf[MV_FACILITY_RPC].num_t2h_dbells = 0;
+	strncpy(oct->facility_conf[MV_FACILITY_RPC].name,
 		MV_FACILITY_NAME_RPC, FACILITY_NAME_LEN-1);
 
 	facility_conf_init_done = true;
 }
 
 /* returns facility configuration structure filled up */
-int mv_get_facility_conf(int type, mv_facility_conf_t *conf)
+int mv_get_facility_conf(int handle, mv_facility_conf_t *conf)
 {
+	int inst, type;
+
+	inst = FACILITY_INSTANCE(handle);
+	type = FACILITY_TYPE(handle);
+
 	if (!is_facility_valid(type)) {
 		printk("%s: Invalid facility type %d\n", __func__, type);
 		return -ENOENT;
@@ -103,7 +97,7 @@ int mv_get_facility_conf(int type, mv_facility_conf_t *conf)
 	if (!facility_conf_init_done)
 		return -EAGAIN;
 
-	memcpy(conf, &facility_conf[type], sizeof(mv_facility_conf_t));
+	memcpy(conf, &octeon_device[inst]->facility_conf[type], sizeof(mv_facility_conf_t));
 	return 0;
 }
 EXPORT_SYMBOL_GPL(mv_get_facility_conf);
@@ -122,42 +116,56 @@ void mv_facility_free_dbell_irq(int type, int dbell, void *arg)
 }
 EXPORT_SYMBOL_GPL(mv_facility_free_dbell_irq);
 
-int mv_facility_register_event_callback(int type,
+int mv_facility_register_event_callback(int handle,
 					mv_facility_event_cb handler,
 					void *cb_arg)
 {
+	int inst, type;
+
+	inst = FACILITY_INSTANCE(handle);
+	type = FACILITY_TYPE(handle);
+
 	if (!is_facility_valid(type)) {
 		printk("%s: Invalid facility type %d\n", __func__, type);
 		return -EINVAL;
 	}
 
-	facility_handler[type].cb = handler;
-	facility_handler[type].cb_arg = cb_arg;
+	octeon_device[inst]->facility_handler[type].cb = handler;
+	octeon_device[inst]->facility_handler[type].cb_arg = cb_arg;
 	printk("Registered event handler for facility type %d\n", type);
 
 	return 0;
 }
 EXPORT_SYMBOL_GPL(mv_facility_register_event_callback);
 
-void mv_facility_unregister_event_callback(int type)
+void mv_facility_unregister_event_callback(int handle)
 {
+	int inst, type;
+
+	inst = FACILITY_INSTANCE(handle);
+	type = FACILITY_TYPE(handle);
+
 	if (!is_facility_valid(type)) {
 		printk("%s: Invalid facility type %d\n", __func__, type);
 		return;
 	}
 
-	facility_handler[type].cb = NULL;
-	facility_handler[type].cb_arg = NULL;
+	octeon_device[inst]->facility_handler[type].cb = NULL;
+	octeon_device[inst]->facility_handler[type].cb_arg = NULL;
 	printk("Unregistered event handler for facility type %d\n", type);
 }
 EXPORT_SYMBOL_GPL(mv_facility_unregister_event_callback);
 
-int mv_send_facility_dbell(int type, int dbell)
+int mv_send_facility_dbell(int handle, int dbell)
 {
 	struct facility_bar_map *facility_map;
 	int irq;
+	int inst, type;
 
-	facility_map = &npu_memmap_info.facility_map[type];
+	inst = FACILITY_INSTANCE(handle);
+	type = FACILITY_TYPE(handle);
+
+	facility_map = &octeon_device[inst]->npu_memmap_info.facility_map[type];
 
 	irq = dbell + facility_map->h2t_dbell_start;
 
@@ -167,11 +175,11 @@ int mv_send_facility_dbell(int type, int dbell)
 		     facility_map->h2t_dbell_count)) {
 		if ((octeon_device[0]->chip_id == OCTEON_CN93XX_PF) ||
 		    (octeon_device[0]->chip_id == OCTEON_CN98XX_PF))
-			*(volatile uint32_t *)(octeon_device[facility_dev]->mmio[2].hw_addr +
-			 	npu_memmap_info.gicd_offset) = irq;
+			*(volatile uint32_t *)(octeon_device[inst]->mmio[2].hw_addr +
+			 	octeon_device[inst]->npu_memmap_info.gicd_offset) = irq;
 		else
-			*(volatile uint32_t *)(octeon_device[facility_dev]->mmio[1].hw_addr +
-			 	npu_memmap_info.gicd_offset) = irq;
+			*(volatile uint32_t *)(octeon_device[inst]->mmio[1].hw_addr +
+			 	octeon_device[inst]->npu_memmap_info.gicd_offset) = irq;
 	} else {
 		return -EINVAL;
 	}
@@ -188,12 +196,12 @@ int mv_send_facility_event(int type)
 }
 EXPORT_SYMBOL_GPL(mv_send_facility_event);
 
-void mv_facility_irq_handler(uint64_t event_word)
+void mv_facility_irq_handler(octeon_device_t *oct, uint64_t event_word)
 {
 	int i;
 
 	for (i = 0; i < MV_FACILITY_COUNT; i++) {
-		if ((event_word & (1UL << i)) && facility_handler[i].cb)
-			facility_handler[i].cb(facility_handler[i].cb_arg);
+		if ((event_word & (1UL << i)) && oct->facility_handler[i].cb)
+			oct->facility_handler[i].cb(oct->facility_handler[i].cb_arg);
 	}
 }

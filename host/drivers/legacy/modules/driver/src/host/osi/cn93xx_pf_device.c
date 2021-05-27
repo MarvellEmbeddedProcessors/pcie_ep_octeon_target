@@ -29,7 +29,7 @@ struct fw_handshake_wrk {
 struct fw_handshake_wrk hs_wrk[2];
 
 extern int octeon_device_init(octeon_device_t *, int);
-extern void mv_facility_irq_handler(uint64_t event_word);
+extern void mv_facility_irq_handler(octeon_device_t *oct, uint64_t event_word);
 
 extern int num_rings_per_pf;
 extern int num_rings_per_vf;
@@ -779,7 +779,7 @@ cvm_intr_return_t cn93xx_interrupt_handler(void *dev)
 	if (reg_val) {
 		octeon_write_csr64(oct, CN93XX_SDP_EPF_OEI_RINT, reg_val);
 		/* used by facility */
-		mv_facility_irq_handler(reg_val);
+		mv_facility_irq_handler(oct, reg_val);
 		goto irq_handled;
 	}
 

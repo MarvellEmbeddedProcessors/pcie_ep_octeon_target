@@ -2,11 +2,11 @@
  * SPDX-License-Identifier: GPL-2.0
  */
 
+#include "barmap.h"
 #include "octeon_device.h"
 #include "octeon_macros.h"
 #include "octeon_mem_ops.h"
 #include "oct_config_data.h"
-#include "barmap.h"
 
 extern int octeon_msix;
 extern int cn83xx_pf_setup_global_oq_reg(octeon_device_t *, int);
@@ -1646,18 +1646,18 @@ void npu_mem_and_intr_test (octeon_device_t *octeon_dev,
 		 barmap->gicd_offset) = facility_map->h2t_dbell_start;
 }
 
-struct npu_bar_map npu_memmap_info;
-int facility_dev = 0;
+//struct npu_bar_map npu_memmap_info;
+//int facility_dev = 0;
 
-static void npu_bar_map_save(void *src)
-{
-	memcpy(&npu_memmap_info, src, sizeof(struct npu_bar_map));
-}
+//static void npu_bar_map_save(void *src)
+//{
+//	memcpy(&npu_memmap_info, src, sizeof(struct npu_bar_map));
+//}
 
 #define NPU_BASE_READY_MAGIC 0xABCDABCD
 bool npu_handshake_done=false;
 extern void mv_facility_conf_init(octeon_device_t *oct);
-extern int host_device_access_init(void);
+extern int host_device_access_init(int id);
 oct_poll_fn_status_t 
 octeon_wait_for_npu_base(void *octptr, unsigned long arg UNUSED)
 {
@@ -1666,6 +1666,7 @@ octeon_wait_for_npu_base(void *octptr, unsigned long arg UNUSED)
 	u8 mps_val, mrrs_val;
 	int mps, mrrs, port = 0, dpi_num = 0;
 	struct npu_bar_map *npu_map = NULL;
+	void *src;
 
 	/** 
 	 * Along with the app mode firmware sends core clock(in MHz),
@@ -1680,16 +1681,18 @@ octeon_wait_for_npu_base(void *octptr, unsigned long arg UNUSED)
 		}
 		printk("%s: CN83xx NPU is ready; MAGIC=0x%llX; memmap=0x%llX\n",
 		       __func__, reg_val & 0xffffffff, reg_val >> 32);
-		npu_bar_map_save(octeon_dev->mmio[1].hw_addr + (reg_val >> 32));
-		npu_barmap_dump((void *)&npu_memmap_info);
-		npu_mem_and_intr_test(octeon_dev, 1, &npu_memmap_info);
-		npu_map = &npu_memmap_info;
+		//npu_bar_map_save(octeon_dev->mmio[1].hw_addr + (reg_val >> 32));
+		src = octeon_dev->mmio[1].hw_addr + (reg_val >> 32);
+		memcpy(&octeon_dev->npu_memmap_info, src, sizeof(struct npu_bar_map));
+		npu_barmap_dump((void *)&octeon_dev->npu_memmap_info);
+		npu_mem_and_intr_test(octeon_dev, 1, &octeon_dev->npu_memmap_info);
+		npu_map = &octeon_dev->npu_memmap_info;
 	//npu_handshake_done = true;
 	//return OCT_POLL_FN_FINISHED;
 		mv_facility_conf_init(octeon_dev);
 
 		/* setup the Host device access for RPC */
-		if (host_device_access_init() < 0)
+		if (host_device_access_init(octeon_dev->octeon_id) < 0)
 			pr_err("host_device_access_init failed\n");
 	} else if(octeon_dev->chip_id == OCTEON_CN93XX_PF ||
 		  octeon_dev->chip_id == OCTEON_CN98XX_PF) {
@@ -1702,30 +1705,23 @@ octeon_wait_for_npu_base(void *octptr, unsigned long arg UNUSED)
 		npu_map = (struct npu_bar_map *)(octeon_dev->mmio[2].hw_addr +
 						 (reg_val >> 32));
 
-		/* in case of 98xx, NPU bar map is saved only for PEM0;
-		 * ignore BAR map of PEM2 as there is no support yet
-		 * to use facility regions from both PEMs
-		 * TODO: add support to use facility regions from both PEMs.
-		 */
-		if ((octeon_dev->chip_id == OCTEON_CN93XX_PF) ||
-		    (npu_map->pem_num == 0)) {
-			npu_bar_map_save(octeon_dev->mmio[2].hw_addr +
-					 (reg_val >> 32));
-			npu_barmap_dump((void *)&npu_memmap_info);
-			if (npu_map->version == 0xFFFFFFFF) {
-				printk("%s: FATAL error; CN9xxx bar map info corrupted !!!\n",
-				       __func__);
-				WARN_ON(1);
-				return OCT_POLL_FN_FINISHED;
-			}
-			npu_mem_and_intr_test(octeon_dev, 2, &npu_memmap_info);
-			mv_facility_conf_init(octeon_dev);
-
-			/* setup the Host device access for RPC */
-			if (host_device_access_init() < 0)
-				pr_err("host_device_access_init failed\n");
+		//npu_bar_map_save(octeon_dev->mmio[2].hw_addr +
+		//		 (reg_val >> 32));
+		src = octeon_dev->mmio[2].hw_addr + (reg_val >> 32);
+		memcpy(&octeon_dev->npu_memmap_info, src, sizeof(struct npu_bar_map));
+		npu_barmap_dump((void *)&octeon_dev->npu_memmap_info);
+		if (npu_map->version == 0xFFFFFFFF) {
+			printk("%s: FATAL error; CN9xxx bar map info corrupted !!!\n",
+			       __func__);
+			WARN_ON(1);
+			return OCT_POLL_FN_FINISHED;
 		}
-		/* for second PEM of 98xx, it continues with rest of the init */
+		npu_mem_and_intr_test(octeon_dev, 2, &octeon_dev->npu_memmap_info);
+		mv_facility_conf_init(octeon_dev);
+
+		/* setup the Host device access for RPC */
+		if (host_device_access_init(octeon_dev->octeon_id) < 0)
+			pr_err("host_device_access_init failed\n");
 	} else {
 		printk("%s: Chip id 0x%x is not supported\n",
 		       __func__, octeon_dev->chip_id);

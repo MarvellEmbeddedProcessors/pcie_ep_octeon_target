@@ -826,9 +826,11 @@ enum setup_stage octeon_chip_specific_setup(octeon_device_t * oct)
 			oct->chip_id = OCTEON_CN93XX_PF;
 			return setup_cn93xx_octeon_pf_device(oct);
 		case OCTEON_CN98XX_PCIID_PF:
-			cavium_print_msg("OCTEON[%d]: CN98XX PASS%d.%d\n",
+			cavium_print_msg("OCTEON[%d]: CN98XX PASS%d.%d on %02x:%02x:%x\n",
 					 oct->octeon_id, OCTEON_MAJOR_REV(oct),
-					 OCTEON_MINOR_REV(oct));
+					 OCTEON_MINOR_REV(oct), oct->pci_dev->bus->number,
+					 PCI_SLOT(oct->pci_dev->devfn),
+					 PCI_FUNC(oct->pci_dev->devfn));
 
 			oct->pf_num = oct->octeon_id;
 			/* Enable it to stop loading the driver for PF1 */

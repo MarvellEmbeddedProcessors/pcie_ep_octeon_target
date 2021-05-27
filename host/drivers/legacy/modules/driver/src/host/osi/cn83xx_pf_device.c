@@ -8,7 +8,7 @@
 #include "octeon_macros.h"
 #include "octeon-pci.h"
 
-extern void mv_facility_irq_handler(uint64_t event_word);
+extern void mv_facility_irq_handler(octeon_device_t *oct, uint64_t event_word);
 
 extern int num_rings_per_pf;
 extern int num_rings_per_vf;
@@ -776,7 +776,7 @@ cvm_intr_return_t cn83xx_interrupt_handler(void *dev)
 		octeon_write_csr64(oct, CN83XX_SDP_EPF_OEI_RINT(oct->epf_num),
 				   reg_val);
 		/* used by facility */
-		mv_facility_irq_handler(reg_val);
+		mv_facility_irq_handler(oct, reg_val);
 		goto irq_handled;
 	}
 

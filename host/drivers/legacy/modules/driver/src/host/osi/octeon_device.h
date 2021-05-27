@@ -36,6 +36,7 @@ typedef struct _OCTEON_DEVICE octeon_device_t;
 #include "cn93xx_pf_device.h"
 #include "cn93xx_vf_device.h"
 
+#include "barmap.h"
 
 #define PCI_DMA_64BIT                  0xffffffffffffffffULL
 
@@ -512,6 +513,10 @@ struct _OCTEON_DEVICE {
 
 	/* module handler status */
 	cavium_atomic_t mod_status[OCTEON_MAX_MODULES];
+
+	struct npu_bar_map npu_memmap_info;
+	mv_facility_conf_t facility_conf[MV_FACILITY_COUNT];
+	mv_facility_event_cb_t facility_handler[MV_FACILITY_COUNT];
 } ____cacheline_aligned_in_smp;
 
 #define CHIP_FIELD(oct, TYPE, field)             \
