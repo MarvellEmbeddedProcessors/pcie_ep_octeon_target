@@ -1226,10 +1226,17 @@ octeon_droq_fast_process_packets(octeon_device_t * oct,
 		}
 		if (cavium_likely(nicbuf)) {
 #ifdef OCT_NIC_LOOPBACK
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,2,0)
 			if (pkt == pkts_to_process - 1)
 				nicbuf->xmit_more = 0;
 			else
 				nicbuf->xmit_more = 1;
+#else
+			if (pkt == pkts_to_process - 1)
+				__this_cpu_write(softnet_data.xmit.more, 0);
+			else
+				__this_cpu_write(softnet_data.xmit.more, 1);
+#endif
 			nicbuf->dev = droq->pndev;
 			nicbuf->ip_summed = CHECKSUM_UNNECESSARY;
 			nicbuf->queue_mapping = droq->q_no;

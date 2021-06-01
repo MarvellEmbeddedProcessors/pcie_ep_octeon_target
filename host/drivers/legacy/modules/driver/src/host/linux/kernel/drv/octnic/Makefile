@@ -46,6 +46,9 @@ ifdef CNNIC_ROOT
 include $(CNNIC_ROOT)/modules/driver/src/driver.mk
 endif
 
+ifndef SUBDIRS
+SUBDIRS=$(CNNIC_ROOT)/modules/driver/src/host/linux/kernel/drv/octnic
+endif
 
 
 #
@@ -146,7 +149,7 @@ check:
 
 
 all: check_cnnic
-	$(MAKE) -C $(kernel_source) SUBDIRS=`pwd`  modules; 
+	$(MAKE) -C $(kernel_source) M=$(shell pwd)  modules;
 	@rm -f $(BINDIR) 2> /dev/null; mkdir -p $(BINDIR);
 	@rm -f $(BINDIR)/$(OBJNAME).ko $(BINDIR)/$(OBJDBG).ko; 
 	@ln -s `pwd`/$(OBJNAME).ko $(BINDIR) ; 

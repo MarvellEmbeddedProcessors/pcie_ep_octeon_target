@@ -514,7 +514,10 @@ static void octnet_setup_napi(octnet_priv_t * priv)
 #if !defined(ETHERPCI)
 
 /* mq support: queue selection support function for netdevice */
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 14, 0))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
+static u16 octnet_select_queue(struct net_device *dev, struct sk_buff *skb,
+			       struct net_device *sb_dev)
+#elif (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 14, 0))
 static u16 octnet_select_queue(struct net_device *dev, struct sk_buff *skb,
 			       void *accel_priv,
 			       select_queue_fallback_t fallback)

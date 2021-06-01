@@ -104,7 +104,11 @@
 
 #define   cavium_copy_in(dest, src, size)           copy_from_user((dest), (src), (size))
 #define   cavium_copy_out(dest, src, size)          copy_to_user((dest), (src), (size))
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
+#define   cavium_access_ok(flag, addr, size)        access_ok((addr), (size))
+#else
 #define   cavium_access_ok(flag, addr, size)        access_ok((flag), (addr), (size))
+#endif
 
 #define   cavium_get_random_bytes(ptr, len)         get_random_bytes((ptr), (len))
 

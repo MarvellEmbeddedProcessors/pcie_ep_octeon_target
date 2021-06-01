@@ -423,11 +423,19 @@ void octnic_free_netsgbuf(void *buf)
 
 	i = 1;
 	while (frags--) {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,4,0)
 		struct skb_frag_struct *frag = &skb_shinfo(skb)->frags[i - 1];
 
 		octeon_unmap_page(get_octeon_device_id(priv->oct_dev),
 				  g->sg[(i >> 2)].ptr[(i & 3)],
 				  frag->size, CAVIUM_PCI_DMA_TODEVICE);
+#else
+		struct bio_vec *frag = &skb_shinfo(skb)->frags[i - 1];
+
+		octeon_unmap_page(get_octeon_device_id(priv->oct_dev),
+				  g->sg[(i >> 2)].ptr[(i & 3)],
+				  frag->bv_len, CAVIUM_PCI_DMA_TODEVICE);
+#endif
 		i++;
 	}
 
@@ -592,7 +600,11 @@ int __octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 
 	} else {
 		int i, j, frags;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,4,0)
 		struct skb_frag_struct *frag;
+#else
+		struct bio_vec *frag;
+#endif
 		struct octnic_gather *g;
 
 		cavium_spin_lock(&priv->lock);
@@ -641,13 +653,19 @@ int __octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 
 			g->sg[(i >> 2)].ptr[(i & 3)] =
 			    octeon_map_page(get_octeon_device_id(priv->oct_dev),
-#if  LINUX_VERSION_CODE <= KERNEL_VERSION(3,1,10)
+#if LINUX_VERSION_CODE <= KERNEL_VERSION(3,1,10)
 					    frag->page,
-#else
-					    frag->page.p,
-#endif
 					    frag->page_offset,
 					    frag->size,
+#elif LINUX_VERSION_CODE < KERNEL_VERSION(5,4,0)
+					    frag->page.p,
+					    frag->page_offset,
+					    frag->size,
+#else
+					    frag->bv_page,
+					    frag->bv_offset,
+					    frag->bv_len,
+#endif
 					    CAVIUM_PCI_DMA_TODEVICE);
 			if (octeon_mapping_error(get_octeon_device_id(priv->oct_dev),
 						 g->sg[(i >> 2)].ptr[(i & 3)])) {
@@ -656,7 +674,11 @@ int __octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 					frag = &skb_shinfo(skb)->frags[j - 1];
 					octeon_unmap_page(get_octeon_device_id(priv->oct_dev),
 					g->sg[j >> 2].ptr[j & 3],
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,4,0)
 					frag->size,
+#else
+					frag->bv_len,
+#endif
 					CAVIUM_PCI_DMA_TODEVICE);
 				}
 				cavium_spin_lock(&priv->lock);
@@ -664,8 +686,13 @@ int __octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 				cavium_spin_unlock(&priv->lock);
 				goto oct_xmit_failed;
 			}
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,4,0)
 			CAVIUM_ADD_SG_SIZE(&(g->sg[(i >> 2)]), frag->size,
 					   (i & 3));
+#else
+			CAVIUM_ADD_SG_SIZE(&(g->sg[(i >> 2)]), frag->bv_len,
+					   (i & 3));
+#endif
 			i++;
 		}
 
@@ -680,7 +707,12 @@ int __octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 		ndata.buftype = NORESP_BUFTYPE_NET_SG;
 	}
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,4,0)
 	status = octnet_send_nic_data_pkt(priv->oct_dev, &ndata, !skb->xmit_more);
+#else
+	status = octnet_send_nic_data_pkt(priv->oct_dev, &ndata,
+					  !netdev_xmit_more());
+#endif
 	if (status == NORESP_SEND_FAILED)
 		goto oct_xmit_failed;
 
@@ -875,6 +907,56 @@ void octnet_tx_timeout(struct net_device *pndev)
 	octnet_txqueues_wake(pndev);
 }
 
+static int oct_get_link_ksettings(struct net_device *netdev,
+				   struct ethtool_link_ksettings *ecmd)
+{
+	octnet_priv_t *priv;
+	oct_link_info_t *linfo;
+	u32 val;
+
+	priv = GET_NETDEV_PRIV(netdev);
+	linfo = &priv->linfo;
+
+	if (linfo->link.s.interface == INTERFACE_MODE_XAUI ||
+	    linfo->link.s.interface == INTERFACE_MODE_RXAUI) {
+		ecmd->base.port = PORT_FIBRE;
+		val = (SUPPORTED_10000baseT_Full | SUPPORTED_Autoneg | SUPPORTED_FIBRE);
+		ethtool_convert_legacy_u32_to_link_mode(ecmd->link_modes.supported, val);
+
+		val = (ADVERTISED_10000baseT_Full | ADVERTISED_Autoneg);
+		ethtool_convert_legacy_u32_to_link_mode(ecmd->link_modes.advertising,
+							val);
+	} else {
+		ecmd->base.port = PORT_TP;
+		val =
+		    (SUPPORTED_10baseT_Half | SUPPORTED_10baseT_Full |
+		     SUPPORTED_100baseT_Half | SUPPORTED_100baseT_Full |
+		     SUPPORTED_1000baseT_Half | SUPPORTED_1000baseT_Full |
+		     SUPPORTED_Autoneg | SUPPORTED_MII);
+		ethtool_convert_legacy_u32_to_link_mode(ecmd->link_modes.supported, val);
+
+		val =
+		    (ADVERTISED_1000baseT_Full | ADVERTISED_100baseT_Full |
+		     ADVERTISED_10baseT_Full | ADVERTISED_10baseT_Half |
+		     ADVERTISED_100baseT_Half | ADVERTISED_1000baseT_Half |
+		     ADVERTISED_Autoneg);
+		ethtool_convert_legacy_u32_to_link_mode(ecmd->link_modes.advertising,
+							val);
+	}
+
+	if (linfo->link.s.status) {
+		ecmd->base.speed = linfo->link.s.speed;
+		ecmd->base.duplex = linfo->link.s.duplex;
+		ecmd->base.autoneg = linfo->link.s.autoneg;
+	} else {
+		ecmd->base.speed = -1;
+		ecmd->base.duplex = -1;
+	}
+
+	return 0;
+}
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,4,0)
 static int
 oct_get_settings(octnet_os_devptr_t * netdev, struct ethtool_cmd *ecmd)
 {
@@ -920,6 +1002,7 @@ oct_get_settings(octnet_os_devptr_t * netdev, struct ethtool_cmd *ecmd)
 
 	return 0;
 }
+#endif
 
 u32 oct_get_link(octnet_os_devptr_t * dev)
 {
@@ -1081,6 +1164,82 @@ static int oct_get_stats_count(struct net_device *netdev)
 }
 #endif
 
+static int oct_set_link_ksettings(struct net_device *netdev,
+				   const struct ethtool_link_ksettings *ecmd)
+{
+	octnet_priv_t *priv = GET_NETDEV_PRIV(netdev);
+	oct_link_info_t *linfo;
+	octnic_ctrl_pkt_t nctrl;
+	octnic_ctrl_params_t nparams;
+#if !defined(ETHERPCI) && defined(OCTNIC_CTRL)
+	int ret = 0;
+#endif
+	u32 val;
+
+	/* get the link info */
+	linfo = &priv->linfo;
+
+	if (ecmd->base.autoneg != AUTONEG_ENABLE &&
+	    ecmd->base.autoneg != AUTONEG_DISABLE)
+		return -EINVAL;
+
+	if (ecmd->base.autoneg == AUTONEG_DISABLE &&
+	    ((ecmd->base.speed != SPEED_100 && ecmd->base.speed != SPEED_10) ||
+	     (ecmd->base.duplex != DUPLEX_HALF &&
+	      ecmd->base.duplex != DUPLEX_FULL)))
+		return -EINVAL;
+
+	/* Ethtool Support is not provided for XAUI and RXAUI Interfaces
+	 * as they operate at fixed Speed and Duplex settings
+	 * */
+	if (linfo->link.s.interface == INTERFACE_MODE_XAUI ||
+	    linfo->link.s.interface == INTERFACE_MODE_RXAUI) {
+		cavium_print_msg(" XAUI IFs settings cannot be modified.\n");
+		cavium_print_msg
+		    (" Because they always operate with constant settings. \n");
+		return -EINVAL;
+	}
+
+	nctrl.ncmd.u64 = 0;
+	nctrl.ncmd.s.cmd = OCTNET_CMD_SET_SETTINGS;
+	nctrl.wait_time = 1000;
+	nctrl.netpndev = (unsigned long)netdev;
+	nctrl.ncmd.s.param1 = priv->linfo.ifidx;
+	nctrl.cb_fn = octnet_link_ctrl_cmd_completion;
+
+	/* Passing the parameters sent by ethtool like Speed, Autoneg & Duplex
+	 * to SE core application using ncmd.s.more & ncmd.s.param
+	 */
+	if (ecmd->base.autoneg == AUTONEG_ENABLE) {
+		/* Autoneg ON */
+		nctrl.ncmd.s.more = OCTNIC_NCMD_PHY_ON | OCTNIC_NCMD_AUTONEG_ON;
+		ethtool_convert_link_mode_to_legacy_u32(&val,
+							ecmd->link_modes.advertising);
+		nctrl.ncmd.s.param2 = val;
+	} else {
+		/* Autoneg OFF */
+		nctrl.ncmd.s.more = OCTNIC_NCMD_PHY_ON;
+
+		nctrl.ncmd.s.param3 = ecmd->base.duplex;
+
+		nctrl.ncmd.s.param2 = ecmd->base.speed;
+	}
+
+	nparams.resp_order = OCTEON_RESP_ORDERED;
+#if !defined(ETHERPCI) && defined(OCTNIC_CTRL)
+	ret = octnet_send_nic_ctrl_pkt(priv->oct_dev, &nctrl, nparams);
+	if (ret < 0) {
+		cavium_error("OCTNIC: Failed to set settings\n");
+		return -1;
+	}
+#else
+	octnet_link_ctrl_cmd_completion((void *)&nctrl);
+#endif
+
+	return 0;
+}
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,4,0)
 static int oct_set_settings(struct net_device *netdev, struct ethtool_cmd *ecmd)
 {
 	octnet_priv_t *priv = GET_NETDEV_PRIV(netdev);
@@ -1151,11 +1310,13 @@ static int oct_set_settings(struct net_device *netdev, struct ethtool_cmd *ecmd)
 
 	return 0;
 }
+#endif
 
 static int oct_nway_reset(struct net_device *netdev)
 {
 	if (netif_running(netdev))
 	{
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,4,0)
 		struct ethtool_cmd ecmd;
 		memset(&ecmd, 0, sizeof(struct ethtool_cmd));
 
@@ -1163,6 +1324,16 @@ static int oct_nway_reset(struct net_device *netdev)
 		ecmd.speed = 0;
 		ecmd.duplex = 0;
 		oct_set_settings(netdev, &ecmd);
+#else
+		struct ethtool_link_ksettings ecmd;
+
+		memset(&ecmd, 0, sizeof(struct ethtool_link_ksettings));
+
+		ecmd.base.autoneg = AUTONEG_ENABLE;
+		ecmd.base.speed = 0;
+		ecmd.base.duplex = 0;
+		oct_set_link_ksettings(netdev, &ecmd);
+#endif
 	}
 
 	return 0;
@@ -1173,7 +1344,6 @@ static const struct ethtool_ops oct_ethtool_ops = {
 #else
 static struct ethtool_ops oct_ethtool_ops = {
 #endif
-	.get_settings = oct_get_settings,
 	.get_link = oct_get_link,
 	.get_drvinfo = oct_get_drvinfo,
 	.get_ringparam = oct_ethtool_get_ringparam,
@@ -1185,8 +1355,12 @@ static struct ethtool_ops oct_ethtool_ops = {
 	.get_stats_count = oct_get_stats_count,
 #endif
 	.nway_reset = oct_nway_reset,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,4,0)
+	.get_settings = oct_get_settings,
 	.set_settings = oct_set_settings,
-
+#endif
+	.get_link_ksettings = oct_get_link_ksettings,
+	.set_link_ksettings = oct_set_link_ksettings,
 };
 
 void oct_set_ethtool_ops(octnet_os_devptr_t * netdev)

@@ -193,6 +193,7 @@ void octeon_base_exit_module(void)
 	case OCT_DRV_REGISTER_DONE:
 		unregister_chrdev(OCTEON_DEVICE_MAJOR, DRIVER_NAME);
 		cavium_print(PRINT_FLOW, "Device unregister done\n");
+		__attribute__((__fallthrough__));
 	case OCT_DRV_POLL_INIT_DONE:
 		/* The poll thread is not enabled for a continuous mode pci test */
 		octeon_delete_poll_thread();

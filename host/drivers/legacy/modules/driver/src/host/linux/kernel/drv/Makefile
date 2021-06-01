@@ -27,6 +27,9 @@ include $(CNNIC_ROOT)/modules/driver/src/driver.mk
 endif
 
 
+ifndef SUBDIRS
+SUBDIRS=$(CNNIC_ROOT)/modules/driver/src/host/linux/kernel/drv
+endif
 
 #
 # Setup compilation flags here
@@ -115,7 +118,7 @@ octeon_drv-y  :=  $(OBJS)
 
 
 all: check_cnnic
-	$(MAKE) -C $(kernel_source) SUBDIRS=`pwd`  modules; 
+	$(MAKE) -C $(kernel_source) M=$(shell pwd)  modules;
 	@rm -f $(BINDIR) 2> /dev/null; mkdir -p $(BINDIR);
 	@rm -f $(BINDIR)/octeon_drv.ko; 
 	@ln -s $(PWD)/octeon_drv.ko $(BINDIR) ; 

@@ -173,7 +173,11 @@ netdev_tx_t mgmt_tx(struct sk_buff *skb, struct net_device *dev)
 		return NETDEV_TX_OK;
 	}
 	bytes = skb->len;
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,2,0)
 	xmit_more = skb->xmit_more;
+#else
+	xmit_more = netdev_xmit_more();
+#endif
 	cur_cons_idx = READ_ONCE(*tq->cons_idx_shadow);
 	cur_prod_idx = READ_ONCE(tq->local_prod_idx);
 	if (!otxmn_circq_space(cur_prod_idx, cur_cons_idx, tq->mask)) {

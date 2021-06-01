@@ -621,7 +621,7 @@ void octeon_destroy_resources(octeon_device_t * oct_dev)
 		    (oct_dev->app_mode == CVM_DRV_ZLIB_APP))
 			octeon_unregister_module_handler(CVM_DRV_BASE_APP);
 
-		__attribute__((fallthrough));
+		__attribute__((__fallthrough__));
 
 	case OCT_DEV_CORE_OK:
 		cavium_atomic_set(&oct_dev->status, OCT_DEV_IN_RESET);
@@ -632,7 +632,7 @@ void octeon_destroy_resources(octeon_device_t * oct_dev)
 				 get_oct_state_string(&oct_dev->status));
 
 		cavium_sleep_timeout(CAVIUM_TICKS_PER_SEC / 10);
-		__attribute__((fallthrough));
+		__attribute__((__fallthrough__));
 
 	case OCT_DEV_STOPPING:
 #ifndef PCIE_AER
@@ -647,7 +647,7 @@ void octeon_destroy_resources(octeon_device_t * oct_dev)
 		/* Delete the /proc device entries */
 		cavium_delete_proc(oct_dev);
 #endif
-		__attribute__((fallthrough));
+		__attribute__((__fallthrough__));
 
 #ifdef PCIE_AER
 	case OCT_DEV_IN_RESET:
@@ -673,11 +673,11 @@ void octeon_destroy_resources(octeon_device_t * oct_dev)
 			cavium_print_msg("OCTEON[%d]: MBOX deleted.\n",
 					 oct_dev->octeon_id);
 		}
-		__attribute__((fallthrough));
+		__attribute__((__fallthrough__));
 #ifdef USE_BUFFER_POOL
 	case OCT_DEV_BUF_POOL_INIT_DONE:
 		octeon_delete_buffer_pool(oct_dev);
-		__attribute__((fallthrough));
+		__attribute__((__fallthrough__));
 #endif
 
 	case OCT_DEV_DISPATCH_INIT_DONE:
@@ -686,7 +686,7 @@ void octeon_destroy_resources(octeon_device_t * oct_dev)
 
 		cavium_print_msg("OCTEON[%d]: Deleted poll functions list.\n",
 				 oct_dev->octeon_id);
-		__attribute__((fallthrough));
+		__attribute__((__fallthrough__));
 
 	case OCT_DEV_PCI_MAP_DONE:
 		octeon_unmap_pci_barx(oct_dev, 0);
@@ -700,7 +700,7 @@ void octeon_destroy_resources(octeon_device_t * oct_dev)
 
 		cavium_print_msg("OCTEON[%d]: BAR unmapped.\n",
 				 oct_dev->octeon_id);
-		__attribute__((fallthrough));
+		__attribute__((__fallthrough__));
 
 	case OCT_DEV_RESET_CLEANUP_DONE:
 	case OCT_DEV_BEGIN_STATE:

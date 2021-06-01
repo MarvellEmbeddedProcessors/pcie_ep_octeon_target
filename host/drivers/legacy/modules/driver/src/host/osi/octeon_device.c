@@ -1422,7 +1422,7 @@ int oct_stop_base_module(int octeon_id, void *octeon_dev)
 			octeon_delete_ioq_vector(oct_dev);
 		}
         cavium_print_msg("deleted the ioq vectors\n");
-		__attribute__((fallthrough));
+		__attribute__((__fallthrough__));
 #ifdef PCIE_AER
 	case OCT_DEV_IN_RESET:
 #endif
@@ -1438,7 +1438,7 @@ int oct_stop_base_module(int octeon_id, void *octeon_dev)
 				 oct_dev->octeon_id);
 
        cavium_print_msg("deleted the droqs\n");
-		__attribute__((fallthrough));
+		__attribute__((__fallthrough__));
 	case OCT_DEV_INSTR_QUEUE_INIT_DONE:
 
 		for (i = 0; i < oct_dev->num_iqs; i++) {
@@ -1449,7 +1449,9 @@ int oct_stop_base_module(int octeon_id, void *octeon_dev)
 				 oct_dev->octeon_id);
 
        cavium_print_msg("deleted the iqs\n");
-		__attribute__((fallthrough));
+		__attribute__((__fallthrough__));
+	default:
+		break;
 	}
 	cavium_print_msg("OCTEON[%d]: Octeon is in %s state\n",
 			 oct_dev->octeon_id,
@@ -2663,7 +2665,9 @@ void octeon_enable_irq(octeon_droq_t *droq, octeon_instr_queue_t *iq)
 		OCTEON_WRITE32(droq->pkts_sent_reg, droq->last_pkt_count - pkts_pend);
 		droq->last_pkt_count = pkts_pend;
 	}
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,4,0)
 	mmiowb();
+#endif
 	OCTEON_WRITE64(droq->pkts_sent_reg, 1UL << 59);
 	OCTEON_WRITE64(iq->inst_cnt_reg, 1UL << 59);
 }
