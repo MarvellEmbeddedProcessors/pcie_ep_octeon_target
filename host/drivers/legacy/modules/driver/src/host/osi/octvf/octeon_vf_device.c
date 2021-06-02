@@ -1669,6 +1669,16 @@ octeon_unmap_page(int octeon_id, unsigned long dma_addr UNUSED,
 	octeon_pci_unmap_page(oct_dev->pci_dev, dma_addr, size, direction);
 }
 
+int
+octeon_mapping_error(int octeon_id, unsigned long dma_addr)
+{
+	octeon_device_t *oct_dev = get_octeon_device(octeon_id);
+
+	if (oct_dev == NULL)
+		return -1;
+	return pci_dma_mapping_error(oct_dev->pci_dev, dma_addr);
+}
+
 extern int octeon_reset_recv_buf_size(octeon_device_t *, int, uint32_t);
 
 int octeon_reset_oq_bufsize(int octeon_id, int q_no, int newsize)
