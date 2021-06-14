@@ -47,6 +47,7 @@ struct otx_pcie_ep {
 enum supported_plat {
 	OTX_CN83XX,
 	OTX2_CN9XXX,
+	OTX3_CN10K,
 };
 
 #define PEMX_BASE(a, b)		((a) | ((uint64_t)b << 36))
@@ -59,6 +60,8 @@ enum supported_plat {
 		offset = 0x20180ull | (x << 23);	\
 	else if (pcie_ep_dev->plat_model == OTX2_CN9XXX)\
 		offset = 0x205E0ull | (x <<25);		\
+	else if (pcie_ep_dev->plat_model == OTX3_CN10K) \
+		offset = 0x209E0ull | (x <<25);		\
 	offset; })					\
 
 #define PEM_BAR_INDEX_OFFSET(x) ({				\
@@ -66,6 +69,8 @@ enum supported_plat {
 	if (pcie_ep_dev->plat_model == OTX_CN83XX)	\
 		offset = 0x100ull | (x << 3);	\
 	else if (pcie_ep_dev->plat_model == OTX2_CN9XXX)\
+		offset = 0x700ull | (x <<3);		\
+	else if (pcie_ep_dev->plat_model == OTX3_CN10K) \
 		offset = 0x700ull | (x <<3);		\
 	offset; })					\
 
@@ -80,6 +85,7 @@ static unsigned int name = imp
 
 PCIE_EP_MATCH_DATA(otx_cn83xx, OTX_CN83XX);
 PCIE_EP_MATCH_DATA(otx2_cn9xxx, OTX2_CN9XXX);
+PCIE_EP_MATCH_DATA(otx3_cn10k, OTX3_CN10K);
 
 const struct iommu_ops *smmu_ops;
 //TODO: fix the names npu_barmap_mem and npu_bar_map
@@ -258,7 +264,8 @@ static int npu_base_setup(struct npu_bar_map *bar_map, struct otx_pcie_ep *pcie_
 		printk("Failed to ioremap oei_trig space\n");
 		return -1;
 	}
-	if (pcie_ep_dev->plat_model == OTX2_CN9XXX) {
+	if (pcie_ep_dev->plat_model == OTX2_CN9XXX ||
+	    pcie_ep_dev->plat_model == OTX3_CN10K) {
 		disport_addr = PEMX_BASE(pcie_ep_dev->pem_base, pem_num[instance]) + PEM_DIS_PORT_OFFSET;
 		npu_csr_write(disport_addr, 1);
 	}
@@ -351,7 +358,7 @@ static int npu_base_probe(struct platform_device *pdev)
 	instance = pcie_ep_dev->instance;
 	plat = pcie_ep_dev->plat_model;
 
-	if (plat == OTX2_CN9XXX) {
+	if (plat == OTX2_CN9XXX || plat == OTX3_CN10K) {
 		smmu_dev = bus_find_device_by_name(&platform_bus_type,
 						   NULL,
 						   "830000000000.smmu");
@@ -504,6 +511,7 @@ static const struct dev_pm_ops npu_base_pm_ops = {
 static const struct of_device_id npu_base_off_match[] = {
 	{ .compatible = "marvell,octeontx-ep", .data = &otx_cn83xx},
 	{ .compatible = "marvell,octeontx2-ep", .data = &otx2_cn9xxx},
+	{ .compatible = "marvell,octeontx3-ep", .data = &otx3_cn10k},
 	{},
 };
 MODULE_DEVICE_TABLE(of, npu_base_off_match);
