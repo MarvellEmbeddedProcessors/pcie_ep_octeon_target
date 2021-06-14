@@ -55,6 +55,4 @@ int do_dma_sync_sli(host_dma_addr_t local_dma_addr, host_dma_addr_t host_addr,
 int do_dma_async_dpi_vector(struct device* dev, local_dma_addr_t *local_addr,
 		host_dma_addr_t *host_addr, int *len, int num_ptrs, host_dma_dir_t dir,
 		local_dma_addr_t comp_iova);
-int do_dma_to_host(uint32_t val, host_dma_addr_t host_addr);
-
 #endif
