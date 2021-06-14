@@ -25,9 +25,10 @@
 #define PCI_DEVICE_ID_OCTEONTX_DPI_VF_83XX 	0xA058
 #define PCI_DEVICE_ID_OCTEONTX_DPI_VF_93XX	0xA081
 
-#define DPI_VF_PCI_CFG_BAR0 			0
-#define DPI_VF_GMID 				0x5
-#define DPI_MAX_QUEUES 				8
+#define DPI_VF_PCI_CFG_BAR0 		0
+#define DPI_VF_GMID 			0x5
+#define DPI_MAX_PFS			2
+#define DPI_MAX_QUEUES 			(8 * DPI_MAX_PFS)
 
 unsigned int pem_num = 0;
 module_param(pem_num, uint, 0644);
@@ -193,6 +194,7 @@ int dpi_vf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 
 	dev_set_drvdata(dev, dpi_vf);
 	dpi_vf->dev = dev;
+	dpi_vf->pdev = pdev;
 	err = pcim_enable_device(pdev);
 	if (err) {
 		dev_err(dev, "Failed to enable PCI device\n");

@@ -19,7 +19,6 @@
 extern struct otx2_dpipf_com_s otx2_dpipf_com;
 
 static struct otx2_dpipf_com_s *otx2_dpipf;
-static struct pci_dev *otx2_dpi_pfdev = NULL;
 
 struct otx2_data {
 	struct otxx_data otxx;
@@ -113,21 +112,6 @@ int otx2_init(void)
 		return -ENOMEM;
 	}
 
-	if (otx2_dpi_pfdev == NULL) {
-		struct pci_dev *pcidev = NULL;
-		while ((pcidev = pci_get_device(PCI_ANY_ID, PCI_ANY_ID,
-						pcidev))) {
-			if (pcidev->device == PCI_DEVID_OCTEONTX2_DPI_PF) {
-				otx2_dpi_pfdev = pcidev;
-				break;
-			}
-		}
-	}
-	if (otx2_dpi_pfdev == NULL) {
-		printk("OTX2_DPI_PF not found\n");
-		return -ENOMEM;
-	}
-
 	return 0;
 }
 
@@ -135,7 +119,17 @@ int otx2_open(struct dpivf_t *dpi_vf)
 {
 	union dpi_mbox_message_t otx2_mbox_msg;
 	struct otx2_data *priv;
+	struct pci_dev *pcidev = NULL;
 	int err;
+
+	while ((pcidev = pci_get_device(PCI_VENDOR_ID_CAVIUM,
+					PCI_DEVID_OCTEONTX2_DPI_PF,
+					pcidev)) != NULL) {
+		if (pcidev->bus->number == dpi_vf->pdev->bus->number) {
+			dpi_vf->pf_pdev = pcidev;
+			break;
+		}
+	}
 
 	err = otx2_vf_init(dpi_vf);
 	if (err) {
@@ -152,7 +146,7 @@ int otx2_open(struct dpivf_t *dpi_vf)
 	otx2_mbox_msg.s.npa_pf_func = npa_pf_func(priv->aura);
 
 	/* Opening DPI queue */
-	err = otx2_dpipf->queue_config(otx2_dpi_pfdev, &otx2_mbox_msg);
+	err = otx2_dpipf->queue_config(dpi_vf->pf_pdev, &otx2_mbox_msg);
 	if (err) {
 		dev_err(dpi_vf->dev, "%d: Failed to open dpi queue.", err);
 		otx2_vf_uninit(dpi_vf);
@@ -204,7 +198,7 @@ void otx2_close(struct dpivf_t *dpi_vf)
 	otx2_mbox_msg.s.vfid = dpi_vf->vf_id;
 
 	/* Closing DPI queue */
-	otx2_dpipf->queue_config(otx2_dpi_pfdev, &otx2_mbox_msg);
+	otx2_dpipf->queue_config(dpi_vf->pf_pdev, &otx2_mbox_msg);
 	do {
 		val = readq_relaxed(dpi_vf->reg_base + DPI_VDMA_SADDR);
 	} while (!(val & (0x1ull << 63)));

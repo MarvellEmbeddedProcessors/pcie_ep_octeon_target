@@ -12,6 +12,8 @@
 
 struct dpivf_t {
 	struct device *dev;
+	struct pci_dev *pdev;
+	struct pci_dev *pf_pdev;
 	void __iomem *reg_base;
 	void __iomem *reg_base2;
 	struct msix_entry *msix_entries;
