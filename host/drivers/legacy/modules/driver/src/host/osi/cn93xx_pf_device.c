@@ -934,8 +934,16 @@ static void cn93xx_enable_pf_interrupt(void *chip, uint8_t intr_flag)
 	pf_ring_ctl = octeon_read_csr64(oct,
 			CN93XX_SDP_MAC_PF_RING_CTL(oct->pcie_port));
 
-	trs = (pf_ring_ctl >> CN93XX_SDP_MAC_PF_RING_CTL_RPPF_BIT_POS) 
-		& CN93XX_SDP_MAC_PF_RING_CTL_RPPF;
+	if (oct->chip_id == OCTEON_CN93XX_PF) {
+		trs = (pf_ring_ctl >> CN93XX_SDP_MAC_PF_RING_CTL_RPPF_BIT_POS)
+			& CN93XX_SDP_MAC_PF_RING_CTL_RPPF;
+	} else if (oct->chip_id == OCTEON_CN98XX_PF) {
+		trs = (pf_ring_ctl >> CN98XX_SDP_MAC_PF_RING_CTL_RPPF_BIT_POS)
+			& CN93XX_SDP_MAC_PF_RING_CTL_RPPF;
+	} else {
+		 printk("OCTEON[%d]: Failed to enable PF interrupt; Invalid chip_id 0x%x\n",
+			oct->octeon_id, oct->chip_id);
+	}
 
 	for (i = 0; i < trs; i++)
 		intr_mask |= (0x1ULL << (srn + i));
@@ -978,8 +986,16 @@ static void cn93xx_disable_pf_interrupt(void *chip, uint8_t intr_flag)
 	pf_ring_ctl = octeon_read_csr64(oct,
 			CN93XX_SDP_MAC_PF_RING_CTL(oct->pcie_port));
 
-	trs = (pf_ring_ctl >> CN93XX_SDP_MAC_PF_RING_CTL_RPPF_BIT_POS) 
-		& CN93XX_SDP_MAC_PF_RING_CTL_RPPF;
+	if (oct->chip_id == OCTEON_CN93XX_PF) {
+		trs = (pf_ring_ctl >> CN93XX_SDP_MAC_PF_RING_CTL_RPPF_BIT_POS)
+			& CN93XX_SDP_MAC_PF_RING_CTL_RPPF;
+	} else if (oct->chip_id == OCTEON_CN98XX_PF) {
+		trs = (pf_ring_ctl >> CN98XX_SDP_MAC_PF_RING_CTL_RPPF_BIT_POS)
+			& CN93XX_SDP_MAC_PF_RING_CTL_RPPF;
+	} else {
+		 cavium_print_msg("OCTEON[%d]: Failed to enable PF interrupt; Invalid chip_id 0x%x\n",
+				  oct->octeon_id, oct->chip_id);
+	}
 
 	for (i = 0; i < trs; i++)
 		intr_mask |= (0x1ULL << (srn + i));
@@ -1387,9 +1403,9 @@ enum setup_stage setup_cn98xx_octeon_pf_device(octeon_device_t * oct)
 	if(1) {
 		/* Hardcode NPFS = 8, RPPF = 2 and SRN = 0 */
 		regval = 0;
-		regval = (NPFS  << CN93XX_SDP_MAC_PF_RING_CTL_NPFS_BIT_POS);
-		regval |= (PFS_SRN << CN93XX_SDP_MAC_PF_RING_CTL_SRN_BIT_POS);
-		regval |= (RPPF << CN93XX_SDP_MAC_PF_RING_CTL_RPPF_BIT_POS);
+		regval = (NPFS  << CN98XX_SDP_MAC_PF_RING_CTL_NPFS_BIT_POS);
+		regval |= (PFS_SRN << CN98XX_SDP_MAC_PF_RING_CTL_SRN_BIT_POS);
+		regval |= (RPPF << CN98XX_SDP_MAC_PF_RING_CTL_RPPF_BIT_POS);
 
 		octeon_write_csr64(oct, CN93XX_SDP_MAC_PF_RING_CTL(oct->pcie_port), 
 				regval);
@@ -1422,12 +1438,9 @@ enum setup_stage setup_cn98xx_octeon_pf_device(octeon_device_t * oct)
 	 * from F/W is exchanged through its register.
 	 */
 	regval = 0;
-	/*regval = (0  << CN93XX_SDP_MAC_PF_RING_CTL_NPFS_BIT_POS);
-	regval |= (0 << CN93XX_SDP_MAC_PF_RING_CTL_SRN_BIT_POS);
-	regval |= (1 << CN93XX_SDP_MAC_PF_RING_CTL_RPPF_BIT_POS);*/
-	regval = (0ull  << 48);
-	regval |= (0ull << 0);
-	regval |= (1ull << 32);
+	regval = (0ULL  << CN98XX_SDP_MAC_PF_RING_CTL_NPFS_BIT_POS);
+	regval |= (0ULL << CN98XX_SDP_MAC_PF_RING_CTL_SRN_BIT_POS);
+	regval |= (1ULL << CN98XX_SDP_MAC_PF_RING_CTL_RPPF_BIT_POS);
 	
 	octeon_write_csr64(oct, CN93XX_SDP_MAC_PF_RING_CTL(oct->pcie_port),
 			regval);
