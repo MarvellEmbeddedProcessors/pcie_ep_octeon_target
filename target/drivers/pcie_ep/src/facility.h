@@ -59,6 +59,9 @@ enum mv_facility_flag {
 
 #define MV_FACILITY_MAX_DBELLS 16
 
+#define FACILITY_INSTANCE(x)	((x >> 4) & 0xf)
+#define FACILITY_TYPE(x)	(x & 0xf)
+
 /**
  * @brief Facility DMA device
  *

@@ -25,6 +25,7 @@
 #define PCI_DEVICE_ID_OCTEONTX_DPI_VF_83XX 	0xA058
 #define PCI_DEVICE_ID_OCTEONTX_DPI_VF_93XX	0xA081
 
+#define DPI0_PCI_BUS			5
 #define DPI_VF_PCI_CFG_BAR0 		0
 #define DPI_VF_GMID 			0x5
 #define DPI_MAX_PFS			2
@@ -34,7 +35,8 @@ unsigned int pem_num = 0;
 module_param(pem_num, uint, 0644);
 MODULE_PARM_DESC(pem_num, "pem number to use");
 
-static int num_vfs = 0;
+static int num_vfs[DPI_MAX_PFS];
+static int total_vfs;
 static struct dpivf_t* vf[DPI_MAX_QUEUES] = { 0 };
 static unsigned int vf_domain_id = DPI_VF_GMID;
 
@@ -88,18 +90,31 @@ struct dpivf_t* shared_vf = NULL;
 
 int get_dpi_dma_dev_count(int handle)
 {
+	int instance, type;
+
+	instance = (handle >> 4) & 0xf;
+	type = handle & 0xf;
+
 	/* rpc gets all available devices, everyone else gets 1 device */
-	return (handle == HANDLE_TYPE_RPC) ? num_vfs : (num_vfs != 0);
+	return (type == HANDLE_TYPE_RPC) ? num_vfs[instance] : (num_vfs[instance] != 0);
 }
 EXPORT_SYMBOL(get_dpi_dma_dev_count);
 
 struct device *get_dpi_dma_dev(int handle, int index)
 {
-	(void) handle;
-	if (index < 0 || index >= num_vfs)
+	int instance, actual_idx;
+
+	instance = (handle >> 4) & 0xf;
+
+	if (index < 0 || index >= num_vfs[instance])
 		return NULL;
 
-	return (vf[index]) ? vf[index]->dev : NULL;
+	actual_idx = index;
+
+	if (instance)
+		actual_idx = num_vfs[0] + index;
+
+	return (vf[actual_idx]) ? vf[actual_idx]->dev : NULL;
 }
 EXPORT_SYMBOL(get_dpi_dma_dev);
 
@@ -239,8 +254,14 @@ int dpi_vf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		dev_err(dev, "Failed to initialize dpi vf\n");
 		goto vf_open_fail;
 	}
-	vf[num_vfs++] = dpi_vf;
-	if(num_vfs == 1)
+
+	if (pdev->bus->number == DPI0_PCI_BUS)	/* DPI-0 */
+		num_vfs[0] = num_vfs[0] + 1;
+	else				/* DPI-1 */
+		num_vfs[1] = num_vfs[1] + 1;
+
+	vf[total_vfs++] = dpi_vf;
+	if(num_vfs[0] == 1)
 		shared_vf = dpi_vf;
 
 	return 0;
@@ -266,7 +287,12 @@ static void dpi_remove(struct pci_dev *pdev)
 	soc->close(dpi_vf);
 	kobject_del(dpi_vf->kobj);
 	devm_kfree(dpi_vf->dev, dpi_vf);
-	num_vfs--;
+
+	if (pdev->bus->number == DPI0_PCI_BUS)	/* DPI-0 */
+		num_vfs[0] = num_vfs[0] - 1;
+	else				/* DPI-1 */
+		num_vfs[1] = num_vfs[1] - 1;
+	total_vfs--;
 }
 
 static struct pci_driver dpi_vf_driver = {

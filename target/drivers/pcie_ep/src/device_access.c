@@ -12,16 +12,27 @@
 
 #include "barmap.h"
 #include "device_access.h"
+#include "ep_base.h"
 #include "dma_api.h"
 
-mv_facility_conf_t conf;
-mv_facility_conf_t nwa_conf;
-extern struct npu_irq_info irq_info[MAX_INTERRUPTS];
-extern struct device *plat_dev;
+extern struct otx_pcie_ep *g_pcie_ep_dev[];
 static bool init_done = false;
+static int facility_instance_cnt;
 
-int mv_get_facility_handle(char *name)
+int mv_get_facility_instance_count(char *name)
 {
+	/* For now return the instance count for any name */
+	return facility_instance_cnt;
+}
+EXPORT_SYMBOL(mv_get_facility_instance_count);
+
+int mv_get_multi_facility_handle(int instance, char *name)
+{
+	int type, handle;
+
+	if (instance >= facility_instance_cnt)
+		return -ENOENT;
+
 	if (strcmp(name, MV_FACILITY_NAME_RPC) &&
 	    strcmp(name, MV_FACILITY_NAME_NETWORK_AGENT))
 		return -ENOENT;
@@ -30,23 +41,51 @@ int mv_get_facility_handle(char *name)
 		return -EAGAIN;
 
 	if (!strcmp(name, MV_FACILITY_NAME_RPC))
-		return conf.type;
+		type = MV_FACILITY_RPC;
 	else
-		return nwa_conf.type;
+		type = MV_FACILITY_NW_AGENT;
+
+	handle = (uint8_t)(g_pcie_ep_dev[instance]->facility_conf[type].type) & 0xf;
+	handle |= (uint8_t)(g_pcie_ep_dev[instance]->instance) << 4;
+
+	return handle;
+}
+EXPORT_SYMBOL(mv_get_multi_facility_handle);
+
+int mv_get_facility_handle(char *name)
+{
+	int type;
+
+	if (strcmp(name, MV_FACILITY_NAME_RPC) &&
+	    strcmp(name, MV_FACILITY_NAME_NETWORK_AGENT))
+		return -ENOENT;
+
+	if (!init_done)
+		return -EAGAIN;
+
+	if (!strcmp(name, MV_FACILITY_NAME_RPC))
+		type = MV_FACILITY_RPC;
+	else
+		type = MV_FACILITY_NW_AGENT;
+
+	return (g_pcie_ep_dev[0]->facility_conf[type].type);
 }
 EXPORT_SYMBOL(mv_get_facility_handle);
 
 int mv_get_bar_mem_map(int handle, mv_bar_map_t *bar_map)
 {
-	if (handle == MV_FACILITY_RPC) {
-		bar_map->addr.target_addr = conf.memmap.target_addr;
-		bar_map->memsize = conf.memsize;
-	} else if (handle == MV_FACILITY_NW_AGENT) {
-		bar_map->addr.target_addr = nwa_conf.memmap.target_addr;
-		bar_map->memsize = nwa_conf.memsize;
-	} else {
+	int instance, type;
+	mv_facility_conf_t *conf;
+
+	instance = FACILITY_INSTANCE(handle);
+	type = FACILITY_TYPE(handle);
+	if (type >= MV_FACILITY_COUNT)
 		return -ENOENT;
-	}
+
+	conf = &g_pcie_ep_dev[instance]->facility_conf[type];
+
+	bar_map->addr.target_addr = conf->memmap.target_addr;
+	bar_map->memsize = conf->memsize;
 
 	return 0;
 }
@@ -54,34 +93,51 @@ EXPORT_SYMBOL(mv_get_bar_mem_map);
 
 int mv_pci_get_dma_dev_count(int handle)
 {
-	if (handle == MV_FACILITY_RPC)
-		return conf.num_dma_dev;
+	int instance, type;
+	mv_facility_conf_t *conf;
 
-	if (handle == MV_FACILITY_NW_AGENT)
-		return nwa_conf.num_dma_dev;
+	instance = FACILITY_INSTANCE(handle);
+	type = FACILITY_TYPE(handle);
+	if (type >= MV_FACILITY_COUNT)
+		return -EINVAL;
 
-	return -EINVAL;
+	conf = &g_pcie_ep_dev[instance]->facility_conf[type];
+	return conf->num_dma_dev;
 }
 EXPORT_SYMBOL(mv_pci_get_dma_dev_count);
 
 int mv_pci_get_dma_dev(int handle, int index, struct device **dev)
 {
-	if (handle == MV_FACILITY_RPC) {
-		if (index >= conf.num_dma_dev)
-			return -EINVAL;
+	int instance, type;
+	mv_facility_conf_t *conf;
 
-		*dev = get_dpi_dma_dev(handle, index);
-		return (*dev != NULL) ? 0 : -ENODEV;
-	}
+	instance = FACILITY_INSTANCE(handle);
+	type = FACILITY_TYPE(handle);
+	if (type >= MV_FACILITY_COUNT)
+		return -ENOENT;
 
-	return -ENOENT;
+	conf = &g_pcie_ep_dev[instance]->facility_conf[type];
+	if (index >= conf->num_dma_dev)
+		return -EINVAL;
+
+	*dev = get_dpi_dma_dev(type, index);
+	return (*dev != NULL) ? 0 : -ENODEV;
 }
 EXPORT_SYMBOL(mv_pci_get_dma_dev);
 
 int mv_get_num_dbell(int handle, enum mv_target target, uint32_t *num_dbells)
 {
-	if (handle == MV_FACILITY_RPC && target == MV_TARGET_EP)
-		*num_dbells = conf.num_h2t_dbells;
+	int instance, type;
+	mv_facility_conf_t *conf;
+
+	instance = FACILITY_INSTANCE(handle);
+	type = FACILITY_TYPE(handle);
+	if (type >= MV_FACILITY_COUNT)
+		return -ENOENT;
+
+	conf = &g_pcie_ep_dev[instance]->facility_conf[type];
+	if (type == MV_FACILITY_RPC && target == MV_TARGET_EP)
+		*num_dbells = conf->num_h2t_dbells;
 	else
 		return -ENOENT;
 
@@ -92,28 +148,35 @@ EXPORT_SYMBOL(mv_get_num_dbell);
 int mv_request_dbell_irq(int handle, u32 dbell, irq_handler_t irq_handler,
 			 void *arg, const struct cpumask *cpumask)
 {
-	struct device *dev = plat_dev;
+	struct device *dev;
 	char irq_name[32], msg[128];
 	int ret = 0, cpu, n;
+	int instance, type;
+	struct npu_irq_info *irq_info;
 
-	if (handle == MV_FACILITY_RPC) {
-		struct npu_irq_info *ii = &irq_info[NPU_FACILITY_RPC_IRQ_IDX+dbell];
+	instance = FACILITY_INSTANCE(handle);
+	type = FACILITY_TYPE(handle);
+	if (type >= MV_FACILITY_COUNT)
+		return -ENOENT;
 
+	dev = g_pcie_ep_dev[instance]->plat_dev;
+	if (type == MV_FACILITY_RPC) {
+		irq_info = &g_pcie_ep_dev[instance]->irq_info[NPU_FACILITY_RPC_IRQ_IDX + dbell];
 		if (dbell >= MV_FACILITY_RPC_IRQ_CNT) {
 			pr_err("RPC request irq %d is out of range\n", dbell);
 			return -ENOENT;
 		}
 
 		sprintf(irq_name, "rpc_irq%d", dbell);
-		ret = devm_request_irq(dev, ii->irq, irq_handler, 0, irq_name, arg);
+		ret = devm_request_irq(dev, irq_info->irq, irq_handler, 0, irq_name, arg);
 		if (ret < 0)
 			return ret;
 
 		n = snprintf(msg, 128, "%s : registered irq %d on core ",
-				irq_name, ii->irq);
-		ii->cpumask = cpumask;
+				irq_name, irq_info->irq);
+		irq_info->cpumask = cpumask;
 		if (cpumask != NULL) {
-			irq_set_affinity_hint(ii->irq, cpumask);
+			irq_set_affinity_hint(irq_info->irq, cpumask);
 			for_each_cpu(cpu, cpumask)
 				n += snprintf((msg + n), 128, "%d ", cpu);
 		} else {
@@ -121,7 +184,7 @@ int mv_request_dbell_irq(int handle, u32 dbell, irq_handler_t irq_handler,
 		}
 		snprintf((msg + n), 128, "\n");
 		pr_info("%s", msg);
-		disable_irq(ii->irq);
+		disable_irq(irq_info->irq);
 	} else {
 		return -ENOENT;
 	}
@@ -132,37 +195,60 @@ EXPORT_SYMBOL(mv_request_dbell_irq);
 
 int mv_dbell_enable(int handle, uint32_t dbell)
 {
-	enable_irq(irq_info[NPU_FACILITY_RPC_IRQ_IDX + dbell].irq);
+	int instance, type;
+	struct npu_irq_info *irq_info;
+
+	instance = FACILITY_INSTANCE(handle);
+	type = FACILITY_TYPE(handle);
+	irq_info = &g_pcie_ep_dev[instance]->irq_info[NPU_FACILITY_RPC_IRQ_IDX + dbell];
+	enable_irq(irq_info->irq);
 	return 0;
 }
 EXPORT_SYMBOL_GPL(mv_dbell_enable);
 
 int mv_dbell_disable(int handle, uint32_t dbell)
 {
-	disable_irq(irq_info[NPU_FACILITY_RPC_IRQ_IDX + dbell].irq);
+	int instance, type;
+	struct npu_irq_info *irq_info;
+
+	instance = FACILITY_INSTANCE(handle);
+	type = FACILITY_TYPE(handle);
+	irq_info = &g_pcie_ep_dev[instance]->irq_info[NPU_FACILITY_RPC_IRQ_IDX + dbell];
+	disable_irq(irq_info->irq);
 	return 0;
 }
 EXPORT_SYMBOL_GPL(mv_dbell_disable);
 
 int mv_dbell_disable_nosync(int handle, uint32_t dbell)
 {
-	disable_irq_nosync(irq_info[NPU_FACILITY_RPC_IRQ_IDX + dbell].irq);
+	int instance, type;
+	struct npu_irq_info *irq_info;
+
+	instance = FACILITY_INSTANCE(handle);
+	type = FACILITY_TYPE(handle);
+	irq_info = &g_pcie_ep_dev[instance]->irq_info[NPU_FACILITY_RPC_IRQ_IDX + dbell];
+	disable_irq_nosync(irq_info->irq);
 	return 0;
 }
 EXPORT_SYMBOL_GPL(mv_dbell_disable_nosync);
 
 int mv_free_dbell_irq(int handle, uint32_t dbell, void *arg)
 {
-	struct device *dev = plat_dev;
+	struct device *dev;
 	struct npu_irq_info *ii;
+	int instance, type;
 
-	if (handle == MV_FACILITY_RPC) {
+	instance = FACILITY_INSTANCE(handle);
+	type = FACILITY_TYPE(handle);
+	ii = &g_pcie_ep_dev[instance]->irq_info[NPU_FACILITY_RPC_IRQ_IDX + dbell];
+	dev = g_pcie_ep_dev[instance]->plat_dev;
+
+	if (type == MV_FACILITY_RPC) {
 		if (dbell >= MV_FACILITY_RPC_IRQ_CNT) {
 			pr_err("RPC free irq %d is out of range\n", dbell);
 			return -ENOENT;
 		}
 
-		ii = &irq_info[NPU_FACILITY_RPC_IRQ_IDX+dbell];
 		irq_set_affinity_hint(ii->irq, NULL);
 		devm_free_irq(dev, ii->irq, arg);
 		ii->cpumask = NULL;
@@ -189,35 +275,24 @@ int mv_pci_sync_dma(int handle, struct device *dev, host_dma_addr_t host,
 }
 EXPORT_SYMBOL(mv_pci_sync_dma);
 
-int npu_device_access_init(void)
+void npu_device_access_init(int instance)
 {
-	int ret = 0;
+	mv_facility_conf_t *conf;
 
-	ret = mv_get_facility_conf(MV_FACILITY_RPC, &conf);
-	if (ret < 0) {
-		pr_err("Error: getting facility configuration %d failed %d\n",
-		       MV_FACILITY_RPC, ret);
-		return ret;
-	}
-
+	conf = &g_pcie_ep_dev[instance]->facility_conf[MV_FACILITY_RPC];
 	printk("	%s configuration\n"
 	       "Type = %d, Host Addr = 0x%llx Memsize = 0x%x\n"
 	       "Doorbell count = %d\n",
-	       conf.name, conf.type, (u64)conf.memmap.target_addr, conf.memsize,
-	       conf.num_h2t_dbells);
+	       conf->name, conf->type, (u64)conf->memmap.target_addr, conf->memsize,
+	       conf->num_h2t_dbells);
 
-	ret = mv_get_facility_conf(MV_FACILITY_NW_AGENT, &nwa_conf);
-	if (ret < 0) {
-		pr_err("Error: getting facility configuration %d failed %d\n",
-		       MV_FACILITY_NW_AGENT, ret);
-		return ret;
-	}
-
+	conf = &g_pcie_ep_dev[instance]->facility_conf[MV_FACILITY_NW_AGENT];
 	printk("	%s configuration\n"
 	       "Type = %d, Host Addr = 0x%llx Memsize = 0x%x\n"
 	       "Doorbell count = %d\n",
-	       nwa_conf.name, nwa_conf.type, (u64)nwa_conf.memmap.target_addr,
-	       nwa_conf.memsize, nwa_conf.num_h2t_dbells);
+	       conf->name, conf->type, (u64)conf->memmap.target_addr,
+	       conf->memsize, conf->num_h2t_dbells);
+
 	init_done = true;
-	return ret;
+	facility_instance_cnt++;
 }

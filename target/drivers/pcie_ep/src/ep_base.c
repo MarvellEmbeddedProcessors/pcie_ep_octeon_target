@@ -15,6 +15,7 @@
 #include <linux/slab.h>
 #include <linux/iommu.h>
 #include "barmap.h"
+#include "ep_base.h"
 
 #define NPU_BASE_DRV_NAME  "npu_base"
 #define NPU_BASE_DEVICE_ID "NPU base driver"
@@ -35,14 +36,6 @@ module_param_array(epf_num, uint, &epf_num_arr_cnt, 0644);
 MODULE_PARM_DESC(epf_num, "epf number to use");
 
 static uint64_t sdp_num[2] = {0,1};
-
-struct otx_pcie_ep {
-	uint64_t	pem_base;
-	uint64_t	sdp_base;
-	uint64_t	oei_trig_addr;
-	unsigned int	instance;
-	unsigned int	plat_model;
-};
 
 enum supported_plat {
 	OTX_CN83XX,
@@ -88,17 +81,15 @@ PCIE_EP_MATCH_DATA(otx2_cn9xxx, OTX2_CN9XXX);
 PCIE_EP_MATCH_DATA(otx3_cn10k, OTX3_CN10K);
 
 const struct iommu_ops *smmu_ops;
-//TODO: fix the names npu_barmap_mem and npu_bar_map
-/* local memory mapped through BAR for access from host */
-void *npu_barmap_mem;
 
+//TODO: fix the names npu_barmap_mem and npu_bar_map
 /* NPU BAR map structure */
 #define MAX_SDP_PF 2
-struct npu_bar_map bar_map[MAX_SDP_PF];
-struct npu_irq_info irq_info[MAX_INTERRUPTS];
-
-/* platform device */
-struct device	*plat_dev;
+struct otx_pcie_ep *g_pcie_ep_dev[MAX_SDP_PF];
+//struct npu_bar_map bar_map[MAX_SDP_PF];
+//struct npu_irq_info irq_info[MAX_INTERRUPTS];
+/* local memory mapped through BAR for access from host */
+//void *npu_barmap_mem[MAX_SDP_PF];
 
 static uint64_t npu_csr_read(uint64_t csr_addr)
 {
@@ -128,27 +119,27 @@ static void npu_csr_write(uint64_t csr_addr, uint64_t val)
 	iounmap(addr);
 }
 
-static irqreturn_t npu_base_interrupt(int irq, void *dev_id)
+static irqreturn_t npu_base_interrupt(int irq, void *arg)
 {
-	printk("Interrupt Received\n");
-	printk("%s: %s\n", __func__, (char *)dev_id);
+	struct otx_pcie_ep *pcie_ep = (struct otx_pcie_ep *)arg;
+	printk("Interrupt %d Received\n", irq);
 
 	/* TODO: delete; only for testing/debug */
-	if(npu_barmap_mem) {
+	if(pcie_ep->npu_barmap_mem) {
 		printk("ctrl[0] = %x\n",
-		       *(volatile uint32_t *)(npu_barmap_mem +
+		       *(volatile uint32_t *)(pcie_ep->npu_barmap_mem +
 					      (NPU_BARMAP_CTRL_OFFSET - NPU_BARMAP_FIREWALL_OFFSET)));
 		printk("netdev[0] = %x\n",
-		       *(volatile uint32_t *)(npu_barmap_mem +
+		       *(volatile uint32_t *)(pcie_ep->npu_barmap_mem +
 					      (NPU_BARMAP_MGMT_NETDEV_OFFSET - NPU_BARMAP_FIREWALL_OFFSET)));
 		printk("nw_agent[0] = %x\n",
-		       *(volatile uint32_t *)(npu_barmap_mem +
+		       *(volatile uint32_t *)(pcie_ep->npu_barmap_mem +
 					      (NPU_BARMAP_NW_AGENT_OFFSET - NPU_BARMAP_FIREWALL_OFFSET)));
-		nwa_internal_addr = npu_barmap_mem +
+		nwa_internal_addr = pcie_ep->npu_barmap_mem +
 				    (NPU_BARMAP_NW_AGENT_OFFSET -
 				     NPU_BARMAP_FIREWALL_OFFSET);
 		printk("RPC[0] = %x\n",
-		       *(volatile uint32_t *)(npu_barmap_mem +
+		       *(volatile uint32_t *)(pcie_ep->npu_barmap_mem +
 					      (NPU_BARMAP_RPC_OFFSET - NPU_BARMAP_FIREWALL_OFFSET)));
 	}
 
@@ -206,28 +197,28 @@ err:
  * 1. populate entry-8 for ring memory
  * 2. populate entry-15 for GICD CSRs, so that host can write through BARs
  */
-static int npu_base_setup(struct npu_bar_map *bar_map, struct otx_pcie_ep *pcie_ep_dev)
+static int npu_base_setup(struct otx_pcie_ep *pcie_ep_dev)
 {
 	phys_addr_t barmap_mem_phys;
 	phys_addr_t phys_addr_i;
 	uint64_t bar_idx_val;
 	uint64_t bar_idx_addr;
 	uint64_t disport_addr;
-	unsigned int instance = pcie_ep_dev->instance;
+	int instance = pcie_ep_dev->instance;
 	int i;
 
-	npu_barmap_mem = kmalloc(NPU_BARMAP_FIREWALL_SIZE, GFP_KERNEL);
-	if (npu_barmap_mem == NULL) {
+	pcie_ep_dev->npu_barmap_mem = kmalloc(NPU_BARMAP_FIREWALL_SIZE, GFP_KERNEL);
+	if (pcie_ep_dev->npu_barmap_mem == NULL) {
 		printk("%s: Failed to allocate memory\n", __func__);
 		return -ENOMEM;
 	}
-	barmap_mem_phys = virt_to_phys(npu_barmap_mem);
+	barmap_mem_phys = virt_to_phys(pcie_ep_dev->npu_barmap_mem);
 	printk("%s: allocated memory for barmap; size=%u; virt=%p, phys=%llx\n",
-	       __func__, NPU_BARMAP_FIREWALL_SIZE, npu_barmap_mem, barmap_mem_phys);
+	       __func__, NPU_BARMAP_FIREWALL_SIZE, pcie_ep_dev->npu_barmap_mem, barmap_mem_phys);
 
 	/* write the control structure to mapped space */
 	printk("Copying NPU bar map info to base of mapped memory ...\n");
-	memcpy(npu_barmap_mem, (void *)bar_map, sizeof(struct npu_bar_map));
+	memcpy(pcie_ep_dev->npu_barmap_mem, (void *)&pcie_ep_dev->bar_map, sizeof(struct npu_bar_map));
 
 	//TODO: remove BAR1 references; 96xx has BAR4
 	//TODO: unmap() in unload
@@ -273,7 +264,7 @@ static int npu_base_setup(struct npu_bar_map *bar_map, struct otx_pcie_ep *pcie_
 	return 0;
 }
 
-static void npu_handshake_ready(struct npu_bar_map *bar_map, struct otx_pcie_ep *pcie_ep_dev)
+static void npu_handshake_ready(struct otx_pcie_ep *pcie_ep_dev)
 {
 	uint64_t scratch_val;
 	uint64_t scratch_addr;
@@ -289,10 +280,8 @@ static void npu_handshake_ready(struct npu_bar_map *bar_map, struct otx_pcie_ep 
 	       scratch_addr, npu_csr_read(scratch_addr));
 }
 
-extern void mv_facility_conf_init(struct device *dev,
-				  void *mapaddr,
-				  struct npu_bar_map *barmap);
-extern int npu_device_access_init(void);
+extern void mv_facility_conf_init(struct otx_pcie_ep *ep);
+extern void npu_device_access_init(int instance);
 
 static int pcie_ep_dt_probe(struct platform_device *pdev,
 			    struct otx_pcie_ep *pcie_ep_dev)
@@ -337,7 +326,6 @@ static int npu_base_probe(struct platform_device *pdev)
 	struct otx_pcie_ep *pcie_ep_dev;
 	struct device *dev = &pdev->dev;
 	int i, irq, first_irq, irq_count, ret;
-	char *dev_id = NPU_BASE_DEVICE_ID;
 	struct device *smmu_dev;
 	struct iommu_domain *host_domain;
 	int instance = 0;
@@ -429,7 +417,7 @@ static int npu_base_probe(struct platform_device *pdev)
 	} else {
 		printk("%s: IRQ no = %d\n", __func__, irq);
 		if (devm_request_irq(dev, irq, npu_base_interrupt, 0,
-				     pdev->name, (void *)dev_id)) {
+				     pdev->name, pcie_ep_dev)) {
 			dev_warn(dev, "unable to request NPU IRQ %d.\n",
 				 irq);
 		}
@@ -441,26 +429,26 @@ static int npu_base_probe(struct platform_device *pdev)
 	}
 
 	for (i = 0; i < irq_count; i++) {
-		irq_info[i].irq = platform_get_irq(pdev, i);
-		irq_info[i].cpumask = NULL;
+		pcie_ep_dev->irq_info[i].irq = platform_get_irq(pdev, i);
+		pcie_ep_dev->irq_info[i].cpumask = NULL;
 	}
 
-	if (npu_bar_map_init(&bar_map[instance], pem_num[instance], first_irq, irq_count)) {
+	if (npu_bar_map_init(&pcie_ep_dev->bar_map, pem_num[instance], first_irq, irq_count)) {
 		printk("bar map int failed\n");
 		return -1;
 	}
 
-	if ((instance == 0) && npu_base_setup(&bar_map[instance], pcie_ep_dev)) {
+	if (npu_base_setup(pcie_ep_dev)) {
 		printk("Base setup failed\n");
 		return -1;
 	}
 
-	plat_dev = dev;
-	npu_handshake_ready(&bar_map[instance], pcie_ep_dev);
-	if (instance == 0) {
-		mv_facility_conf_init(dev, npu_barmap_mem, &bar_map[instance]);
-		npu_device_access_init();
-	}
+	pcie_ep_dev->plat_dev = dev;
+	g_pcie_ep_dev[instance] = pcie_ep_dev;
+	npu_handshake_ready(pcie_ep_dev);
+	mv_facility_conf_init(pcie_ep_dev);
+	npu_device_access_init(instance);
+
 	return 0;
 
 exit:
