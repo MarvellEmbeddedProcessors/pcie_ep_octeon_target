@@ -10,6 +10,7 @@
 
 #include "dpi_vf.h"
 #include "dma_api.h"
+#include "dpi_cmd.h"
 
 #include "soc_otx.h"
 #include "soc_otx2.h"
@@ -36,6 +37,11 @@ struct vf_soc_ops {
 	u64 (*buf_alloc)(struct dpivf_t *dpi_vf);
 	/* Free buffer back to buffer pool */
 	void (*buf_free)(struct dpivf_t *dpi_vf, u64 buf);
+	/* Fill dpi instruction header */
+	void (*fill_header)(struct dpivf_t *dpi_vf,
+			    union dpi_dma_instr_hdr_s *header,
+			    uint8_t nfst, uint8_t nlst, u64 comp_iova,
+			    uint8_t lport, host_dma_dir_t dir);
 	/* Copy the data to host using dma */
 	int (*dma_to_host)(struct dpivf_t *dpi_vf, uint32_t val,
 			   host_dma_addr_t host_addr);
@@ -98,6 +104,14 @@ static inline u64 soc_api_impl_buf_alloc(struct dpivf_t *dpi_vf)
 }
 
 static inline void soc_api_impl_buf_free(struct dpivf_t *dpi_vf, u64 buf)
+{
+}
+
+static inline void soc_api_impl_fill_header(struct dpivf_t *dpi_vf,
+					    union dpi_dma_instr_hdr_s *header,
+					    uint8_t nfst, uint8_t nlst,
+					    u64 comp_iova, uint8_t lport,
+					    host_dma_dir_t dir)
 {
 }
 

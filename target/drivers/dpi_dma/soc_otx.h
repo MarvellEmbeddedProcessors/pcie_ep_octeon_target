@@ -20,6 +20,19 @@ extern u64 otx_buf_alloc(struct dpivf_t *dpi_vf);
 
 extern void otx_buf_free(struct dpivf_t *dpi_vf, u64 buf);
 
+static inline void otx_fill_header(struct dpivf_t *dpi_vf,
+				   union dpi_dma_instr_hdr_s *header,
+				   uint8_t nfst, uint8_t nlst, u64 comp_iova,
+				   uint8_t lport, host_dma_dir_t dir)
+{
+	header->s.nfst = nfst;
+	header->s.nlst = nlst;
+	header->s.ptr = comp_iova;
+	header->s.lport = lport;
+	header->s.xtype = (dir == DMA_FROM_HOST) ?
+			   DPI_HDR_XTYPE_E_INBOUND : DPI_HDR_XTYPE_E_OUTBOUND;
+}
+
 static inline int otx_dma_to_host(struct dpivf_t *dpi_vf, uint32_t val,
 				  host_dma_addr_t host_addr)
 {
@@ -42,8 +55,9 @@ extern void otx_cleanup(void);
 #define otx_open		soc_api_impl_open
 #define otx_buf_alloc		soc_api_impl_buf_alloc
 #define otx_buf_free		soc_api_impl_buf_free
-#define otx_dma_to_host		soc_api_impl_dma_to_host
-#define otx_host_writel		soc_api_impl_host_writel
+#define otx_fill_header 	soc_api_impl_fill_header
+#define otx_dma_to_host 	soc_api_impl_dma_to_host
+#define otx_host_writel 	soc_api_impl_host_writel
 #define otx_host_ioremap	soc_api_impl_host_ioremap
 #define otx_close		soc_api_impl_close
 #define otx_cleanup		soc_api_impl_cleanup

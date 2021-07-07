@@ -224,7 +224,6 @@ int otxx_dma_sync(struct dpivf_t* dpi_vf,
 {
 	struct otxx_data *otxx = OTXX_SOC_PRIV(dpi_vf);
 	u8  *comp_data;
-	dpi_dma_buf_ptr_t cmd = {0};
 	dpi_dma_ptr_t lptr = {0};
 	dpi_dma_ptr_t hptr = {0};
 	u64 dpi_cmd[DPI_DMA_CMD_BUF_SIZE] = {0};
@@ -234,14 +233,15 @@ int otxx_dma_sync(struct dpivf_t* dpi_vf,
 	int i;
 	int ret = 0;
 
-	header = (union dpi_dma_instr_hdr_s *)&dpi_cmd[0];
-	comp_data = dma_pool_alloc(otxx->comp_buf_pool,
-				   GFP_ATOMIC, &comp_iova);
+	comp_data = dma_pool_alloc(otxx->comp_buf_pool, GFP_ATOMIC, &comp_iova);
 	if (comp_data == NULL) {
 		dev_err(dpi_vf->dev, "dma alloc error\n");
 		return -ENOMEM;
 	}
 	WRITE_ONCE(*comp_data,  0xFF);
+
+	header = (union dpi_dma_instr_hdr_s *)&dpi_cmd[0];
+	soc->fill_header(dpi_vf, header, 1, 1, comp_iova, lport[pem_num], dir);
 
 	if (local_ptr) {
 		if (dir == DMA_FROM_HOST)
@@ -259,37 +259,13 @@ int otxx_dma_sync(struct dpivf_t* dpi_vf,
 	hptr.s.ptr = host_addr;
 	hptr.s.length = len;
 
-	if (dir == DMA_FROM_HOST) {
-		cmd.rptr[0] = &hptr;
-		cmd.wptr[0] = &lptr;
-		header->s.xtype = DPI_HDR_XTYPE_E_INBOUND;
-	} else {
-		cmd.rptr[0] = &lptr;
-		cmd.wptr[0] = &hptr;
-		header->s.xtype = DPI_HDR_XTYPE_E_OUTBOUND;
-	}
-
-	cmd.rptr_cnt = 1;
-	cmd.wptr_cnt = 1;
-
-	header->s.nfst = 1;
-	header->s.nlst = 1;
-	header->s.ptr = comp_iova;
-	header->s.lport = lport[pem_num];
-
-	if (header->s.xtype == DPI_HDR_XTYPE_E_INBOUND) {
-		dpi_cmd[4] = cmd.wptr[0]->u[0];
-		dpi_cmd[5] = cmd.wptr[0]->u[1];
-		dpi_cmd[6] = cmd.rptr[0]->u[0];
-		dpi_cmd[7] = cmd.rptr[0]->u[1];
-	} else {
-		header->s.nfst = cmd.rptr_cnt & 0xf;
-		header->s.nlst = cmd.wptr_cnt & 0xf;
-		dpi_cmd[4] = cmd.rptr[0]->u[0];
-		dpi_cmd[5] = cmd.rptr[0]->u[1];
-		dpi_cmd[6] = cmd.wptr[0]->u[0];
-		dpi_cmd[7] = cmd.wptr[0]->u[1];
-	}
+	/* inbound and outbound modes need local pointers followed by
+	 * host pointers.
+	 */
+	dpi_cmd[4] = lptr.u[0];
+	dpi_cmd[5] = lptr.u[1];
+	dpi_cmd[6] = hptr.u[0];
+	dpi_cmd[7] = hptr.u[1];
 
 	if (dpi_dma_queue_write(dpi_vf, otxx, 8, dpi_cmd)) {
 		dev_err(dpi_vf->dev, "DMA queue write fail\n");
@@ -338,7 +314,6 @@ int otxx_dma_async_vector(struct dpivf_t* dpi_vf,
 			  local_dma_addr_t comp_iova)
 {
 	struct otxx_data *otxx = OTXX_SOC_PRIV(dpi_vf);
-	dpi_dma_buf_ptr_t cmd = {0};
 	dpi_dma_ptr_t lptr[DPI_MAX_PTR] = {0};
 	dpi_dma_ptr_t hptr[DPI_MAX_PTR] = {0};
 	u64 dpi_cmd[DPI_DMA_CMD_BUF_SIZE] = {0};
@@ -346,54 +321,31 @@ int otxx_dma_async_vector(struct dpivf_t* dpi_vf,
 	u16 index = 4;
 	int i;
 
-	header = (union dpi_dma_instr_hdr_s *)&dpi_cmd[0];
-
 	/* TODO check Sum(len[i]) < 64K */
 	if (num_ptrs > DPI_MAX_PTR || num_ptrs < 1)
 		return -EINVAL;
+
+	header = (union dpi_dma_instr_hdr_s *)&dpi_cmd[0];
+	soc->fill_header(dpi_vf, header, num_ptrs, num_ptrs, comp_iova,
+			 lport[pem_num], dir);
 
 	for (i = 0; i < num_ptrs; i++) {
 		lptr[i].s.ptr = local_addr[i];
 		lptr[i].s.length = len[i];
 		hptr[i].s.ptr = host_addr[i];
 		hptr[i].s.length = len[i];
-		if (dir == DMA_FROM_HOST) {
-			cmd.rptr[i] = &hptr[i];
-			cmd.wptr[i] = &lptr[i];
-		} else {
-			cmd.rptr[i] = &lptr[i];
-			cmd.wptr[i] = &hptr[i];
-		}
-		cmd.rptr_cnt++;
-		cmd.wptr_cnt++;
 	}
 
-	header->s.ptr = comp_iova;
-	header->s.lport = lport[pem_num];
-	if (dir == DMA_FROM_HOST) {
-		header->s.xtype = DPI_HDR_XTYPE_E_INBOUND;
-		header->s.nfst = cmd.wptr_cnt & 0xf;
-		header->s.nlst = cmd.rptr_cnt & 0xf;
-		for (i = 0; i < header->s.nfst; i++) {
-			dpi_cmd[index++] = cmd.wptr[i]->u[0];
-			dpi_cmd[index++] = cmd.wptr[i]->u[1];
-		}
-		for (i = 0; i < header->s.nlst; i++) {
-			dpi_cmd[index++] = cmd.rptr[i]->u[0];
-			dpi_cmd[index++] = cmd.rptr[i]->u[1];
-		}
-	} else {
-		header->s.xtype = DPI_HDR_XTYPE_E_OUTBOUND;
-		header->s.nfst = cmd.rptr_cnt & 0xf;
-		header->s.nlst = cmd.wptr_cnt & 0xf;
-		for (i = 0; i < header->s.nfst; i++) {
-			dpi_cmd[index++] = cmd.rptr[i]->u[0];
-			dpi_cmd[index++] = cmd.rptr[i]->u[1];
-		}
-		for (i = 0; i < header->s.nlst; i++) {
-			dpi_cmd[index++] = cmd.wptr[i]->u[0];
-			dpi_cmd[index++] = cmd.wptr[i]->u[1];
-		}
+	/* inbound and outbound modes need local pointers followed by
+	 * host pointers.
+	 */
+	for (i = 0; i < num_ptrs; i++) {
+		dpi_cmd[index++] = lptr[i].u[0];
+		dpi_cmd[index++] = lptr[i].u[1];
+	}
+	for (i = 0; i < num_ptrs; i++) {
+		dpi_cmd[index++] = hptr[i].u[0];
+		dpi_cmd[index++] = hptr[i].u[1];
 	}
 
 	dpi_dma_queue_write(dpi_vf, otxx, index, dpi_cmd);
