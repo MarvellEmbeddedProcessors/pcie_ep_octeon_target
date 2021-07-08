@@ -47,6 +47,9 @@ static volatile bool force_quit;
 
 static char conf_file[256];
 
+#define MAX_MTU 		(9 * 1024)
+#define MAX_NUM_SEG_PER_PKT	16
+
 #define RTE_LOGTYPE_L2FWD RTE_LOGTYPE_USER1
 
 #define MAX_PKT_BURST 32
@@ -867,6 +870,8 @@ main(int argc, char **argv)
 	unsigned int nb_lcores = 0;
 	unsigned int nb_mbufs;
 	unsigned i, j, k;
+	uint16_t nb_min_segs = MAX_NUM_SEG_PER_PKT;
+	uint32_t max_pktlen = 0, bufsz;
 	uint8_t default_key[] = {
 		0xFE, 0xED, 0x0B, 0xAD, 0xFE, 0xED, 0x0B, 0xAD,
 		0xAD, 0x0B, 0xED, 0xFE, 0xAD, 0x0B, 0xED, 0xFE,
@@ -915,6 +920,32 @@ main(int argc, char **argv)
 	ret = l2fwd_parse_args(argc, argv);
 	if (ret < 0)
 		rte_exit(EXIT_FAILURE, "Invalid L2FWD arguments\n");
+
+	/* Find maximum packet size and minimum packet segments from
+	 * dev_info for each port.
+	 * pool buffer size = max_pkt_size / min_num_segs
+	 */
+	RTE_ETH_FOREACH_DEV(portid) {
+		struct rte_eth_dev_info dev_info;
+		struct rte_eth_desc_lim *lim;
+
+		ret = rte_eth_dev_info_get(portid, &dev_info);
+		if (ret != 0)
+			continue;
+
+		lim = &dev_info.rx_desc_lim;
+		if (lim->nb_mtu_seg_max)
+			nb_min_segs = RTE_MIN(lim->nb_mtu_seg_max, nb_min_segs);
+
+		lim = &dev_info.tx_desc_lim;
+		if (lim->nb_mtu_seg_max)
+			nb_min_segs = RTE_MIN(lim->nb_mtu_seg_max, nb_min_segs);
+
+		max_pktlen = RTE_MAX(dev_info.max_rx_pktlen, max_pktlen);
+	}
+	bufsz = (max_pktlen / nb_min_segs) +
+		((max_pktlen % nb_min_segs) != 0) +
+		RTE_PKTMBUF_HEADROOM;
 
 	if (generator_mode) {
 		if (gen_mbuf_jumbo)
@@ -968,7 +999,7 @@ main(int argc, char **argv)
 
 	/* create the mbuf pool */
 	l2fwd_pktmbuf_pool = rte_pktmbuf_pool_create("mbuf_pool", nb_mbufs,
-		MEMPOOL_CACHE_SIZE, 0, RTE_MBUF_DEFAULT_BUF_SIZE,
+		MEMPOOL_CACHE_SIZE, 0, bufsz,
 		rte_socket_id());
 	if (l2fwd_pktmbuf_pool == NULL)
 		rte_exit(EXIT_FAILURE, "Cannot init mbuf pool\n");
@@ -1044,7 +1075,9 @@ main(int argc, char **argv)
 		if ((port_type[portid] == PORT_TYPE_NPU_PCI_PF) ||
 		    (port_type[portid] == PORT_TYPE_NPU_PCI_VF)) {
 			/* fix MTU for jumbo frames */
-			ret = rte_eth_dev_set_mtu(portid, dev_info.max_mtu);
+			ret = rte_eth_dev_set_mtu(portid,
+						  RTE_MIN(dev_info.max_mtu,
+							  MAX_MTU));
 			if (ret < 0)
 				 rte_exit(EXIT_FAILURE, "Cannot set mtu to 1500\n");
 		}
