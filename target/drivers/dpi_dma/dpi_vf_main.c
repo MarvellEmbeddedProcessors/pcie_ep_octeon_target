@@ -24,6 +24,7 @@
 #define PCI_VENDOR_ID_CAVIUM			0x177d
 #define PCI_DEVICE_ID_OCTEONTX_DPI_VF_83XX 	0xA058
 #define PCI_DEVICE_ID_OCTEONTX_DPI_VF_93XX	0xA081
+#define PCI_SUBSYS_DEVID_CN10K_A		0xB900
 
 #define DPI0_PCI_BUS			5
 #define DPI_VF_PCI_CFG_BAR0 		0
@@ -73,6 +74,23 @@ static struct vf_soc_ops socs[SOC_MAX] = {
 		.buf_alloc = otx2_buf_alloc,
 		.buf_free = otx2_buf_free,
 		.fill_header = otx2_fill_header,
+		.dma_to_host = otx2_dma_to_host,
+		.dma_sync = otxx_dma_sync,
+		.dma_async_vector = otxx_dma_async_vector,
+		.dma_sync_sli = otxx_dma_sync_sli,
+		.host_writel = otx2_host_writel,
+		.host_map_writel = otxx_host_map_writel,
+		.host_iounmap = otxx_host_iounmap,
+		.host_ioremap = otx2_host_ioremap,
+		.close = otx2_close,
+		.cleanup = otx2_cleanup
+	},
+	{
+		.init = otx2_init,
+		.open = otx2_open,
+		.buf_alloc = otx2_buf_alloc,
+		.buf_free = otx2_buf_free,
+		.fill_header = cn10k_fill_header,
 		.dma_to_host = otx2_dma_to_host,
 		.dma_sync = otxx_dma_sync,
 		.dma_async_vector = otxx_dma_async_vector,
@@ -179,6 +197,7 @@ int do_dma_sync_sli(host_dma_addr_t local_addr, host_dma_addr_t host_addr,
 {
 	return soc->dma_sync_sli(shared_vf, local_addr, host_addr,
 				 virt_addr, len, dir);
+
 }
 EXPORT_SYMBOL(do_dma_sync_sli);
 
@@ -241,11 +260,20 @@ int dpi_vf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	dpi_vf->vf_id = pdev->devfn - 1;
 
 	if (!soc) {
-		/* As of now we treat anything other than 83xx as octeontx2
-		 * This should include 95xx, 96xx and 98xx.
-		 */
-		soc = (pdev->device == PCI_DEVICE_ID_OCTEONTX_DPI_VF_83XX) ?
-			&socs[SOC_OCTEONTX] : &socs[SOC_OCTEONTX2];
+		switch (pdev->device) {
+		case PCI_DEVICE_ID_OCTEONTX_DPI_VF_83XX:
+			soc = &socs[SOC_OCTEONTX];
+			break;
+		case PCI_DEVICE_ID_OCTEONTX_DPI_VF_93XX:
+			soc = &socs[SOC_OCTEONTX2];
+			/* DPI in CN10K shares the same devid as in OTX2.
+			 * So use subsystem devid for differentiating.
+			 */
+			if (pdev->subsystem_device >= PCI_SUBSYS_DEVID_CN10K_A)
+				soc = &socs[SOC_CN10K];
+			break;
+		}
+
 		err = soc->init();
 		if (err != 0)
 			goto soc_init_fail;

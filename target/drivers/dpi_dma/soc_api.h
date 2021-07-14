@@ -14,6 +14,7 @@
 
 #include "soc_otx.h"
 #include "soc_otx2.h"
+#include "soc_cn10k.h"
 #include "soc_otxx.h"
 
 /* Supported soc's. Add entry for new soc
@@ -21,6 +22,7 @@
 enum soc_e {
 	SOC_OCTEONTX,	/* 83xx */
 	SOC_OCTEONTX2,  /* 98xx, 96xx, 95xx */
+	SOC_CN10K,	/* cn10k family */
 	SOC_MAX
 };
 
