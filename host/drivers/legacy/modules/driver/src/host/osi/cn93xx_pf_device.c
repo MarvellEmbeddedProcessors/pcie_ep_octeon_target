@@ -1255,6 +1255,17 @@ octeon_wait_fw_info(struct work_struct *work)
 			printk("pf_srn %d rpf %d rvf %d nvf %d\n", rinfo.s.pf_srn,
 			       rinfo.s.rppf, rinfo.s.rpvf, rinfo.s.numvf);
 
+			/*
+			 * For now, rings per PF and rings per VF must match
+			 * the firmware DTB, as this is the only way that host
+			 * and target agree on the layout of the rings.
+			 * The firmware config determines the layout of the rings,
+			 * so the host needs to be updated to account for that
+			 * layout when not using all the rings configured by
+			 * the firmware.
+			 * IPBUSW-12515 is the Jira issue tracking this fix.
+			 */
+#if 1
 			pf_srn_pt[oct->octeon_id] = rinfo.s.pf_srn;
 			g_vf_srn[oct->octeon_id] = rinfo.s.pf_srn + rinfo.s.rppf;
 			num_rings_per_pf_pt[oct->octeon_id] = num_rings_per_pf;
@@ -1270,8 +1281,22 @@ octeon_wait_fw_info(struct work_struct *work)
 				num_rings_per_pf_pt[oct->octeon_id] = rinfo.s.rppf;
 			if (num_rings_per_vf_pt[oct->octeon_id] > rinfo.s.rpvf)
 				num_rings_per_vf_pt[oct->octeon_id] = rinfo.s.rpvf;
+#else
 			if (oct->sriov_info.num_vfs > rinfo.s.numvf)
 				oct->sriov_info.num_vfs = rinfo.s.numvf;
+			/* Take and use whatever the firmware provides for Ring counts */
+			pf_srn_pt[oct->octeon_id] = rinfo.s.pf_srn;
+			g_vf_srn[oct->octeon_id] = rinfo.s.pf_srn + rinfo.s.rppf;
+			num_rings_per_pf_pt[oct->octeon_id] = rinfo.s.rppf;
+			num_rings_per_vf_pt[oct->octeon_id] = rinfo.s.rpvf;
+			if (num_rings_per_pf != rinfo.s.rppf
+			    || num_rings_per_vf != rinfo.s.rpvf) {
+				printk("NOTICE: rings per PF/VF adjusted to match NIC requirements\n");
+			}
+			printk("NOTICE: rings per PF: %d, VF: %d\n", rinfo.s.rppf, rinfo.s.rpvf);
+			num_rings_per_pf = rinfo.s.rppf;
+			num_rings_per_vf = rinfo.s.rpvf;
+#endif
 
 			rinfo.s.rppf = num_rings_per_pf;
 			rinfo.s.rpvf = num_rings_per_vf;
