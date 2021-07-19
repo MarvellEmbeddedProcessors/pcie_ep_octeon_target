@@ -1265,7 +1265,7 @@ octeon_wait_fw_info(struct work_struct *work)
 			 * the firmware.
 			 * IPBUSW-12515 is the Jira issue tracking this fix.
 			 */
-#if 1
+#if 0
 			pf_srn_pt[oct->octeon_id] = rinfo.s.pf_srn;
 			g_vf_srn[oct->octeon_id] = rinfo.s.pf_srn + rinfo.s.rppf;
 			num_rings_per_pf_pt[oct->octeon_id] = num_rings_per_pf;
