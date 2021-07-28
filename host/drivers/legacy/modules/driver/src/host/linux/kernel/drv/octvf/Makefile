@@ -27,6 +27,9 @@ include $(CNNIC_ROOT)/modules/driver/src/driver.mk
 endif
 
 
+ifndef SUBDIRS
+SUBDIRS=$(CNNIC_ROOT)/modules/driver/src/host/linux/kernel/drv/octvf
+endif
 
 #
 # Setup compilation flags here
@@ -123,7 +126,7 @@ $(OBJNAME)-y  :=  $(OBJS)
 
 
 all: check_cnnic check
-	$(MAKE) -C $(kernel_source) SUBDIRS=`pwd`  modules; 
+	$(MAKE) -C $(kernel_source) M=$(shell pwd)  modules;
 	@rm -f $(BINDIR) 2> /dev/null; mkdir -p $(BINDIR);
 	@rm -f $(BINDIR)/$(OBJNAME).ko; 
 	@ln -s $(PWD)/$(OBJNAME).ko $(BINDIR) ; 
