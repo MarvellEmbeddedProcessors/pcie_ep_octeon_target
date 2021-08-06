@@ -274,7 +274,7 @@ generate_pkt(int *next_flow)
 	pkt->data_len = gen_pkt_size;
 	pkt->next = NULL;
 
-	ol_flags = PKT_TX_IP_CKSUM;
+	ol_flags = PKT_TX_IP_CKSUM | PKT_TX_IPV4;
 	ol_flags |= PKT_TX_UDP_CKSUM;
 
 	/* Initialize Ethernet header. */
