@@ -7,6 +7,7 @@
 #include "octeon_macros.h"
 #include "octeon_hw.h"
 #include "octeon_network.h"
+#include "octeon_device.h"
 
 //#define PERF_MODE
 
@@ -1102,7 +1103,7 @@ void octnet_push_packet(octeon_droq_t *droq,
 	}
 #endif
 
-	if (resp_hdr->csum_verified == CNNIC_CSUM_VERIFIED)
+	if (resp_hdr && resp_hdr->csum_verified == CNNIC_CSUM_VERIFIED)
 		skb->ip_summed = CHECKSUM_UNNECESSARY;	/* checksum has already verified on OCTEON */
 	else
 		skb->ip_summed = CHECKSUM_NONE;
@@ -1121,7 +1122,7 @@ octeon_droq_fast_process_packets(octeon_device_t * oct,
 				 octeon_droq_t * droq, uint32_t pkts_to_process)
 {
 	octeon_droq_info_t *info;
-	octeon_resp_hdr_t *resp_hdr;
+	octeon_resp_hdr_t *resp_hdr = NULL;
 	uint32_t pkt, total_len = 0, bufs_used = 0;
 #ifdef OCT_NIC_LOOPBACK
 	octnet_priv_t *priv = GET_NETDEV_PRIV(droq->pndev);
@@ -1164,8 +1165,12 @@ octeon_droq_fast_process_packets(octeon_device_t * oct,
 		octeon_swap_8B_data((uint64_t *) &(info->length), 1);
 
 		/* Len of resp hdr is included in the received data len. */
-		info->length -= OCT_RESP_HDR_SIZE;
-		resp_hdr = &info->resp_hdr;
+		if (oct->pkind != OTX2_LOOP_PCIE_EP_PKIND) {
+			/* No response header in LOOP mode */
+			info->length -= OCT_RESP_HDR_SIZE;
+			resp_hdr = &info->resp_hdr;
+		}
+
 		total_len    += info->length;
 
 		if(info->length <= (droq->max_single_buffer_size)) {

@@ -31,6 +31,10 @@ uint32_t num_vfs = 0;
 module_param(num_vfs, int, 0);
 MODULE_PARM_DESC(num_vfs, "Number of Virtual Functions");
 
+char sdp_packet_mode[5];
+module_param_string(sdp_packet_mode, sdp_packet_mode, sizeof(sdp_packet_mode), 0);
+MODULE_PARM_DESC(sdp_packet_mode, "Mode of SDP operation: <loop|nic>");
+
 int octeon_device_init(octeon_device_t *, int);
 void octeon_remove(struct pci_dev *pdev);
 

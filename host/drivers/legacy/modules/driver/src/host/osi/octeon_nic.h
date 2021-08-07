@@ -143,6 +143,9 @@ octnet_prepare_pci_cmd(octeon_device_t * oct,
 		    (oct->chip_id == OCTEON_CN83XX_VF))
 			ihx.fsz += 4;	/* extra: 4B for PKI_IH3 */
 		ihx.fsz += 8;	/* extra: 8B for Extra Hdr(TSO) */
+
+		if(oct->pkind == OTX2_LOOP_PCIE_EP_PKIND)
+			ihx.fsz = 0;  /* For LOOP mode, no header is used */
 #endif
 		if (!setup->s.gather) {
 			ihx.tlen = setup->s.u.datasize + ihx.fsz;

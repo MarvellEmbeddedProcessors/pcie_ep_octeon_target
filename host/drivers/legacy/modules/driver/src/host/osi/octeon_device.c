@@ -12,6 +12,7 @@ extern int octeon_msix;
 extern int cn83xx_pf_setup_global_oq_reg(octeon_device_t *, int);
 extern int cn83xx_pf_setup_global_iq_reg(octeon_device_t *, int);
 extern int g_app_mode[];
+extern char sdp_packet_mode[];
 
 /* On 83xx this is called DPIx_SLI_PRTx_CFG but address is same */
 #define DPI0_EBUS_PORTX_CFG(a) (0x86E000004100ULL | (a)<<3)
@@ -1764,20 +1765,6 @@ octeon_wait_for_npu_base(void *octptr, unsigned long arg UNUSED)
 	return OCT_POLL_FN_FINISHED;
 }
 
-#define SDP_HOST_LOADED                 0xDEADBEEFULL
-#define SDP_GET_HOST_INFO               0xBEEFDEEDULL 
-#define SDP_HOST_INFO_RECEIVED          0xDEADDEULL
-#define SDP_HANDSHAKE_COMPLETED         0xDEEDDEEDULL
-/* 90 byte offset pkind */
-#define OTX2_CUSTOM_PKIND		59
-/* 24 byte offset pkind */
-#define OTX2_GENERIC_PCIE_EP_PKIND	57
-#ifdef CONFIG_PPORT
-#define OTX2_PKIND		OTX2_CUSTOM_PKIND
-#else
-#define OTX2_PKIND		OTX2_GENERIC_PCIE_EP_PKIND
-#endif
-
 oct_poll_fn_status_t 
 octeon_get_app_mode(void *octptr, unsigned long arg UNUSED)
 {
@@ -1799,7 +1786,16 @@ octeon_get_app_mode(void *octptr, unsigned long arg UNUSED)
 	octeon_dev->app_mode = CVM_DRV_NIC_APP;
 	core_clk = 1200;
 	coproc_clk = (reg_val >> 16) & 0xffff;
-	octeon_dev->pkind = OTX2_PKIND;
+	if (!strlen(sdp_packet_mode) || !strcmp(sdp_packet_mode, "nic"))
+		octeon_dev->pkind = OTX2_PKIND;
+	else if (!strcmp(sdp_packet_mode, "loop"))
+		octeon_dev->pkind = OTX2_LOOP_PCIE_EP_PKIND;
+	else {
+		cavium_print_msg("Unrecognized sdp_packet_mode: %s, using default.\n",
+				 sdp_packet_mode);
+		octeon_dev->pkind = OTX2_PKIND;
+	}
+
     } else {
 	reg_val = octeon_read_csr64(octeon_dev, CN83XX_SLI_EPF_SCRATCH(0));
 	if (reg_val == SDP_HOST_LOADED)

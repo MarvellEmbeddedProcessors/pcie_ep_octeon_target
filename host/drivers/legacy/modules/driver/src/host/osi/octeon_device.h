@@ -123,6 +123,22 @@ enum {
 #define  OCT_DRV_ONLINE 1
 #define  OCT_DRV_OFFLINE 2
 
+#define SDP_HOST_LOADED                 0xDEADBEEFULL
+#define SDP_GET_HOST_INFO               0xBEEFDEEDULL
+#define SDP_HOST_INFO_RECEIVED          0xDEADDEULL
+#define SDP_HANDSHAKE_COMPLETED         0xDEEDDEEDULL
+/* 90 byte offset pkind */
+#define OTX2_CUSTOM_PKIND		59
+/* 24 byte offset pkind */
+#define OTX2_GENERIC_PCIE_EP_PKIND	57
+/* 0 byte offset pkind */
+#define OTX2_LOOP_PCIE_EP_PKIND		63
+#ifdef CONFIG_PPORT
+#define OTX2_PKIND		OTX2_CUSTOM_PKIND
+#else
+#define OTX2_PKIND		OTX2_GENERIC_PCIE_EP_PKIND
+#endif
+
 /*---------------------------DISPATCH LIST-------------------------------*/
 
 /** The dispatch list entry.
