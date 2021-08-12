@@ -266,7 +266,12 @@ int __octnet_xmit(struct sk_buff *skb, octnet_os_devptr_t * pndev);
 
 struct net_device_stats *octnet_stats(octnet_os_devptr_t * pndev);
 
-void octnet_tx_timeout(octnet_os_devptr_t * pndev);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0)
+void octnet_tx_timeout(struct net_device *pndev, unsigned int txqueue);
+#else
+void octnet_tx_timeout(struct net_device *pndev);
+#endif
+
 
 int octnet_setup_instr(int octeon_id, octnet_priv_t * priv, int port);
 

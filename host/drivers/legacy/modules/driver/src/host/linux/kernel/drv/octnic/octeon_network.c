@@ -891,13 +891,19 @@ struct net_device_stats *octnet_stats(struct net_device *pndev)
 	return stats;
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0)
+void octnet_tx_timeout(struct net_device *pndev, unsigned int txqueue)
+#else
 void octnet_tx_timeout(struct net_device *pndev)
+#endif
 {
 	octnet_priv_t *priv;
 	priv = GET_NETDEV_PRIV(pndev);
 
 	cavium_error("OCTNIC: tx timeout for %s\n", octnet_get_devname(pndev));
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,7,0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0)
+		 txq_trans_update(netdev_get_tx_queue(pndev, txqueue));
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4,7,0)
 	/* TODO: shouldn't it be updated to queue, instead of device ? */
        netif_trans_update(pndev);
 #elif LINUX_VERSION_CODE < KERNEL_VERSION(3,10,0)

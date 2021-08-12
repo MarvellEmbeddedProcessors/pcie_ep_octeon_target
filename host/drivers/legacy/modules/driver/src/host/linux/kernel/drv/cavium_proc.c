@@ -964,41 +964,85 @@ write:	proc_write_aer_gen_err
 };
 #endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,6,0)
 struct file_operations proc_stats_fops = {
 open:	stats_open,
 read:	seq_read
+#else
+struct proc_ops proc_stats_fops = {
+proc_open:	stats_open,
+proc_read:	seq_read
+#endif
 };
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,6,0)
 struct file_operations proc_status_fops = {
 open:	status_open,
 read:	seq_read
+#else
+struct proc_ops proc_status_fops = {
+proc_open:	status_open,
+proc_read:	seq_read
+#endif
 };
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,6,0)
 struct file_operations proc_iq_perf_fops = {
 open:	iq_perf_open,
 read:	seq_read,
 write:	write_iq_mask
+#else
+struct proc_ops proc_iq_perf_fops = {
+proc_open:	iq_perf_open,
+proc_read:	seq_read,
+proc_write:	write_iq_mask
+#endif
 };
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,6,0)
 struct file_operations proc_csrregs_fops = {
 open:	csrreg_open,
 read:	seq_read,
+#else
+struct proc_ops proc_csrregs_fops = {
+proc_open:	csrreg_open,
+proc_read:	seq_read,
+#endif
 };
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,6,0)
 struct file_operations proc_configregs_fops = {
 open:	configreg_open,
 read:	seq_read
+#else
+struct proc_ops proc_configregs_fops = {
+proc_open:	configreg_open,
+proc_read:	seq_read
+#endif
 };
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,6,0)
 struct file_operations entry_fops = {
 open:	entry_open,
 read:	seq_read
+#else
+struct proc_ops entry_fops = {
+proc_open:	entry_open,
+proc_read:	seq_read
+#endif
 };
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,6,0)
 struct file_operations read_csr_fops = {
 open:	read_csr_open,
 read:	seq_read,
 write:	write_csr
+#else
+struct proc_ops read_csr_fops = {
+proc_open:	read_csr_open,
+proc_read:	seq_read,
+proc_write:	write_csr
+#endif
 };
 
 int octeon_add_proc_entry(int oct_id, octeon_proc_entry_t * entry)
@@ -1011,7 +1055,11 @@ int octeon_add_proc_entry(int oct_id, octeon_proc_entry_t * entry)
 	}
 
 	if (entry->type & OCTEON_PROC_WRITE)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5,6,0)
 		entry_fops.write = entry->proc_write;
+#else
+		entry_fops.proc_write = entry->proc_write;
+#endif
 
 	if (octeon_dev == NULL) {
 		cavium_error("OCTEON: %s: Invalid Octeon id %d \n",
