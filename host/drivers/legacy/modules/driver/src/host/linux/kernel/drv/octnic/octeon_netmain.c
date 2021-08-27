@@ -579,8 +579,8 @@ octnet_setup_nic_device(int octeon_id, oct_link_info_t * link_info, int ifidx)
 	octnet_priv_t *priv;
 	octnet_os_devptr_t *pndev;
 	uint8_t macaddr[6], i, j;
-//	octeon_device_t *oct =
-//	    (octeon_device_t *) get_octeon_device_ptr(octeon_id);
+	octeon_device_t *oct =
+	    (octeon_device_t *) get_octeon_device_ptr(octeon_id);
 
 	pndev = octnet_alloc_netdev(OCTNET_PRIV_SIZE, link_info->num_txpciq);
 
@@ -707,7 +707,16 @@ octnet_setup_nic_device(int octeon_id, oct_link_info_t * link_info, int ifidx)
 	OCTNET_IFSTATE_SET(priv, OCT_NIC_IFSTATE_DROQ_OPS);
 
 	pndev->features |= pndev->hw_features;
-	pndev->features |= NETIF_F_HW_CSUM;
+
+	/*
+	 * Only advertise offload features if we can support them by
+	 * communicating with the Otx2 using packet headers.
+	 * Loop mode does not have these headers, and so cannot
+	 * support the offload features.
+	 */
+	if (oct->pkind == OTX2_GENERIC_PCIE_EP_PKIND)
+		pndev->features |= NETIF_F_HW_CSUM;
+
 
 	/* Register the network device with the OS */
 	if (register_netdev(pndev)) {
