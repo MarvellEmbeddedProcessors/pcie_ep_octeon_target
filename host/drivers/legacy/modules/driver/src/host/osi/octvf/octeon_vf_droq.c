@@ -1109,6 +1109,7 @@ octeon_droq_fast_process_packets(octeon_device_t * oct,
 #ifdef OCT_NIC_LOOPBACK
 	octnet_priv_t *priv = GET_NETDEV_PRIV(droq->pndev);
 #endif
+	int data_offset;
 
 	for(pkt = 0; pkt < pkts_to_process; pkt++)   {
 		uint32_t         pkt_len = 0;
@@ -1151,7 +1152,9 @@ octeon_droq_fast_process_packets(octeon_device_t * oct,
 			/* No response header in LOOP mode */
 			info->length -= OCT_RESP_HDR_SIZE;
 			resp_hdr = &info->resp_hdr;
-		}
+			data_offset = sizeof(octeon_droq_info_t);
+		} else
+			data_offset = sizeof(octeon_droq_info_t) - OCT_RESP_HDR_SIZE;
 		total_len    += info->length;
 
 		if(info->length <= (droq->max_single_buffer_size)) {
@@ -1160,9 +1163,9 @@ octeon_droq_fast_process_packets(octeon_device_t * oct,
 				droq->buffer_size, CAVIUM_PCI_DMA_FROMDEVICE);
 			pkt_len = info->length;
 			nicbuf = droq->recv_buf_list[droq->host_read_index].buffer;
-			nicbuf->data += sizeof(octeon_droq_info_t);
+			nicbuf->data += data_offset;
 //			prefetch(nicbuf->data);
-			nicbuf->tail += sizeof(octeon_droq_info_t);
+			nicbuf->tail += data_offset;
 			droq->recv_buf_list[droq->host_read_index].buffer = 0;
 			droq->host_read_index = (droq->host_read_index + 1) & droq->ring_size_mask;
 			(void)recv_buf_put(nicbuf, pkt_len);
@@ -1192,8 +1195,8 @@ octeon_droq_fast_process_packets(octeon_device_t * oct,
 						copy_len = info_len - pkt_len;
 					copy_offset = 0;
 				} else {
-					copy_len = droq->buffer_size - sizeof(octeon_droq_info_t);
-					copy_offset = sizeof(octeon_droq_info_t);
+					copy_len = droq->buffer_size - data_offset;
+					copy_offset = data_offset;
 				}
 				cnnic_pci_dma_sync_single_for_cpu(oct->pci_dev, (unsigned long)droq->desc_ring[droq->host_read_index].buffer_ptr, droq->buffer_size, CAVIUM_PCI_DMA_FROMDEVICE);
 
