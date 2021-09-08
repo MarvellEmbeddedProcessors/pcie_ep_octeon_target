@@ -340,6 +340,7 @@ static char octtx_intr_names[][INTRNAMSIZ] = {
 	"octeontx"
 };
 
+/* VSR: TODO: Keep only IOQ interrupt; no non-IOQ interrupts for 96xx/98xx */
 static char octtx2_intr_names[][INTRNAMSIZ] = {
 	"octeontx2_epf_ire_rint",
 	"octeontx2_epf_ore_rint",
@@ -361,6 +362,11 @@ static char octtx2_intr_names[][INTRNAMSIZ] = {
 	"octeontx2"
 };
 
+static char octtx2_cnxk_intr_names[][INTRNAMSIZ] = {
+	/* IOQ interrupt */
+	"octeontx2"
+};
+
 int octeon_tx_enable_msix_interrupts(octeon_device_t * oct)
 {
 	int irqret, num_ioq_vectors, i = 0, srn = 0, ret = 0;
@@ -377,6 +383,9 @@ int octeon_tx_enable_msix_interrupts(octeon_device_t * oct)
 		   oct->chip_id == OCTEON_CN98XX_VF) {
 		non_ioq_intrs = 0;
 		oct_irq_names = octtx2_intr_names[0];
+	} else if (oct->chip_id == OCTEON_CNXK_VF) {
+		non_ioq_intrs = 0;
+		oct_irq_names = octtx2_cnxk_intr_names[0];
 	}
 
 	oct->num_irqs = num_ioq_vectors + non_ioq_intrs;
@@ -696,7 +705,7 @@ static int octeon_chip_specific_setup(octeon_device_t * oct)
 
 		oct->chip_id = OCTEON_CN93XX_VF;
 		return setup_cn93xx_octeon_vf_device(oct);
-
+#if 1
 	case OCTEON_CN98XX_PCIID_VF:
 		cavium_print_msg("OCTEON_VF[%d]: CN98XX PASS%d.%d\n",
 				 oct->octeon_id, OCTEON_MAJOR_REV(oct),
@@ -704,7 +713,14 @@ static int octeon_chip_specific_setup(octeon_device_t * oct)
 
 		oct->chip_id = OCTEON_CN98XX_VF;
 		return setup_cn98xx_octeon_vf_device(oct);
+#endif
+	case OCTEON_CNXK_PCIID_VF:
+		cavium_print_msg("OCTEON_VF[%d]: CNXK PASS%d.%d\n",
+				 oct->octeon_id, OCTEON_MAJOR_REV(oct),
+				 OCTEON_MINOR_REV(oct));
 
+		oct->chip_id = OCTEON_CNXK_VF;
+		return setup_cnxk_octeon_vf_device(oct);
 	default:
 		cavium_error("OCTEON_VF: Unknown device found (dev_id: %x)\n",
 			     dev_id);
@@ -766,12 +782,6 @@ int octeon_setup_droq(int oct_id, int q_no, void *app_ctx)
 
 extern oct_poll_fn_status_t
 oct_poll_module_starter(void *octptr, unsigned long arg);
-
-extern oct_poll_fn_status_t
-octeon_hostfw_handshake(void *octptr, unsigned long arg);
-
-extern oct_poll_fn_status_t
-octeon_get_app_mode(void *octptr, unsigned long arg);
 
 extern oct_poll_fn_status_t
 octeon_wait_for_npu_base(void *octptr, unsigned long arg);

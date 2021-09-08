@@ -268,7 +268,8 @@ int octeon_delete_droq(octeon_device_t * oct, uint32_t q_no)
 
 #ifdef OCT_TX2_ISM_INT
 	if (oct->chip_id == OCTEON_CN93XX_PF ||
-	    oct->chip_id == OCTEON_CN98XX_PF) {
+	    oct->chip_id == OCTEON_CN98XX_PF ||
+	    oct->chip_id == OCTEON_CNXK_PF) {
 		if (droq->ism.pkt_cnt_addr)
 			octeon_pci_free_consistent(oct->pci_dev, 8,
 						   droq->ism.pkt_cnt_addr, droq->ism.pkt_cnt_dma,
@@ -330,6 +331,12 @@ int octeon_init_droq(octeon_device_t * oct, uint32_t q_no, void *app_ctx)
 		c_buf_size = CFG_GET_OQ_BUF_SIZE(conf93);
 		c_pkts_per_intr = CFG_GET_OQ_PKTS_PER_INTR(conf93);
 		c_refill_threshold = CFG_GET_OQ_REFILL_THRESHOLD(conf93);
+	} else if (oct->chip_id == OCTEON_CNXK_PF) {
+		cnxk_pf_config_t *conf_cnxk = CHIP_FIELD(oct, cnxk_pf, conf);
+		c_num_descs = CFG_GET_OQ_NUM_DESC(conf_cnxk);
+		c_buf_size = CFG_GET_OQ_BUF_SIZE(conf_cnxk);
+		c_pkts_per_intr = CFG_GET_OQ_PKTS_PER_INTR(conf_cnxk);
+		c_refill_threshold = CFG_GET_OQ_REFILL_THRESHOLD(conf_cnxk);
 	}
 
 	droq->max_count = c_num_descs;
@@ -361,7 +368,8 @@ int octeon_init_droq(octeon_device_t * oct, uint32_t q_no, void *app_ctx)
 
 #ifdef OCT_TX2_ISM_INT	
 	if (oct->chip_id == OCTEON_CN93XX_PF ||
-	    oct->chip_id == OCTEON_CN98XX_PF) {
+	    oct->chip_id == OCTEON_CN98XX_PF ||
+	    oct->chip_id == OCTEON_CNXK_PF) {
 		droq->ism.pkt_cnt_addr =
 		    octeon_pci_alloc_consistent(oct->pci_dev, 8,
 						&droq->ism.pkt_cnt_dma, droq->app_ctx);
@@ -1042,7 +1050,7 @@ static inline void octeon_droq_drop_packets(octeon_droq_t * droq, uint32_t cnt)
 #endif
 		/* Swap length field on 83xx*/
 		if (oct->chip_id == OCTEON_CN83XX_PF || oct->chip_id == OCTEON_CN93XX_PF ||
-		    oct->chip_id == OCTEON_CN98XX_PF)
+		    oct->chip_id == OCTEON_CN98XX_PF || oct->chip_id == OCTEON_CNXK_PF)
 			octeon_swap_8B_data((uint64_t *) &(info->length), 1);
 
 		if (info->length) {
@@ -1297,7 +1305,7 @@ octeon_droq_fast_process_packets_reuse_bufs(octeon_device_t * oct,
 
 		/* Swap length field on 83xx*/
 		if (oct->chip_id == OCTEON_CN83XX_PF || oct->chip_id == OCTEON_CN93XX_PF ||
-		    oct->chip_id == OCTEON_CN98XX_PF)
+		    oct->chip_id == OCTEON_CN98XX_PF || oct->chip_id == OCTEON_CNXK_PF)
 			octeon_swap_8B_data((uint64_t *) &(info->length), 1);
 
 		if(cavium_unlikely(!info->length))  {

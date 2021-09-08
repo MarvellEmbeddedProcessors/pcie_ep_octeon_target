@@ -2,6 +2,7 @@
  * SPDX-License-Identifier: GPL-2.0
  */
 
+#include <linux/aer.h>
 #include "octeon_main.h"
 #include "cavium_proc.h"
 #include "octeon_mem_ops.h"
@@ -320,11 +321,14 @@ void octeon_disable_msix_interrupts(octeon_device_t * oct_dev)
 	else if(oct_dev->chip_id == OCTEON_CN93XX_PF ||
 		oct_dev->chip_id == OCTEON_CN98XX_PF)
 		non_ioq_intrs = OCTEONTX2_NUM_NON_IOQ_INTR;
+	else if(oct_dev->chip_id == OCTEON_CNXK_PF)
+		non_ioq_intrs = CNXK_NUM_NON_IOQ_INTR;
 
 	if (oct_dev->num_irqs) {
 	    if (oct_dev->chip_id == OCTEON_CN83XX_PF ||
 		oct_dev->chip_id == OCTEON_CN93XX_PF ||
-		oct_dev->chip_id == OCTEON_CN98XX_PF) {
+		oct_dev->chip_id == OCTEON_CN98XX_PF ||
+		oct_dev->chip_id == OCTEON_CNXK_PF) {
 
             for (i = 0; i < non_ioq_intrs; i++) {
 	    		/* Free non ioq MSI-X vector */
@@ -377,6 +381,7 @@ static char octtx_intr_names[][INTRNAMSIZ] = {
 	"octeontx"
 };
 
+/* VSR: these interrupts changed for 96xx to 98xx to 10k */
 static char octtx2_intr_names[][INTRNAMSIZ] = {
 	"octeontx2_epf_ire_rint",
 	"octeontx2_epf_ore_rint",
@@ -397,6 +402,43 @@ static char octtx2_intr_names[][INTRNAMSIZ] = {
 	/* IOQ interrupt */
 	"octeontx2"
 };
+static char octtx2_cnxk_intr_names[][INTRNAMSIZ] = {
+	"octeontx2_epf_ire_rint",
+	"octeontx2_epf_ore_rint",
+	"octeontx2_epf_vfire_rint",
+	"octeontx2_epf_rsvd0",
+	"octeontx2_epf_vfore_rint",
+	"octeontx2_epf_rsvd1",
+	"octeontx2_epf_mbox_rint",
+	"octeontx2_epf_rsvd2_0",
+	"octeontx2_epf_rsvd2_1",
+	"octeontx2_epf_dma_rint",
+	"octeontx2_epf_dma_vf_rint",
+	"octeontx2_epf_rsvd3",
+	"octeontx2_epf_pp_vf_rint",
+	"octeontx2_epf_rsvd3",
+	"octeontx2_epf_misc_rint",
+	"octeontx2_epf_rsvd5",
+	/* Next 16 are for OEI_RINT */
+	"octeontx2_epf_oei_rint0",
+	"octeontx2_epf_oei_rint1",
+	"octeontx2_epf_oei_rint2",
+	"octeontx2_epf_oei_rint3",
+	"octeontx2_epf_oei_rint4",
+	"octeontx2_epf_oei_rint5",
+	"octeontx2_epf_oei_rint6",
+	"octeontx2_epf_oei_rint7",
+	"octeontx2_epf_oei_rint8",
+	"octeontx2_epf_oei_rint9",
+	"octeontx2_epf_oei_rint10",
+	"octeontx2_epf_oei_rint11",
+	"octeontx2_epf_oei_rint12",
+	"octeontx2_epf_oei_rint13",
+	"octeontx2_epf_oei_rint14",
+	"octeontx2_epf_oei_rint15",
+	/* IOQ interrupt */
+	"octeontx2"
+};
 
 int octeon_tx_enable_msix_interrupts(octeon_device_t * oct)
 {
@@ -414,6 +456,9 @@ int octeon_tx_enable_msix_interrupts(octeon_device_t * oct)
 		   oct->chip_id == OCTEON_CN98XX_PF) {
 		non_ioq_intrs = OCTEONTX2_NUM_NON_IOQ_INTR;
 		oct_irq_names = octtx2_intr_names[0];
+	} if (oct->chip_id == OCTEON_CNXK_PF) {
+		non_ioq_intrs = CNXK_NUM_NON_IOQ_INTR;
+		oct_irq_names = octtx2_cnxk_intr_names[0];
 	}
 
 	oct->num_irqs = num_ioq_vectors + non_ioq_intrs;
@@ -684,7 +729,8 @@ void octeon_destroy_resources(octeon_device_t * oct_dev)
 		octeon_unmap_pci_barx(oct_dev, 0);
 		octeon_unmap_pci_barx(oct_dev, 1);
 		if (oct_dev->chip_id == OCTEON_CN93XX_PF ||
-		    oct_dev->chip_id == OCTEON_CN98XX_PF) {
+		    oct_dev->chip_id == OCTEON_CN98XX_PF ||
+		    oct_dev->chip_id == OCTEON_CNXK_PF) {
 			flush_workqueue(oct_dev->sdp_wq.wq);
 			destroy_workqueue(oct_dev->sdp_wq.wq);
 			octeon_unmap_pci_barx(oct_dev, 2);
@@ -836,6 +882,18 @@ enum setup_stage octeon_chip_specific_setup(octeon_device_t * oct)
 			oct->sriov_info.num_vfs = num_vfs;
 			oct->chip_id = OCTEON_CN98XX_PF;
 			return setup_cn98xx_octeon_pf_device(oct); //use 93xx PF setup for now
+
+		case OCTEON_CNXK_PCIID_PF:
+			cavium_print_msg("OCTEON[%d]: CNXK PASS%d.%d on %02x:%02x:%x\n",
+					 oct->octeon_id, OCTEON_MAJOR_REV(oct),
+					 OCTEON_MINOR_REV(oct), oct->pci_dev->bus->number,
+					 PCI_SLOT(oct->pci_dev->devfn),
+					 PCI_FUNC(oct->pci_dev->devfn));
+
+			oct->pf_num = oct->octeon_id;
+			oct->sriov_info.num_vfs = num_vfs;
+			oct->chip_id = OCTEON_CNXK_PF;
+			return setup_cnxk_octeon_pf_device(oct);
 	default:
 		cavium_error("OCTEON: Unknown device found (dev_id: %x)\n",
 			     dev_id);
@@ -867,6 +925,7 @@ static int octeon_pci_os_setup(octeon_device_t * octeon_dev)
 	}
 #endif
 
+	pci_enable_pcie_error_reporting(octeon_dev->pci_dev);
 	/* Enable PCI DMA Master. */
 	pci_set_master(octeon_dev->pci_dev);
 
@@ -1035,10 +1094,13 @@ resume_device_init:
 
 	if(octeon_dev->chip_id == OCTEON_CN83XX_PF ||
 	   octeon_dev->chip_id == OCTEON_CN93XX_PF ||
-	   octeon_dev->chip_id == OCTEON_CN98XX_PF) {
+	   octeon_dev->chip_id == OCTEON_CN98XX_PF ||
+	   octeon_dev->chip_id == OCTEON_CNXK_PF) {
 #define SDP_HOST_LOADED                 0xDEADBEEFULL
-		octeon_write_csr64(octeon_dev, CN83XX_SLI_EPF_SCRATCH(0),
-						   SDP_HOST_LOADED);
+		if (octeon_dev->chip_id == OCTEON_CN83XX_PF)
+			octeon_write_csr64(octeon_dev,
+					   CN83XX_SLI_EPF_SCRATCH(0),
+					   SDP_HOST_LOADED);
     	/* Register a Host - Firmware (OCTEON) handshake poll function */
 	    poll_ops.fn = octeon_get_app_mode;
     	poll_ops.fn_arg = 0UL;

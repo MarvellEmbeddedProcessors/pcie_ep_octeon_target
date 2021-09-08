@@ -11,8 +11,7 @@
 
 #define FW_TO_HOST 0x2
 #define HOST_TO_FW 0x1
-int g_app_mode[2] = {CVM_DRV_APP_START, CVM_DRV_APP_START};
-u8 g_vf_srn;
+//int g_app_mode[2] = {CVM_DRV_APP_START, CVM_DRV_APP_START};
 enum info_exhg_state {
 	/* State where F/W isn't posted anything */
 	NO_EXHG,
@@ -26,7 +25,6 @@ struct fw_handshake_wrk {
 	octeon_device_t *oct;
 	enum info_exhg_state exhg_state;
 };
-struct fw_handshake_wrk hs_wrk[2];
 
 extern int num_rings_per_pf;
 extern int num_rings_per_vf;

@@ -40,6 +40,7 @@
 #define   OCTEON_NUM_NON_IOQ_INTR	16
 /* Using 0 for timebeing */
 #define   OCTEONTX2_NUM_NON_IOQ_INTR	16
+#define   OCTEONTX2_10K_NUM_NON_IOQ_INTR	32
 
 /*-------------- Macros for OCTEON TX Models ----------------*/
 #define   CN83XX_MAX_INPUT_QUEUES	64
@@ -95,7 +96,7 @@
 #define   OCTEON_MAX_83XX_VF_BASE_IOQ   1
 
 
-/*-------------- Macros for OCTEON TX2 Models ----------------*/
+/*----------- Macros for OCTEON TX2 Models 93/96/98/95xx ------------*/
 /* A single 93xx PF can up to 128 VFs mapped up into 128 rings */
 #define   CN93XX_MAX_INPUT_QUEUES	128
 #define   CN93XX_NUM_NON_IOQ_INTR	16
@@ -144,6 +145,51 @@
 #define   CN93XX_VF_CFG_IO_QUEUES	8
 #define   OCTEON_MAX_93XX_VF_BASE_IOQ	1
 
+/*-------------- Macros for OCTEON TX2 CNXK Models ----------------*/
+/* A single CNXK PF can up to 64 VFs mapped up into 63 rings */
+#define   CNXK_MAX_INPUT_QUEUES	63
+#define   CNXK_NUM_NON_IOQ_INTR	32
+
+#define   CNXK_MAX_IQ_DESCRIPTORS	2048
+
+#define   CNXK_DB_MIN 		1
+#define   CNXK_DB_TIMEOUT		1
+#define   CNXK_INTR_THRESHOLD 	0x0
+
+/* CNXK OQ configuration macros */
+#define   CNXK_MAX_OUTPUT_QUEUES	63
+
+#define   CNXK_MAX_OQ_DESCRIPTORS	4096
+#define   CNXK_OQ_BUF_SIZE		(1536 + MV_PPORT_OVERHEAD)
+#define   CNXK_OQ_PKTSPER_INTR	128
+/* NIC mode performance tuning: increased from 128 to 1024 */
+#define   CNXK_OQ_REFIL_THRESHOLD	1024
+
+#define   CNXK_OQ_INTR_PKT		1
+#define   CNXK_OQ_INTR_TIME		10
+
+#define   CNXK_CFG_IO_QUEUES		63
+#define   CNXK_MAX_MACS		4 /* PEMs count */
+
+/* CNXK SR-IOV configuration macros */
+#define   CNXK_MIN_RINGS_PER_VF	1
+#define   CNXK_MAX_RINGS_PER_VF	8
+
+#define   CNXK_EPF_START_RING_NUM	0
+
+#define   CNXK_EPF_MAX_RINGS		63
+
+#define   CNXK_NUM_PFS		2
+#define   CNXK_EPF_NUM_VFS		0
+
+#define   CNXK_EPF_RINGS_PER_VF	CNXK_MIN_RINGS_PER_VF
+
+#define   OCTEON_MAX_CNXK_BASE_IOQ	OCTEON_MAX_BASE_IOQ
+
+#define   CNXK_VF_CFG_IO_QUEUES	8
+#define   OCTEON_MAX_CNXK_VF_BASE_IOQ	1
+
+/* ----------------- Host Firmware Handshake Details ----------------- */
 /* ----------------- Host Firmware Handshake Details ----------------- */
 
 /** host firmware handshake state information  */
@@ -225,6 +271,7 @@
 #define MAX_FPA3_AURAS			1024
 
 /* Max IOQs per OCTEON Link */
+/* VSR: shouldn't it be 63 (as per bit field limits in CSRs) ? */
 #define MAX_IOQS_PER_NICIF		64
 /* For 78XX EVB Max SGMII ports can be 16 (4 XAUI modules, each having 4 SGMII ports)*/
 #define MAX_OCTEON_NICIF		16
@@ -689,6 +736,12 @@ typedef struct {
 	octeon_misc_config_t misc;
 
 } octeon_config_t;
+
+/** Structure to define the configuration for CNXK PF domain Octeon processors. */
+typedef octeon_config_t cnxk_pf_config_t;
+
+/** Structure to define the configuration for CNXK VF domain Octeon processors. */
+typedef octeon_config_t cnxk_vf_config_t;
 
 /** Structure to define the configuration for CN93XX PF domain Octeon processors. */
 typedef octeon_config_t cn93xx_pf_config_t;

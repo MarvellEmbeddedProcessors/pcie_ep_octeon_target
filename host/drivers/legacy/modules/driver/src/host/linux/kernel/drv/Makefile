@@ -82,6 +82,7 @@ OBJS += octeon_linux.o            	\
 	../../../osi/octeon_device.o    \
 	../../../osi/cn83xx_pf_device.o    \
 	../../../osi/cn93xx_pf_device.o    \
+	../../../osi/cnxk_pf_device.o    \
 	../../../osi/octeon_errata.o    \
 	../../../osi/octeon_mem_ops.o   \
 	../../../osi/octeon_droq.o      \

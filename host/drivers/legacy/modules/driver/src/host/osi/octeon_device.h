@@ -35,6 +35,8 @@ typedef struct _OCTEON_DEVICE octeon_device_t;
 /* OCTEON TX2 models */
 #include "cn93xx_pf_device.h"
 #include "cn93xx_vf_device.h"
+#include "cnxk_pf_device.h"
+#include "cnxk_vf_device.h"
 
 #include "barmap.h"
 
@@ -53,6 +55,9 @@ typedef struct _OCTEON_DEVICE octeon_device_t;
 #define  OCTEON_CN98XX_PCIID_PF       0xB100177d   //98XX
 #define  OCTEON_CN98XX_PCIID_VF       0xB103177d   //TODO:98XX VF
 
+#define  OCTEON_CNXK_PCIID_PF      0xB900177d   //106XX PF
+#define  OCTEON_CNXK_PCIID_VF      0xB903177d   //106XX VF
+
 /** Driver identifies chips by these Ids, created by clubbing together
     DeviceId+RevisionId; Where Revision Id is not used to distinguish
     between chips, a value of 0 is used for revision id.
@@ -68,6 +73,9 @@ typedef struct _OCTEON_DEVICE octeon_device_t;
 
 #define  OCTEON_CN98XX_PF             0xB100   //98XX
 #define  OCTEON_CN98XX_VF             0xB103   //TODO:98XX VF
+
+#define  OCTEON_CNXK_PF            0xB900   //106XX
+#define  OCTEON_CNXK_VF            0xB903
 
 /** Endian-swap modes supported by Octeon. */
 enum octeon_pci_swap_mode {

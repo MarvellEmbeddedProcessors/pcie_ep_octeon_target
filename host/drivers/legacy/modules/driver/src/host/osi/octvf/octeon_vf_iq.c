@@ -67,6 +67,8 @@ int octeon_init_instr_queue(octeon_device_t * oct, int iq_no)
 	else if (oct->chip_id == OCTEON_CN93XX_VF ||
 		oct->chip_id == OCTEON_CN98XX_VF)
 		conf = &(CFG_GET_IQ_CFG(CHIP_FIELD(oct, cn93xx_vf, conf)));
+	else if (oct->chip_id == OCTEON_CNXK_VF)
+		conf = &(CFG_GET_IQ_CFG(CHIP_FIELD(oct, cnxk_vf, conf)));
 
 	if (!conf) {
 		cavium_error("OCTEON: Unsupported Chip %x\n", oct->chip_id);
@@ -102,6 +104,10 @@ int octeon_init_instr_queue(octeon_device_t * oct, int iq_no)
 
 		cavium_print(PRINT_REGS, "iq[%d]: ism addr: virt: 0x%p, dma: %lx",
 			     q_no, iq->ism.pkt_cnt_addr, iq->ism.pkt_cnt_dma);
+	} else if(oct->chip_id == OCTEON_CNXK_VF) {
+		cavium_error("OCTEON: IQ-%d ISM setup failed; CNXK not supported\n",
+			     iq_no);
+		return 1;
 	}
 #endif
 
@@ -191,6 +197,9 @@ int octeon_delete_instr_queue(octeon_device_t * oct, int iq_no)
 		 oct->chip_id == OCTEON_CN98XX_VF)
 		desc_size =
 		    CFG_GET_IQ_INSTR_TYPE(CHIP_FIELD(oct, cn93xx_vf, conf));
+	else if (oct->chip_id == OCTEON_CNXK_VF)
+		desc_size =
+		    CFG_GET_IQ_INSTR_TYPE(CHIP_FIELD(oct, cnxk_vf, conf));
 
 #ifdef OCT_TX2_ISM_INT
 	if (oct->chip_id == OCTEON_CN93XX_VF ||
@@ -199,6 +208,10 @@ int octeon_delete_instr_queue(octeon_device_t * oct, int iq_no)
 			octeon_pci_free_consistent(oct->pci_dev, 8,
 						   iq->ism.pkt_cnt_addr, iq->ism.pkt_cnt_dma,
 						   iq->app_ctx);
+	} else if(oct->chip_id == OCTEON_CNXK_VF) {
+		cavium_error("OCTEON: IQ-%d ISM free failed; CNXK not supported\n",
+			     iq_no);
+		return 1;
 	}
 #endif
 

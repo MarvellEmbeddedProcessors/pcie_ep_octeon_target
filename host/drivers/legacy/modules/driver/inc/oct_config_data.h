@@ -26,4 +26,8 @@
 #include "cn93xx_pf_config_data.h"
 #include "cn93xx_vf_config_data.h"
 
+/* OCTEON CNXK Models */
+#include "cnxk_pf_config_data.h"
+#include "cnxk_vf_config_data.h"
+
 #endif

@@ -264,6 +264,9 @@ int octeon_delete_droq(octeon_device_t * oct, uint32_t q_no)
 			octeon_pci_free_consistent(oct->pci_dev, 8,
 						   droq->ism.pkt_cnt_addr, droq->ism.pkt_cnt_dma,
 						   droq->app_ctx);
+	} else if (oct->chip_id == OCTEON_CNXK_VF) {
+		cavium_print_msg("ISM interrupt not supported for CNXK\n");
+		return -1;
 	}
 #endif
 
@@ -321,6 +324,12 @@ int octeon_init_droq(octeon_device_t * oct, uint32_t q_no, void *app_ctx)
 		c_buf_size = CFG_GET_OQ_BUF_SIZE(conf93);
 		c_pkts_per_intr = CFG_GET_OQ_PKTS_PER_INTR(conf93);
 		c_refill_threshold = CFG_GET_OQ_REFILL_THRESHOLD(conf93);
+	} else 	if (oct->chip_id == OCTEON_CNXK_VF) {
+		cnxk_vf_config_t *conf_cnxk = CHIP_FIELD(oct, cnxk_vf, conf);
+		c_num_descs = CFG_GET_OQ_NUM_DESC(conf_cnxk);
+		c_buf_size = CFG_GET_OQ_BUF_SIZE(conf_cnxk);
+		c_pkts_per_intr = CFG_GET_OQ_PKTS_PER_INTR(conf_cnxk);
+		c_refill_threshold = CFG_GET_OQ_REFILL_THRESHOLD(conf_cnxk);
 	}
 
 	droq->max_count = c_num_descs;
@@ -365,6 +374,10 @@ int octeon_init_droq(octeon_device_t * oct, uint32_t q_no, void *app_ctx)
 
 		cavium_print(PRINT_REGS, "droq[%d]: ism addr: virt: 0x%p, dma: %lx",
 			     q_no, droq->ism.pkt_cnt_addr, droq->ism.pkt_cnt_dma);
+	} else if(oct->chip_id == OCTEON_CNXK_VF) {
+		cavium_error("OCTEON[%d]: ISM setup failed; CNXK not supported\n",
+			     oct->octeon_id, q_no);
+		return 1;
 	}
 #endif
 
@@ -1026,6 +1039,7 @@ static inline void octeon_droq_drop_packets(octeon_droq_t * droq, uint32_t cnt)
 		if (oct->chip_id == OCTEON_CN83XX_VF || oct->chip_id == OCTEON_CN93XX_VF ||
 		    oct->chip_id == OCTEON_CN98XX_VF)
 			octeon_swap_8B_data((uint64_t *) &(info->length), 1);
+		/* VSR: TODO: this swap not required for CNXK ? */
 
 		if (info->length) {
 			info->length -= OCT_RESP_HDR_SIZE;
@@ -1272,6 +1286,7 @@ octeon_droq_fast_process_packets_reuse_bufs(octeon_device_t * oct,
 		if (oct->chip_id == OCTEON_CN83XX_VF || oct->chip_id == OCTEON_CN93XX_VF ||
 		    oct->chip_id == OCTEON_CN98XX_VF)
 			octeon_swap_8B_data((uint64_t *) &(info->length), 1);
+		/* VSR: TODO: this swap not required for CNXK ? */
 
 		if(cavium_unlikely(!info->length))  {
 			cavium_error("OCTEON:DROQ[%d] idx: %d len:0, pkt_cnt: %d \n",

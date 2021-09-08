@@ -28,6 +28,7 @@ host_drv:
 
 clean:
 	cd $(DRIVER_ROOT)/host/linux/kernel/drv; $(MAKE) clean; 
+	cd $(DRIVER_ROOT)/host/linux/kernel/drv/octvf; $(MAKE) clean;
 	cd $(DRIVER_ROOT)/host/linux/kernel/drv/octnic; $(MAKE) clean;
 	@cd $(CNNIC_ROOT); sh sym-link.sh undo
 
