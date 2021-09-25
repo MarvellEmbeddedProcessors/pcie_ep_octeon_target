@@ -74,6 +74,8 @@ static DEFINE_PCI_DEVICE_TABLE(octeon_pci_tbl) = {
 	{
 	OCTEON_VENDOR_ID, OCTEON_CN93XX_VF, PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0},	//93xx VF
 	{
+	OCTEON_VENDOR_ID, OCTEON_CN98XX_VF, PCI_ANY_ID, PCI_ANY_ID, 0, 0, 0},	//98xx VF
+	{
 	0, 0, 0, 0, 0, 0, 0}
 };
 
