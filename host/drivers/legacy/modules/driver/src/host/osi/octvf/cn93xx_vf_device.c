@@ -788,6 +788,8 @@ void cn93xx_force_io_queues_off(octeon_device_t * oct)
 	}
 }
 
+extern oct_poll_fn_status_t
+octeon_get_app_mode(void *octptr, unsigned long arg UNUSED);
 int setup_cn98xx_octeon_vf_device(octeon_device_t * oct)
 {
 	uint64_t reg_val = 0ULL;
@@ -822,7 +824,8 @@ int setup_cn98xx_octeon_vf_device(octeon_device_t * oct)
 	cavium_print_msg("RINGS PER VF ARE:::%d\n", oct->rings_per_vf);
 
 	oct->drv_flags |= OCTEON_MSIX_CAPABLE;
-	oct->drv_flags |= OCTEON_MBOX_CAPABLE;
+	/* VF does not use MBOX */
+	//oct->drv_flags |= OCTEON_MBOX_CAPABLE;
 	oct->drv_flags |= OCTEON_MSIX_AFFINITY_CAPABLE;
 
 	oct->fn_list.setup_iq_regs = cn93xx_setup_vf_iq_regs;
@@ -854,11 +857,10 @@ int setup_cn98xx_octeon_vf_device(octeon_device_t * oct)
 
 	oct->fn_list.dump_registers = cn93xx_dump_vf_initialized_regs;
 
-	return 0;
+	octeon_get_app_mode(oct, 0);
+	return SETUP_SUCCESS;
 }
 
-extern oct_poll_fn_status_t
-octeon_get_app_mode(void *octptr, unsigned long arg UNUSED);
 int setup_cn93xx_octeon_vf_device(octeon_device_t * oct)
 {
 	uint64_t reg_val = 0ULL;

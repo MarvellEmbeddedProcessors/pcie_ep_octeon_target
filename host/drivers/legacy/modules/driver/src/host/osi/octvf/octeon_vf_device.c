@@ -305,6 +305,7 @@ octeon_device_t *octeon_allocate_device_mem(int pci_id)
 		break;
 
 	case OCTEON_CN93XX_VF:
+	case OCTEON_CN98XX_VF:
 		configsize = sizeof(octeon_cn93xx_vf_t);
 		break;
 

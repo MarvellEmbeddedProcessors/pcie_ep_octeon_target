@@ -696,7 +696,7 @@ static int octeon_chip_specific_setup(octeon_device_t * oct)
 
 		oct->chip_id = OCTEON_CN93XX_VF;
 		return setup_cn93xx_octeon_vf_device(oct);
-#if 0
+
 	case OCTEON_CN98XX_PCIID_VF:
 		cavium_print_msg("OCTEON_VF[%d]: CN98XX PASS%d.%d\n",
 				 oct->octeon_id, OCTEON_MAJOR_REV(oct),
@@ -704,7 +704,7 @@ static int octeon_chip_specific_setup(octeon_device_t * oct)
 
 		oct->chip_id = OCTEON_CN98XX_VF;
 		return setup_cn98xx_octeon_vf_device(oct);
-#endif
+
 	default:
 		cavium_error("OCTEON_VF: Unknown device found (dev_id: %x)\n",
 			     dev_id);
