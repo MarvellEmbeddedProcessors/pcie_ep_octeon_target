@@ -612,8 +612,9 @@ octnet_setup_nic_device(int octeon_id, oct_link_info_t * link_info, int ifidx)
 	pndev->tx_timeout = octnet_tx_timeout;
 	pndev->change_mtu = octnet_change_mtu;
 #endif
-	pndev->max_mtu = 10000;
-	pndev->mtu  = 10000;
+	/* kernel side SDP NIX VF interface supports 9182 only */
+	pndev->max_mtu = 9182;
+	pndev->mtu  = 1500;
 
 	/* Register ethtool support to OCTNIC */
 	oct_set_ethtool_ops(pndev);
