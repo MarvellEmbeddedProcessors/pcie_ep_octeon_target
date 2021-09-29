@@ -341,7 +341,8 @@ static int __init dpi_vf_init_module(void)
 static void dpi_vf_exit_module(void)
 {
 	pci_unregister_driver(&dpi_vf_driver);
-	soc->cleanup();
+	if (soc)
+		soc->cleanup();
 }
 
 module_init(dpi_vf_init_module);
