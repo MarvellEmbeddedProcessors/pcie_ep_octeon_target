@@ -546,7 +546,7 @@ static u16 octnet_select_queue(struct net_device *dev, struct sk_buff *skb,
 	qindex = skb_rx_queue_recorded(skb) ?
 	    skb_get_rx_queue(skb) : smp_processor_id();
 #endif /* OCTEON_SELECT_FLOW */
-	return ((u16) (qindex & (priv->linfo.num_txpciq - 1)));
+	return ((u16) (qindex % priv->linfo.num_txpciq));
 }
 #endif
 

@@ -396,7 +396,7 @@ octnet_check_txq_state(octnet_priv_t * priv, struct sk_buff *skb)
 #if !defined(ETHERPCI)
 	if (netif_is_multiqueue(priv->pndev)) {
 		q = skb->queue_mapping;
-		iq = priv->txq + (q & (priv->linfo.num_txpciq - 1));
+		iq = priv->txq + (q % priv->linfo.num_txpciq);
 	} else
 #endif
 #endif
@@ -426,7 +426,7 @@ static inline int octnet_check_txq_status(octnet_priv_t * priv)
 		int q, iq = 0, ret_val = 1;
 
 		for (q = 0; q < numqs; q++) {	/* mq support: check each sub-queue state */
-			iq = priv->txq + (q & (priv->linfo.num_txpciq - 1));
+			iq = priv->txq + (q % priv->linfo.num_txpciq);
 
 			if (OCTNET_IFSTATE_CHECK
 			    (priv, OCT_NIC_IFSTATE_TXENABLED)) {
