@@ -579,25 +579,39 @@ static int fill_dpi_cmd(int dma_port, int ptr_sz, int xtype,
 	return 0;
 }
 
-static inline void run_dpi_cmd(int dma_port, struct rte_rawdev_buf **bufp,
+static inline int run_dpi_cmd(int dma_port, struct rte_rawdev_buf **bufp,
 				 struct dpi_dma_queue_ctx_s *ctx)
 {
-	int ret;
+	int ret = 0;
 	void *d_buf[1];
+	uint64_t s_tsc;
 
 	ret = rte_rawdev_enqueue_buffers(dma_port,
 					 (struct rte_rawdev_buf **)bufp,
 					 1,
 					 ctx);
 	if (ret >= 0) {
+		s_tsc = rte_rdtsc();
 		do {
 			ret = rte_rawdev_dequeue_buffers(dma_port,
 				(struct rte_rawdev_buf **)&d_buf, 1,
 				ctx);
-			if (ret)
+			if (ret) {
 				break;
-		} while(!force_quit);
+			}
+		} while(!force_quit && ((rte_rdtsc() - s_tsc) < 1000000));
+	} else {
+		printf("Run failed to enqueue DMA command, port %d, xtype %s, error code %d\n", 
+			dma_port, (ctx->xtype == DPI_XTYPE_INBOUND) ? "Inbound" : "Outbound", ret);
+		return ret;
 	}
+
+	if (ret == 0) {
+		printf("Run timed out in dequeue DMA command, port %d, xtype %s\n", 
+			dma_port, (ctx->xtype == DPI_XTYPE_INBOUND) ? "Inbound" : "Outbound");
+	}
+	/* return successfully enqueued commands */
+	return ret;
 }
 
 static inline int dma_test_latency(int dma_port, int xtype)
@@ -613,7 +627,6 @@ static inline int dma_test_latency(int dma_port, int xtype)
 	int i, b;
 	int ptr_sz = data_size / ptrs_per_instr;
 	uint64_t s_tsc, e_tsc = 0, latency = 0, bs_tsc, be_tsc;
-
 	printf("\n%s latency.\n",
 		(xtype == DPI_XTYPE_INBOUND) ? "Inbound" : "Outbound");
 
