@@ -132,7 +132,7 @@ static inline int dma_test_outbound(int dma_port, int buf_size)
 
 	fptr = (uint8_t *)rte_malloc("dummy", buf_size, 128);
 	comp_data = rte_malloc("dummy", buf_size, 128);
-	if (!fptr) {
+	if (!fptr || !comp_data) {
 		printf("Unable to allocate internal memory\n");
 		return -ENOMEM;
 	}
@@ -158,7 +158,7 @@ static inline int dma_test_outbound(int dma_port, int buf_size)
 	ret = rte_rawdev_enqueue_buffers(dma_port,
 					 (struct rte_rawdev_buf **)bufp, 1,
 					 &ctx);
-	if (ret < 0) {
+	if (ret < 1) {
 		printf("Enqueue request failed\n");
 		return 0;
 	}
@@ -306,7 +306,7 @@ static inline int perf_dma_test(void)
 	ret = rte_rawdev_enqueue_buffers(dma_port,
 					 (struct rte_rawdev_buf **)bufp, 1,
 					 &ctx);
-	if (ret < 0) {
+	if (ret < 1) {
 		printf("Enqueue request failed\n");
 		return 0;
 	}
@@ -335,7 +335,7 @@ static inline int perf_dma_test(void)
 			ret = rte_rawdev_enqueue_buffers(dma_port,
 					 (struct rte_rawdev_buf **)&bufp[j], 1,
 					 &ctx);
-			if (ret < 0) {
+			if (ret < 1) {
 				printf("Enqueue request failed\n");
 				return 0;
 			}
@@ -385,7 +385,7 @@ static inline int dma_test_inbound(int dma_port, int buf_size)
 
 	fptr = (uint8_t *)rte_malloc("dummy", buf_size, 128);
 	comp_data = rte_malloc("dummy", buf_size, 128);
-	if (!fptr) {
+	if (!fptr || !comp_data) {
 		printf("Unable to allocate internal memory\n");
 		return -ENOMEM;
 	}
@@ -411,7 +411,7 @@ static inline int dma_test_inbound(int dma_port, int buf_size)
 	ret = rte_rawdev_enqueue_buffers(dma_port,
 					 (struct rte_rawdev_buf **)bufp, 1,
 					 &ctx);
-	if (ret < 0) {
+	if (ret < 1) {
 		printf("Enqueue request failed\n");
 		return 0;
 	}
@@ -464,7 +464,7 @@ static inline int dma_test_internal(int dma_port, int buf_size)
 	fptr = (uint8_t *)rte_malloc("dummy", buf_size, 128);
 	lptr = (uint8_t *)rte_malloc("dummy", buf_size, 128);
 	comp_data = rte_malloc("dummy", buf_size, 128);
-	if (!fptr || !lptr) {
+	if (!fptr || !lptr || !comp_data) {
 		printf("Unable to allocate internal memory\n");
 		return -ENOMEM;
 	}
@@ -490,7 +490,7 @@ static inline int dma_test_internal(int dma_port, int buf_size)
 	ret = rte_rawdev_enqueue_buffers(dma_port,
 					 (struct rte_rawdev_buf **)bufp, 1,
 					 &ctx);
-	if (ret < 0) {
+	if (ret < 1) {
 		printf("Enqueue request failed\n");
 		return 0;
 	}
@@ -590,24 +590,23 @@ static inline int run_dpi_cmd(int dma_port, struct rte_rawdev_buf **bufp,
 					 (struct rte_rawdev_buf **)bufp,
 					 1,
 					 ctx);
-	if (ret >= 0) {
+	if (ret >= 1) {
 		s_tsc = rte_rdtsc();
 		do {
 			ret = rte_rawdev_dequeue_buffers(dma_port,
 				(struct rte_rawdev_buf **)&d_buf, 1,
 				ctx);
-			if (ret) {
+			if (ret)
 				break;
-			}
 		} while(!force_quit && ((rte_rdtsc() - s_tsc) < 1000000));
 	} else {
-		printf("Run failed to enqueue DMA command, port %d, xtype %s, error code %d\n", 
+		printf("Failed to enqueue DMA command, port %d, xtype %s, error code %d\n", 
 			dma_port, (ctx->xtype == DPI_XTYPE_INBOUND) ? "Inbound" : "Outbound", ret);
 		return ret;
 	}
 
 	if (ret == 0) {
-		printf("Run timed out in dequeue DMA command, port %d, xtype %s\n", 
+		printf("Timed out in dequeue DMA command, port %d, xtype %s\n", 
 			dma_port, (ctx->xtype == DPI_XTYPE_INBOUND) ? "Inbound" : "Outbound");
 	}
 	/* return successfully enqueued commands */
@@ -627,6 +626,8 @@ static inline int dma_test_latency(int dma_port, int xtype)
 	int i, b;
 	int ptr_sz = data_size / ptrs_per_instr;
 	uint64_t s_tsc, e_tsc = 0, latency = 0, bs_tsc, be_tsc;
+	int failed = 0;
+
 	printf("\n%s latency.\n",
 		(xtype == DPI_XTYPE_INBOUND) ? "Inbound" : "Outbound");
 
@@ -638,7 +639,8 @@ static inline int dma_test_latency(int dma_port, int xtype)
 	bs_tsc = rte_rdtsc();
 	for (b = 0; b < n_iter; b++) {
 		s_tsc = rte_rdtsc();
-		run_dpi_cmd(dma_port, bufp, &ctx);
+		if (run_dpi_cmd(dma_port, bufp, &ctx) < 1)
+			failed++;
 		e_tsc = rte_rdtsc();
 		if (force_quit) {
 			printf("Test abandoned.\n");
@@ -650,8 +652,9 @@ static inline int dma_test_latency(int dma_port, int xtype)
 	be_tsc = rte_rdtsc();
 	printf("Avg. burst: [%06ld cycles][%04ld usecs]\n"
 		"Total     : [%06ld cycles][%04ld usecs]\n",
+		"Failed Runs: %d\n",
 		latency / n_iter, ((latency / n_iter) * 1000000) / timer_period,
-		be_tsc - bs_tsc, ((be_tsc - bs_tsc) * 1000000) / timer_period);
+		be_tsc - bs_tsc, ((be_tsc - bs_tsc) * 1000000) / timer_period, failed);
 
 free_bufs:
 	for (i = 0; i < ptrs_per_instr; i++) {
@@ -685,6 +688,7 @@ static inline int dma_test_roundtrip_latency(int dma_port, int xtype)
 	int i, b;
 	int ptr_sz = data_size / ptrs_per_instr;
 	uint64_t s_tsc, e_tsc = 0, latency = 0, bs_tsc, be_tsc;
+	int failed = 0;
 
 	printf("\n%s roundtrip latency.\n",
 		(xtype == DPI_XTYPE_INBOUND) ? "Inbound" : "Outbound");
@@ -705,8 +709,10 @@ static inline int dma_test_roundtrip_latency(int dma_port, int xtype)
 		bs_tsc = rte_rdtsc();
 		for (b = 0; b < n_iter; b++) {
 			s_tsc = rte_rdtsc();
-			run_dpi_cmd(dma_port, bufp_in, &ctx_in);
-			run_dpi_cmd(dma_port, bufp_out, &ctx_out);
+			if (run_dpi_cmd(dma_port, bufp_in, &ctx_in) < 1)
+				failed++;
+			if (run_dpi_cmd(dma_port, bufp_out, &ctx_out) < 1)
+				failed++;
 			e_tsc = rte_rdtsc();
 			if (force_quit) {
 				printf("Test abandoned.\n");
@@ -720,8 +726,10 @@ static inline int dma_test_roundtrip_latency(int dma_port, int xtype)
 		bs_tsc = rte_rdtsc();
 		for (b = 0; b < n_iter; b++) {
 			s_tsc = rte_rdtsc();
-			run_dpi_cmd(dma_port, bufp_out, &ctx_out);
-			run_dpi_cmd(dma_port, bufp_in, &ctx_in);
+			if (run_dpi_cmd(dma_port, bufp_out, &ctx_out) < 1)
+				failed++;
+			if (run_dpi_cmd(dma_port, bufp_in, &ctx_in) < 1)
+				failed++;
 			e_tsc = rte_rdtsc();
 			if (force_quit) {
 				printf("Test abandoned.\n");
@@ -734,8 +742,9 @@ static inline int dma_test_roundtrip_latency(int dma_port, int xtype)
 	}
 	printf("Avg. burst: [%06ld cycles][%04ld usecs]\n"
 		"Total     : [%06ld cycles][%04ld usecs]\n",
+		"Failed runs: %d\n",
 		latency / n_iter, ((latency / n_iter) * 1000000) / timer_period,
-		be_tsc - bs_tsc, ((be_tsc - bs_tsc) * 1000000) / timer_period);
+		be_tsc - bs_tsc, ((be_tsc - bs_tsc) * 1000000) / timer_period, failed);
 
 free_bufs:
 	for (i = 0; i < ptrs_per_instr; i++) {
