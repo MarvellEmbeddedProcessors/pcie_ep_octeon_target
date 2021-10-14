@@ -513,8 +513,8 @@ int __octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 	priv = GET_NETDEV_PRIV(pndev);
 
 	if (netif_is_multiqueue(pndev)) {
-		q_no = priv->txq + (skb->queue_mapping &
-				    (priv->linfo.num_txpciq - 1));
+		q_no = priv->txq + (skb->queue_mapping %
+				    priv->linfo.num_txpciq);
 		/* mq support: defer sending if qfull */
 		if (octnet_iq_is_full(priv->oct_dev, q_no)) {
 #ifdef OCT_NIC_LOOPBACK
