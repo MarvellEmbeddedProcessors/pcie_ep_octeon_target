@@ -526,5 +526,5 @@ module_platform_driver(npu_base_driver);
 
 MODULE_DESCRIPTION("NPU Interrupt Test Driver");
 MODULE_AUTHOR("Veerasenareddy Burru <vburru@marvell.com>");
-MODULE_LICENSE("GPL v2");
+MODULE_LICENSE("GPL");
 MODULE_ALIAS("platform:" NPU_BASE_DRV_NAME);

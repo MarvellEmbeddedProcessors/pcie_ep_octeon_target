@@ -349,6 +349,6 @@ module_init(dpi_vf_init_module);
 module_exit(dpi_vf_exit_module);
 MODULE_AUTHOR("Cavium");
 MODULE_DESCRIPTION("Cavium OcteonTX DPI Virtual Function Driver");
-MODULE_LICENSE("GPL v2");
+MODULE_LICENSE("GPL");
 MODULE_VERSION(DRV_VERSION);
 MODULE_DEVICE_TABLE(pci, dpi_id_table);

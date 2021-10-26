@@ -10,7 +10,7 @@
 
 MODULE_AUTHOR("Cavium Networks");
 MODULE_DESCRIPTION("Octeon Host PCI Nic Driver");
-MODULE_LICENSE("Cavium Networks");
+MODULE_LICENSE("GPL");
 
 #ifdef OCT_NIC_USE_NAPI
 extern void octnet_napi_drv_callback(int oct_id, int oq_no, int event);

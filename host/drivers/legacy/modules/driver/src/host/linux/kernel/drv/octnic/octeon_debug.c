@@ -11,7 +11,7 @@
 
 MODULE_AUTHOR("Marvell Semiconductors Inc");
 MODULE_DESCRIPTION("Octeon Host PCI NIC Debug Driver");
-MODULE_LICENSE("Marvell Semiconductors");
+MODULE_LICENSE("GPL");
 
 static char *dif = "oct0";
 module_param(dif, charp, S_IRUGO);
