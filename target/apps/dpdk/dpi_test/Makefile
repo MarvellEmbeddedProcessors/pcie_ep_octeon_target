@@ -11,9 +11,7 @@ SRCS-y := main.c
 # Build using pkg-config variables if possible
 DPDK_PC?=$(TARGET_DIR)/usr/lib/pkgconfig/
 PKGCONF ?= PKG_CONFIG_PATH=$(DPDK_PC) PKG_CONFIG_SYSROOT_DIR=$(TARGET_DIR) pkg-config
-
-ifeq ($(shell $(PKGCONF) --exists libdpdk && echo 0),0)
-
+ifeq ($(shell $(PKGCONF) --max-version="20.11.0" libdpdk && echo 0),0)
 all: shared
 .PHONY: shared static
 shared: build/$(APP)-shared
@@ -43,24 +41,4 @@ build:
 clean:
 	rm -f build/$(APP) build/$(APP)-static build/$(APP)-shared
 	test -d build && rmdir -p build || true
-
-else # Build using legacy build system
-
-ifeq ($(RTE_SDK),)
-$(error "Please define RTE_SDK environment variable")
-endif
-
-# Default target, can be overridden by command line or environment
-RTE_TARGET ?= $(notdir $(abspath $(dir $(firstword $(wildcard $(RTE_SDK)/*/.config)))))
-
-include $(RTE_SDK)/mk/rte.vars.mk
-
-CFLAGS += -O3
-CFLAGS += $(WERROR_FLAGS)
-CFLAGS += -DALLOW_EXPERIMENTAL_API
-CFLAGS += -I$(RTE_SDK)/drivers/common/octeontx2/
-CFLAGS += -I$(RTE_SDK)/drivers/mempool/octeontx2/
-CFLAGS += -I$(RTE_SDK)/drivers/raw/octeontx2_dma/
-
-include $(RTE_SDK)/mk/rte.extapp.mk
 endif
