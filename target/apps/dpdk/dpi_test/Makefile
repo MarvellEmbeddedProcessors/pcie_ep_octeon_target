@@ -41,4 +41,8 @@ build:
 clean:
 	rm -f build/$(APP) build/$(APP)-static build/$(APP)-shared
 	test -d build && rmdir -p build || true
+else
+all:
+	touch .dpi_test_not_built
+
 endif
