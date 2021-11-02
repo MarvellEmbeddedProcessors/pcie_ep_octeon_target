@@ -132,7 +132,7 @@ enum {
 /* 24 byte offset pkind */
 #define OTX2_GENERIC_PCIE_EP_PKIND	57
 /* 0 byte offset pkind */
-#define OTX2_LOOP_PCIE_EP_PKIND		63
+#define OTX2_LOOP_PCIE_EP_PKIND		0
 #ifdef CONFIG_PPORT
 #define OTX2_PKIND		OTX2_CUSTOM_PKIND
 #else
