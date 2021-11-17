@@ -166,11 +166,8 @@ int octeon_register_poll_fn(int oct_id, octeon_poll_ops_t * ops)
 
 	n->fn = ops->fn;
 	n->fn_arg = ops->fn_arg;
-	if (strlen(ops->name)) {
-		strncpy(n->name, ops->name,
-			(strlen(ops->name) > strlen(n->name)) ?
-			strlen(n->name) : strlen(ops->name));
-	}
+	/* in case of max name len, terminating zero present due to memset */
+	strncpy(n->name, ops->name, sizeof(n->name) - 1);
 	n->ticks = (ops->ticks) ? ops->ticks : 1;
 	n->sched_time = cavium_jiffies + n->ticks;
 	n->rsvd = ops->rsvd;
