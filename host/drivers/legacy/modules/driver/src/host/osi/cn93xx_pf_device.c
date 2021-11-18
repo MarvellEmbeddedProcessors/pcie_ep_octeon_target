@@ -288,7 +288,7 @@ int cn93xx_pf_setup_global_oq_reg(octeon_device_t * oct, int q_no)
 	volatile uint64_t reg_val = 0ULL;
 	q_no += oct->sriov_info.pf_srn;
 
-	reg_val = octeon_read_csr(oct, CN93XX_SDP_R_OUT_CONTROL(q_no));
+	reg_val = octeon_read_csr64(oct, CN93XX_SDP_R_OUT_CONTROL(q_no));
 
 #if (defined(IOQ_PERF_MODE_O3) | defined(BUFPTR_ONLY_MODE))
 	reg_val &= ~(CN93XX_R_OUT_CTL_IMODE);
@@ -323,7 +323,7 @@ int cn93xx_pf_setup_global_oq_reg(octeon_device_t * oct, int q_no)
 #endif
 
 	/* write all the selected settings */
-	octeon_write_csr(oct, CN93XX_SDP_R_OUT_CONTROL(q_no), reg_val);
+	octeon_write_csr64(oct, CN93XX_SDP_R_OUT_CONTROL(q_no), reg_val);
 
 	return 0;
 }
@@ -490,14 +490,14 @@ static void cn93xx_setup_oq_regs(octeon_device_t * oct, int oq_no)
 			   droq->max_count);
 
 	oq_ctl =
-	    octeon_read_csr(oct,
-			    CN93XX_SDP_R_OUT_CONTROL(oq_no));
+	    octeon_read_csr64(oct,
+			      CN93XX_SDP_R_OUT_CONTROL(oq_no));
 	oq_ctl &= ~0x7fffffULL;	//clear the ISIZE and BSIZE (22-0)
 	oq_ctl |= (droq->buffer_size & 0xffff);	//populate the BSIZE (15-0)
 #ifndef BUFPTR_ONLY_MODE
 	oq_ctl |= ((OCT_RESP_HDR_SIZE << 16) & 0x7fffff);//populate ISIZE(22-16)
 #endif
-	octeon_write_csr(oct, CN93XX_SDP_R_OUT_CONTROL(oq_no), oq_ctl);
+	octeon_write_csr64(oct, CN93XX_SDP_R_OUT_CONTROL(oq_no), oq_ctl);
 
 
 	/* Get the mapped address of the pkt_sent and pkts_credit regs */
@@ -1018,7 +1018,7 @@ static void cn93xx_disable_pf_interrupt(void *chip, uint8_t intr_flag)
 
 static void cn93xx_get_pcie_qlmport(octeon_device_t * oct)
 {
-	oct->pcie_port = (octeon_read_csr(oct, CN93XX_SDP_MAC_NUMBER)) & 0xff;
+	oct->pcie_port = octeon_read_csr64(oct, CN93XX_SDP_MAC_NUMBER) & 0xff;
 
 	cavium_print_msg("OCTEON[%d]: CN93xx uses PCIE Port %d\n",
 			 oct->octeon_id, oct->pcie_port);

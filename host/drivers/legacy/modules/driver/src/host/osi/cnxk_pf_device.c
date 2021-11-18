@@ -282,7 +282,7 @@ int cnxk_pf_setup_global_oq_reg(octeon_device_t * oct, int q_no)
 	volatile uint64_t reg_val = 0ULL;
 	q_no += oct->sriov_info.pf_srn;
 
-	reg_val = octeon_read_csr(oct, CNXK_SDP_R_OUT_CONTROL(q_no));
+	reg_val = octeon_read_csr64(oct, CNXK_SDP_R_OUT_CONTROL(q_no));
 
 	reg_val &= ~(CNXK_R_OUT_CTL_IMODE);
 
@@ -302,7 +302,7 @@ int cnxk_pf_setup_global_oq_reg(octeon_device_t * oct, int q_no)
     /* INFO/DATA ptr swap is required on cn10k  */
 	reg_val |= (CNXK_R_OUT_CTL_ES_P);
 	/* write all the selected settings */
-	octeon_write_csr(oct, CNXK_SDP_R_OUT_CONTROL(q_no), reg_val);
+	octeon_write_csr64(oct, CNXK_SDP_R_OUT_CONTROL(q_no), reg_val);
 
 	return 0;
 }
@@ -468,14 +468,14 @@ static void cnxk_setup_oq_regs(octeon_device_t * oct, int oq_no)
 			   droq->max_count);
 
 	oq_ctl =
-	    octeon_read_csr(oct,
-			    CNXK_SDP_R_OUT_CONTROL(oq_no));
+	    octeon_read_csr64(oct,
+			      CNXK_SDP_R_OUT_CONTROL(oq_no));
 	oq_ctl &= ~0x7fffffULL;	//clear the ISIZE and BSIZE (22-0)
 	oq_ctl |= (droq->buffer_size & 0xffff);	//populate the BSIZE (15-0)
 #ifndef BUFPTR_ONLY_MODE
 	oq_ctl |= ((OCT_RESP_HDR_SIZE << 16) & 0x7fffff);//populate ISIZE(22-16)
 #endif
-	octeon_write_csr(oct, CNXK_SDP_R_OUT_CONTROL(oq_no), oq_ctl);
+	octeon_write_csr64(oct, CNXK_SDP_R_OUT_CONTROL(oq_no), oq_ctl);
 
 	/* Get the mapped address of the pkt_sent and pkts_credit regs */
 	droq->pkts_sent_reg = (uint8_t *) oct->mmio[0].hw_addr +
@@ -999,7 +999,7 @@ static void cnxk_get_pcie_qlmport(octeon_device_t * oct)
 {
 	uint64_t sdp_mac;
 
-	sdp_mac = octeon_read_csr(oct, CNXK_SDP_MAC_NUMBER);
+	sdp_mac = octeon_read_csr64(oct, CNXK_SDP_MAC_NUMBER);
 	oct->pcie_port = sdp_mac & 0xff;
 
 	cavium_print_msg("OCTEON[%d]: CNXK uses PCIE Port %d and PEM %d\n",
