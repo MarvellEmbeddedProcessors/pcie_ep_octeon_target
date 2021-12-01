@@ -852,7 +852,6 @@ int setup_cn98xx_octeon_vf_device(octeon_device_t * oct)
 
 	oct->fn_list.dump_registers = cn93xx_dump_vf_initialized_regs;
 
-	octeon_get_app_mode(oct, 0);
 	return 0;
 }
 
@@ -918,7 +917,6 @@ int setup_cn93xx_octeon_vf_device(octeon_device_t * oct)
 
 	oct->fn_list.dump_registers = cn93xx_dump_vf_initialized_regs;
 
-	octeon_get_app_mode(oct, 0);
 	return 0;
 }
 

@@ -2396,9 +2396,31 @@ octeon_get_app_mode(void *octptr, unsigned long arg UNUSED)
     cavium_atomic_set(&octeon_dev->status, OCT_DEV_CORE_OK);
 
     if(octeon_dev->app_mode == CVM_DRV_NIC_APP) {
+	int i;
         /* Number of interfaces are 1 */
         CFG_GET_NUM_INTF(default_oct_conf) = 1;
         cavium_print_msg("Octeon VF is running nic application\n");
+
+	/*
+	 * In order to support re-starting the NIC driver on an unbind/bind of
+	 * the base driver, we need to set the mod_status for the NIC app type
+	 * to OCTEON_MODULE_HANDLER_INIT_LATER.  For normal startup, this is
+	 * done by the NIC init_module() function when it registers the module
+	 * handlers.  We need to also set this when re-binding, when the
+	 * existing module handler needs to be re-invoked.
+	 * We unconditionally set the mod_status here, as in the normal startup
+	 * case it doesn't change the mod_status, and in the rebind case we
+	 * need to do it.
+	 */
+	for (i = 0;i < OCTEON_MAX_MODULES;i++) {
+		if (octmodhandlers[i].app_type == CVM_DRV_NIC_APP) {
+			cavium_atomic_set(&octeon_dev->mod_status[i],
+					  OCTEON_MODULE_HANDLER_INIT_LATER);
+
+			break;  /* Should only have 1 matching app_type */
+		}
+	}
+	printk("RFRANZ: VF[%d] octmodhandlers index was: %d", octeon_dev->octeon_id, i);
     }
     octeon_probe_module_handlers(octeon_dev->octeon_id);
     return OCT_POLL_FN_FINISHED;

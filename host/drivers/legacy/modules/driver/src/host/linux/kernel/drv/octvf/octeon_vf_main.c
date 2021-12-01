@@ -595,6 +595,8 @@ void octeon_destroy_resources(octeon_device_t * oct_dev)
 	cavium_tasklet_kill(&oct_dev->comp_tasklet);
 }
 
+extern oct_poll_fn_status_t
+oct_poll_module_starter(void *octptr, unsigned long arg);
 /* This routine is called for each octeon device during driver
     unload time. */
 void octeon_remove(struct pci_dev *pdev)
@@ -742,8 +744,6 @@ static int octeon_pci_os_setup(octeon_device_t * octeon_dev)
 	return 0;
 }
 
-extern oct_poll_fn_status_t
-oct_poll_module_starter(void *octptr, unsigned long arg);
 
 int octeon_setup_droq(int oct_id, int q_no, void *app_ctx)
 {
@@ -777,6 +777,8 @@ oct_poll_module_starter(void *octptr, unsigned long arg);
 extern oct_poll_fn_status_t
 octeon_wait_for_npu_base(void *octptr, unsigned long arg);
 
+extern oct_poll_fn_status_t
+octeon_get_app_mode(void *octptr, unsigned long arg UNUSED);
 /* Device initialization for each Octeon device. */
 int octeon_device_init(octeon_device_t * octeon_dev)
 {
@@ -790,6 +792,9 @@ int octeon_device_init(octeon_device_t * octeon_dev)
 	if (octeon_pci_os_setup(octeon_dev))
 		return -1;
 
+	/* Initialize the poll list mechanism used that allows modules to
+	   register functions with the driver for each Octeon device. */
+	octeon_setup_poll_fn_list(octeon_dev);
 	ret = octeon_chip_specific_setup(octeon_dev);
 	/* Identify the Octeon type and map the BAR address space. */
 	if (ret == -1) {
@@ -812,10 +817,6 @@ int octeon_device_init(octeon_device_t * octeon_dev)
 	   Octeon Output queues. */
 	if (octeon_init_dispatch_list(octeon_dev))
 		return 1;
-
-	/* Initialize the poll list mechanism used that allows modules to
-	   register functions with the driver for each Octeon device. */
-	octeon_setup_poll_fn_list(octeon_dev);
 
 	cavium_memset(&poll_ops, 0, sizeof(octeon_poll_ops_t));
 
@@ -913,5 +914,16 @@ int octeon_device_init(octeon_device_t * octeon_dev)
 	    /* No driver/target handshake or poll function for VF. */
     }
 #endif
+
+	/*
+	*  Call get_app_mode() after device init is done.
+	*  On the PF, this is done in a poll function that communicates with
+	*  the firmware, but we don't do that for the VF.
+	*  This call will trigger module handlers that were registered
+	*  by other modules, like the NIC module.  These need to be done
+	*  after device init, as when unbind/bind are used the module handlers
+	*  need to be called after device init is completed.
+	*/
+	octeon_get_app_mode(octeon_dev, 0);
 	return 0;
 }

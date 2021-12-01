@@ -986,6 +986,10 @@ int octeon_device_init(octeon_device_t * octeon_dev)
 	if (octeon_pci_os_setup(octeon_dev))
 		return 1;
 
+	/* Initialize the poll list mechanism used that allows modules to
+	   register functions with the driver for each Octeon device. */
+	octeon_setup_poll_fn_list(octeon_dev);
+
 	ret  = octeon_chip_specific_setup(octeon_dev);
 	/* Identify the Octeon type and map the BAR address space. */
 	if (ret == -1) {
@@ -1008,10 +1012,6 @@ int octeon_device_init(octeon_device_t * octeon_dev)
 	   Octeon Output queues. */
 	if (octeon_init_dispatch_list(octeon_dev))
 		return 1;
-
-	/* Initialize the poll list mechanism used that allows modules to
-	   register functions with the driver for each Octeon device. */
-	octeon_setup_poll_fn_list(octeon_dev);
 
 	cavium_memset(&poll_ops, 0, sizeof(octeon_poll_ops_t));
 
@@ -1054,11 +1054,6 @@ int octeon_device_init(octeon_device_t * octeon_dev)
 	if (ret) {
 		cavium_error("OCTEON: Failed to configure device registers\n");
 		return ret;
-	}
-
-	if (octeon_enable_sriov(octeon_dev)) {
-		cavium_error("OCTEON: Failed to enable SRIOV\n");
-		return 1;
 	}
 
 	/* Initialize lists to manage the requests of different types that arrive
