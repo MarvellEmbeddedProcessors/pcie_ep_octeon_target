@@ -289,14 +289,14 @@ octnet_get_runtime_link_status(void            *oct,
 
 	props = (struct octdev_props_t  *)props_ptr;
 	ls    = props->ls;
-	
+
 	/* Don't do anything if the status is not 0. */
 	if(ls->status) {
 		return OCT_POLL_FN_CONTINUE;
 	}
 
 	cavium_print_msg("Go the link status update\n");
-	/* Store the status and read it back. 
+	/* Store the status and read it back.
 	 * If there is a change in the status take the recent status */
 	ls->status = COMPLETION_WORD_INIT;
 	tmp_status = cavium_alloc_virt(sizeof(oct_link_status_resp_t));
@@ -654,7 +654,7 @@ octnet_setup_nic_device(int octeon_id, oct_link_info_t * link_info, int ifidx)
 
 	/* Point to the  properties for octeon device to which this interface
 	   belongs. */
-	priv->oct_dev = get_octeon_device_ptr(octeon_id);
+	priv->oct_dev = oct;
 	priv->octprops = octprops[octeon_id];
 	priv->pndev = pndev;
 	cavium_spin_lock_init(&(priv->lock));
@@ -727,6 +727,7 @@ octnet_setup_nic_device(int octeon_id, oct_link_info_t * link_info, int ifidx)
 		pndev->features |= NETIF_F_HW_CSUM;
 
 
+	SET_NETDEV_DEV(pndev, &oct->pci_dev->dev);
 	/* Register the network device with the OS */
 	if (register_netdev(pndev)) {
 		cavium_error("OCTNIC: Device registration failed\n");
@@ -979,7 +980,7 @@ int octnet_disable_io_queues(octeon_device_t * oct, oct_link_status_resp_t * ls)
 extern void octeon_reset_ioq(octeon_device_t * octeon_dev, int ioq);
 
 /** This routine sets up the IOQs for octnic module
- *  
+ *
  */
 int
 octnet_setup_io_queues(octeon_device_t * octeon_dev,
@@ -1209,14 +1210,14 @@ int octnet_init_nic_module(int octeon_id, void *octeon_dev)
 
 	octnet_enable_io_queues(octeon_dev, ls);
 
-    if ((oct->chip_id == OCTEON_CN83XX_PF) || 
+    if ((oct->chip_id == OCTEON_CN83XX_PF) ||
         (oct->chip_id == OCTEON_CN83XX_VF) ||
 	(oct->chip_id == OCTEON_CN93XX_VF) ||
 	(oct->chip_id == OCTEON_CN98XX_VF) ||
 	(oct->chip_id == OCTEON_CNXK_VF)   ||
 	(oct->chip_id == OCTEON_CN93XX_PF) ||
 	(oct->chip_id == OCTEON_CN98XX_PF) ||
-	(oct->chip_id == OCTEON_CNXK_PF)) 
+	(oct->chip_id == OCTEON_CNXK_PF))
         /* dbell needs to be programmed after enabling OQ. */
         for (j = 0; j < oct->num_oqs; j++) {
             OCTEON_WRITE32(oct->droq[j]->pkts_credit_reg,
@@ -1235,7 +1236,7 @@ int octnet_init_nic_module(int octeon_id, void *octeon_dev)
 	}
 
 	ls->status = COMPLETION_WORD_INIT;
-	
+
 	for(ifidx = 0; ifidx < ls->link_count; ifidx++) {
 		cavium_print_msg("OCTNIC: if%d rxq: %2d to %2d txq: %2d to %2d gmx: %d max_mtu:%d hw_addr: 0x%llx\n",
 	             ifidx, ls->link_info[ifidx].rxpciq[0], ls->link_info[ifidx].rxpciq[0] + ls->link_info[ifidx].num_rxpciq -1,
@@ -1315,8 +1316,8 @@ int octnet_init_nic_module(int octeon_id, void *octeon_dev)
 			/* NIC mode performance tuning: increased the budget from 64 to 96 */
 			netif_napi_add(netdev, &droq->napi, octnet_napi_poll_fn,
 				       96);
-            
-            cavium_print(PRINT_DEBUG, 
+
+            cavium_print(PRINT_DEBUG,
             "%s using NAPI : oct_id:%d ifidx:%d droq->q_no:%d q_no:%d\n",
 			       __func__, octeon_id, i, droq->q_no, q_no);
 
