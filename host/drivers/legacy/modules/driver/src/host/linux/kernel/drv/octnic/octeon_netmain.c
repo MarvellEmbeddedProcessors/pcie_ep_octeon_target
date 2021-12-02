@@ -571,6 +571,17 @@ static struct net_device_ops octnetdevops = {
 	.ndo_set_rx_mode = octnet_set_mcast_list,
 	.ndo_tx_timeout = octnet_tx_timeout,
 	.ndo_change_mtu = octnet_change_mtu,
+
+// VF Related
+	.ndo_get_vf_config = octnet_get_vf_config,
+	.ndo_set_vf_mac = octnet_set_vf_mac,
+	.ndo_set_vf_vlan = octnet_set_vf_vlan,
+	.ndo_set_vf_spoofchk = octnet_set_vf_spoofchk,
+	.ndo_set_vf_trust = octnet_set_vf_trust,
+	.ndo_set_vf_rate = octnet_set_vf_rate,
+	.ndo_get_vf_config = octnet_get_vf_config,
+	.ndo_set_vf_link_state = octnet_set_vf_link_state,
+	.ndo_get_vf_stats = octnet_get_vf_stats,
 };
 #endif
 

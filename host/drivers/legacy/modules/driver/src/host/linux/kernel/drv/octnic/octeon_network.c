@@ -385,6 +385,73 @@ int octnet_change_mtu(struct net_device *pndev, int new_mtu)
 	return 0;
 }
 
+int octnet_get_vf_config(struct net_device *dev,
+			 int vf, struct ifla_vf_info *ivi)
+{
+	u8 mac_addr[ETH_ALEN] = {0, 1, 2, 3, 4, 5};
+
+	/* TODO fill in based on real values - for now hard code */
+	ivi->vf = vf;
+
+	ether_addr_copy(ivi->mac, mac_addr);
+
+	ivi->vlan = 0;
+	ivi->qos = 0;
+	ivi->spoofchk = 0;
+	ivi->linkstate = IFLA_VF_LINK_STATE_ENABLE;
+	ivi->trusted = true;
+	ivi->max_tx_rate = SPEED_100;
+	ivi->min_tx_rate = SPEED_10;
+
+	return 0;
+}
+
+int octnet_set_vf_mac(struct net_device *dev, int vf, u8 *mac)
+{
+	cavium_print_msg("set vf[%d] mac not supported %pM\n", vf, mac);
+	return 0;
+}
+
+int octnet_set_vf_vlan(struct net_device *dev, int vf, u16 vlan, u8 qos,
+		       __be16 vlan_proto)
+{
+	cavium_print_msg("set vf[%d] mac not supported %d\n", vf, vlan);
+	return 0;
+}
+
+int octnet_set_vf_spoofchk(struct net_device *dev, int vf, bool setting)
+{
+	cavium_print_msg("set vf [%d] spoofchk not supported %d\n", vf, setting);
+	return 0;
+}
+
+int octnet_set_vf_trust(struct net_device *dev, int vf, bool setting)
+{
+	cavium_print_msg("set vf[%d] trust not supported %d\n", vf, setting);
+	return 0;
+}
+
+int octnet_set_vf_rate(struct net_device *dev, int vf, int min_tx_rate,
+		       int max_tx_rate)
+{
+	cavium_print_msg("set vf[%d] rate not supported %d:%d\n", vf, min_tx_rate, max_tx_rate);
+	return 0;
+}
+
+int octnet_set_vf_link_state(struct net_device *dev, int vf,
+			     int link_state)
+{
+	cavium_print_msg("set vf[%d] link not supported %d\n", vf, link_state);
+	return 0;
+}
+
+int octnet_get_vf_stats(struct net_device *dev,
+			int vf, struct ifla_vf_stats *vf_stats)
+{
+	cavium_print_msg("get vf[%d] stats not supported\n", vf);
+	return 0;
+}
+
 void octnic_free_netbuf(void *buf)
 {
 	struct sk_buff *skb;

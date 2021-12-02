@@ -259,6 +259,27 @@ int octnet_set_mac(octnet_os_devptr_t * pndev, void *addr);
 
 int octnet_change_mtu(octnet_os_devptr_t * pndev, int new_mtu);
 
+int octnet_get_vf_config(struct net_device *dev,
+			 int vf, struct ifla_vf_info *ivi);
+
+int octnet_set_vf_mac(struct net_device *dev, int vf, u8 *mac);
+
+int octnet_set_vf_vlan(struct net_device *dev, int vf, u16 vlan, u8 qos,
+		       __be16 vlan_proto);
+
+int octnet_set_vf_spoofchk(struct net_device *dev, int vf, bool setting);
+
+int octnet_set_vf_trust(struct net_device *dev, int vf, bool setting);
+
+int octnet_set_vf_rate(struct net_device *dev, int vf, int min_tx_rate,
+		      int max_tx_rate);
+
+int octnet_set_vf_link_state(struct net_device *dev, int vf,
+			     int link_state);
+
+int octnet_get_vf_stats(struct net_device *dev, int vf,
+			struct ifla_vf_stats *vf_stats);
+
 int octnet_xmit(struct sk_buff *skb, octnet_os_devptr_t * pndev);
 
 #ifdef OCT_NIC_LOOPBACK
