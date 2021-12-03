@@ -12,7 +12,7 @@
 
 extern octeon_device_t *octeon_device[MAX_OCTEON_DEVICES];
 
-static bool facility_conf_init_done = false;
+static int facility_conf_init_done[MAX_OCTEON_DEVICES];
 
 void mv_facility_conf_init(octeon_device_t *oct)
 {
@@ -78,7 +78,7 @@ void mv_facility_conf_init(octeon_device_t *oct)
 	strncpy(oct->facility_conf[MV_FACILITY_RPC].name,
 		MV_FACILITY_NAME_RPC, FACILITY_NAME_LEN-1);
 
-	facility_conf_init_done = true;
+	facility_conf_init_done[oct->octeon_id] = 1;
 }
 
 /* returns facility configuration structure filled up */
@@ -95,7 +95,7 @@ int mv_get_facility_conf(int handle, mv_facility_conf_t *conf)
 	}
 
 	/* Inform caller to try again, if facility conf is not initialized */
-	if (!facility_conf_init_done)
+	if (!facility_conf_init_done[inst])
 		return -EAGAIN;
 
 	memcpy(conf, &octeon_device[inst]->facility_conf[type], sizeof(mv_facility_conf_t));

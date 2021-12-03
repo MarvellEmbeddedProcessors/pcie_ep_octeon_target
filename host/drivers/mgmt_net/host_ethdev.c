@@ -1006,6 +1006,7 @@ static void mgmt_init_work(struct work_struct *work)
 	struct net_device *ndev;
 	struct otxmn_dev *mdev;
 
+	/* MGMT net only supports octeon device 0 */
 	ret =  mv_get_facility_conf(MV_FACILITY_MGMT_NETDEV, &conf);
 	if (ret == -ENOENT) {
 		printk(KERN_ERR
