@@ -7,6 +7,7 @@
 #include "octeon_network.h"
 #include "octeon_macros.h"
 #include "octeon_nic.h"
+#include "octeon_compat.h"
 
 MODULE_AUTHOR("Cavium Networks");
 MODULE_DESCRIPTION("Octeon Host PCI Nic Driver");
@@ -529,6 +530,10 @@ static void octnet_setup_napi(octnet_priv_t * priv)
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
 static u16 octnet_select_queue(struct net_device *dev, struct sk_buff *skb,
 			       struct net_device *sb_dev)
+#elif defined(HAS_SELECT_QUEUE_FALLBACK)
+static u16 octnet_select_queue(struct net_device *dev, struct sk_buff *skb,
+				struct net_device *sb_dev,
+				select_queue_fallback_t fallback)
 #elif (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 14, 0))
 static u16 octnet_select_queue(struct net_device *dev, struct sk_buff *skb,
 			       void *accel_priv,

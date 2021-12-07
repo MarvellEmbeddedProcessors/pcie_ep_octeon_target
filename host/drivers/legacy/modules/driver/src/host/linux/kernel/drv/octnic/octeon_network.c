@@ -8,6 +8,7 @@
 #include "octeon_macros.h"
 #include "octeon_nic.h"
 #include "cavium_release.h"
+#include "octeon_compat.h"
 #ifdef CONFIG_PPORT
 #include "if_pport.h"
 #endif
@@ -707,11 +708,11 @@ int __octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 		ndata.buftype = NORESP_BUFTYPE_NET_SG;
 	}
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5,4,0)
-	status = octnet_send_nic_data_pkt(priv->oct_dev, &ndata, !skb->xmit_more);
-#else
+#if defined(NO_HAS_XMIT_MORE) || LINUX_VERSION_CODE >= KERNEL_VERSION(5,4,0)
 	status = octnet_send_nic_data_pkt(priv->oct_dev, &ndata,
 					  !netdev_xmit_more());
+#else
+	status = octnet_send_nic_data_pkt(priv->oct_dev, &ndata, !skb->xmit_more);
 #endif
 	if (status == NORESP_SEND_FAILED)
 		goto oct_xmit_failed;
@@ -894,7 +895,7 @@ struct net_device_stats *octnet_stats(struct net_device *pndev)
 	return stats;
 }
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0) || defined(HAS_MULTI_TXQUEUE)
 void octnet_tx_timeout(struct net_device *pndev, unsigned int txqueue)
 #else
 void octnet_tx_timeout(struct net_device *pndev)
@@ -904,7 +905,7 @@ void octnet_tx_timeout(struct net_device *pndev)
 	priv = GET_NETDEV_PRIV(pndev);
 
 	cavium_error("OCTNIC: tx timeout for %s\n", octnet_get_devname(pndev));
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0) || defined(HAS_MULTI_TXQUEUE)
 		 txq_trans_update(netdev_get_tx_queue(pndev, txqueue));
 #elif LINUX_VERSION_CODE >= KERNEL_VERSION(4,7,0)
 	/* TODO: shouldn't it be updated to queue, instead of device ? */

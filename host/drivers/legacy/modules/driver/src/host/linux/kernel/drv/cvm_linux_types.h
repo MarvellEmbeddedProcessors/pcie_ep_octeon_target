@@ -4,6 +4,7 @@
 
 #ifndef  __CVM_LINUX_TYPES_H__
 #define  __CVM_LINUX_TYPES_H__
+#include "octeon_compat.h"
 
 #define   __CVM_FILE__                   __FILE__
 #define   __CVM_FUNCTION__               __FUNCTION__
@@ -104,7 +105,7 @@
 
 #define   cavium_copy_in(dest, src, size)           copy_from_user((dest), (src), (size))
 #define   cavium_copy_out(dest, src, size)          copy_to_user((dest), (src), (size))
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0) || defined(HAS_2PARAM_ACCESS_OK)
 #define   cavium_access_ok(flag, addr, size)        access_ok((addr), (size))
 #else
 #define   cavium_access_ok(flag, addr, size)        access_ok((flag), (addr), (size))

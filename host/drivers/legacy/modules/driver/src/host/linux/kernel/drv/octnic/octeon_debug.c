@@ -17,7 +17,7 @@ static char *dif = "oct0";
 module_param(dif, charp, S_IRUGO);
 MODULE_PARM_DESC(dif, "Debug Interface Name");
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5,4,0)
+#if !defined(HAS_SKB_FRAG_OFF) && LINUX_VERSION_CODE < KERNEL_VERSION(5,4,0)
 static inline unsigned int skb_frag_off(const skb_frag_t *frag)
 {
 	return frag->page_offset;

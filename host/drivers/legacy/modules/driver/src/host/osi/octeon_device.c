@@ -7,6 +7,7 @@
 #include "octeon_macros.h"
 #include "octeon_mem_ops.h"
 #include "oct_config_data.h"
+#include "octeon_compat.h"
 
 extern int octeon_msix;
 extern int cn83xx_pf_setup_global_oq_reg(octeon_device_t *, int);
@@ -2721,7 +2722,7 @@ void octeon_enable_irq(octeon_droq_t *droq, octeon_instr_queue_t *iq)
 		OCTEON_WRITE32(droq->pkts_sent_reg, droq->last_pkt_count - pkts_pend);
 		droq->last_pkt_count = pkts_pend;
 	}
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5,4,0)
+#if !defined(NO_HAS_MMIOWB) && LINUX_VERSION_CODE < KERNEL_VERSION(5,4,0)
 	mmiowb();
 #endif
 	OCTEON_WRITE64(droq->pkts_sent_reg, 1UL << 59);

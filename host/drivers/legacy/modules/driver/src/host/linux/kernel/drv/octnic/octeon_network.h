@@ -15,6 +15,7 @@
 #include <linux/ethtool.h>
 #include "octeon_main.h"
 #include "octeon_nic.h"
+#include "octeon_compat.h"
 
 typedef struct net_device octnet_os_devptr_t;
 
@@ -266,7 +267,7 @@ int __octnet_xmit(struct sk_buff *skb, octnet_os_devptr_t * pndev);
 
 struct net_device_stats *octnet_stats(octnet_os_devptr_t * pndev);
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,6,0) || defined(HAS_MULTI_TXQUEUE)
 void octnet_tx_timeout(struct net_device *pndev, unsigned int txqueue);
 #else
 void octnet_tx_timeout(struct net_device *pndev);
