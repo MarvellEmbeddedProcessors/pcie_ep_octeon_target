@@ -169,14 +169,20 @@ print_stats(void)
 
 		printf("port %"PRIu16": tx_pkts: %"PRIu64
 		       "/s rx_pkts: %" PRIu64
-		       "/s dropped: %" PRIu64 "/s\n",
+		       "/s dropped: %" PRIu64
+		       "/s  tx_tot: %" PRIu64
+		       " rx_tot: %" PRIu64
+		       " dr_tot: %" PRIu64 "\n",
 			port,
 			PS((cur_stats[port].tx -
 			    prev_stats[port].tx)),
 			PS((cur_stats[port].rx -
 			    prev_stats[port].rx)),
 			PS((cur_stats[port].dropped -
-			    prev_stats[port].dropped)));
+			    prev_stats[port].dropped)),
+			cur_stats[port].tx,
+		        cur_stats[port].rx,
+		        cur_stats[port].dropped);
 	}
 	memcpy(&prev_stats, &cur_stats, sizeof(cur_stats));
 }
