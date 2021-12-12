@@ -835,7 +835,12 @@ enum setup_stage octeon_chip_specific_setup(octeon_device_t * oct)
 
 			return setup_cn83xx_octeon_pf_device(oct);
 		case OCTEON_CN93XX_PCIID_PF:
+		case OCTEON_CN3380_PCIID_PF:
 			cavium_print_msg("OCTEON[%d]: CN93XX PASS%d.%d\n",
+					 oct->octeon_id, OCTEON_MAJOR_REV(oct),
+					 OCTEON_MINOR_REV(oct));
+			if (dev_id == OCTEON_CN3380_PCIID_PF)
+				cavium_print_msg("OCTEON[%d]: LIO3 CN93XX PASS%d.%d\n",
 					 oct->octeon_id, OCTEON_MAJOR_REV(oct),
 					 OCTEON_MINOR_REV(oct));
 

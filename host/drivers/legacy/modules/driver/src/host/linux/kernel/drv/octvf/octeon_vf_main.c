@@ -698,6 +698,7 @@ static int octeon_chip_specific_setup(octeon_device_t * oct)
 		return setup_cn83xx_octeon_vf_device(oct);
 
 	case OCTEON_CN93XX_PCIID_VF:
+	case OCTEON_CN3383_PCIID_VF:
 		cavium_print_msg("OCTEON_VF[%d]: CN93XX PASS%d.%d\n",
 				 oct->octeon_id, OCTEON_MAJOR_REV(oct),
 				 OCTEON_MINOR_REV(oct));

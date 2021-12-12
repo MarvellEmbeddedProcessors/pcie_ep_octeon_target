@@ -52,6 +52,9 @@ typedef struct _OCTEON_DEVICE octeon_device_t;
 #define  OCTEON_CN93XX_PCIID_PF       0xB200177d   //96XX
 #define  OCTEON_CN93XX_PCIID_VF       0xB203177d   //TODO:96XX VF
 
+#define  OCTEON_CN3380_PCIID_PF       0x3380177d   //LIO3
+#define  OCTEON_CN3383_PCIID_VF       0x3383177d   //TODO:LIO3 VF
+
 #define  OCTEON_CN98XX_PCIID_PF       0xB100177d   //98XX
 #define  OCTEON_CN98XX_PCIID_VF       0xB103177d   //TODO:98XX VF
 
@@ -71,6 +74,9 @@ typedef struct _OCTEON_DEVICE octeon_device_t;
 /** OCTEON TX2 MODELS */
 #define  OCTEON_CN93XX_ID_PF             0xB200   //96XX
 #define  OCTEON_CN93XX_ID_VF             0xB203   //TODO:96XX VF
+
+#define  OCTEON_CN3380_ID_PF             0x3380   //96XX
+#define  OCTEON_CN3380_ID_VF             0x3383   //TODO:96XX VF
 
 #define  OCTEON_CN98XX_ID_PF             0xB100   //98XX
 #define  OCTEON_CN98XX_ID_VF             0xB103   //TODO:98XX VF
