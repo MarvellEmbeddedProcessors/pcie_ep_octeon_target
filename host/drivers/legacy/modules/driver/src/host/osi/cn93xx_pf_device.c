@@ -934,10 +934,10 @@ static void cn93xx_enable_pf_interrupt(void *chip, uint8_t intr_flag)
 	pf_ring_ctl = octeon_read_csr64(oct,
 			CN93XX_SDP_MAC_PF_RING_CTL(oct->pcie_port));
 
-	if (oct->chip_id == OCTEON_CN93XX_PF) {
+	if (OCTEON_CN93XX_PF(oct->chip_id)) {
 		trs = (pf_ring_ctl >> CN93XX_SDP_MAC_PF_RING_CTL_RPPF_BIT_POS)
 			& CN93XX_SDP_MAC_PF_RING_CTL_RPPF;
-	} else if (oct->chip_id == OCTEON_CN98XX_PF) {
+	} else if (OCTEON_CN98XX_PF(oct->chip_id)) {
 		trs = (pf_ring_ctl >> CN98XX_SDP_MAC_PF_RING_CTL_RPPF_BIT_POS)
 			& CN93XX_SDP_MAC_PF_RING_CTL_RPPF;
 	} else {
@@ -986,10 +986,10 @@ static void cn93xx_disable_pf_interrupt(void *chip, uint8_t intr_flag)
 	pf_ring_ctl = octeon_read_csr64(oct,
 			CN93XX_SDP_MAC_PF_RING_CTL(oct->pcie_port));
 
-	if (oct->chip_id == OCTEON_CN93XX_PF) {
+	if (OCTEON_CN93XX_PF(oct->chip_id)) {
 		trs = (pf_ring_ctl >> CN93XX_SDP_MAC_PF_RING_CTL_RPPF_BIT_POS)
 			& CN93XX_SDP_MAC_PF_RING_CTL_RPPF;
-	} else if (oct->chip_id == OCTEON_CN98XX_PF) {
+	} else if (OCTEON_CN98XX_PF(oct->chip_id)) {
 		trs = (pf_ring_ctl >> CN98XX_SDP_MAC_PF_RING_CTL_RPPF_BIT_POS)
 			& CN93XX_SDP_MAC_PF_RING_CTL_RPPF;
 	} else {
@@ -1122,11 +1122,11 @@ static int resume_cn93xx_setup(octeon_device_t * oct)
 	if (1) {
 		/* FIXME: Who programs RPPF in SDP_MACX_PF_RING_CTL register? */
 		regval = 0;
-		if(oct->chip_id == OCTEON_CN93XX_PF) {
+		if (OCTEON_CN93XX_PF(oct->chip_id)) {
 			regval = (npfs  << CN93XX_SDP_MAC_PF_RING_CTL_NPFS_BIT_POS);
 			regval |= (pf_srn << CN93XX_SDP_MAC_PF_RING_CTL_SRN_BIT_POS);
 			regval |= (rppf << CN93XX_SDP_MAC_PF_RING_CTL_RPPF_BIT_POS);
-		} else if (oct->chip_id == OCTEON_CN98XX_PF) {
+		} else if (OCTEON_CN98XX_PF(oct->chip_id)) {
 			regval = npfs << 48;
 			regval |= pf_srn << 0;
 			regval |= rppf << 32;
@@ -1313,11 +1313,11 @@ octeon_wait_fw_info(struct work_struct *work)
 			regval = 0;
 
 			printk("exchg complete for %d\n", oct->octeon_id);
-			if(oct->chip_id == OCTEON_CN93XX_PF) {
+			if (OCTEON_CN93XX_PF(oct->chip_id)) {
 				regval = (0  << CN93XX_SDP_MAC_PF_RING_CTL_NPFS_BIT_POS);
 				regval |= (0 << CN93XX_SDP_MAC_PF_RING_CTL_SRN_BIT_POS);
 				regval |= (1 << CN93XX_SDP_MAC_PF_RING_CTL_RPPF_BIT_POS);
-			} else if (oct->chip_id == OCTEON_CN98XX_PF) {
+			} else if (OCTEON_CN98XX_PF(oct->chip_id)) {
 
 				regval = (0ull  << 48);
 				regval |= (0ull << 0);

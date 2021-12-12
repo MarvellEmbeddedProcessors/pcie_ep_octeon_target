@@ -127,23 +127,14 @@ octnet_prepare_pci_cmd(octeon_device_t * oct,
 	cmd->ih = 0ULL;
 
 	/* VSR: TODO: double check CNXK_VF/PF is handled correclty */
-    if(oct->chip_id == OCTEON_CN83XX_PF
-        || oct->chip_id == OCTEON_CN83XX_VF
-	|| oct->chip_id == OCTEON_CN93XX_PF
-        || oct->chip_id == OCTEON_CN98XX_PF
-        || oct->chip_id == OCTEON_CNXK_PF
-        || oct->chip_id == OCTEON_CN93XX_VF
-        || oct->chip_id == OCTEON_CN98XX_VF
-        || oct->chip_id == OCTEON_CNXK_VF) {
-
+    if (OCTEON_CN8PLUS_PF_OR_VF(oct->chip_id)) {
 		ihx.fsz = 16;
 #if defined(ETHERPCI)
 		ihx.pkind = oct->pkind + q_no;
 		ihx.fsz += 8;	/* extra: 8B for PKI_IH3 */
 #else
 		ihx.pkind = oct->pkind;	/* The SDK decided PKIND value */
-		if ((oct->chip_id == OCTEON_CN83XX_PF) ||
-		    (oct->chip_id == OCTEON_CN83XX_VF))
+		if (OCTEON_CN83XX_PF_OR_VF(oct->chip_id))
 			ihx.fsz += 4;	/* extra: 4B for PKI_IH3 */
 		ihx.fsz += 8;	/* extra: 8B for Extra Hdr(TSO) */
 
@@ -158,7 +149,7 @@ octnet_prepare_pci_cmd(octeon_device_t * oct,
 			ihx.tlen = setup->s.rsvd + ihx.fsz;
 		}
 		/* Fill up O3 PKI_IH3 */
-		if((oct->chip_id == OCTEON_CN83XX_PF) || (oct->chip_id == OCTEON_CN83XX_VF)) {
+		if (OCTEON_CN83XX_PF_OR_VF(oct->chip_id)) {
 			pki_ih3.w = 1;
 			//pki_ih3.raw = 1;
 			//pki_ih3.utag = 1;
@@ -178,7 +169,7 @@ octnet_prepare_pci_cmd(octeon_device_t * oct,
 		}
 		o3_cmd.ih3 = *((uint64_t *) & ihx);
 		o3tx_cmd.ih3 = *((uint64_t *) & ihx);
-		if((oct->chip_id == OCTEON_CN83XX_PF) || (oct->chip_id == OCTEON_CN83XX_VF))
+		if (OCTEON_CN83XX_PF_OR_VF(oct->chip_id))
 			o3_cmd.pki_ih3 = *((uint64_t *) & pki_ih3);
 		o3_cmd.rptr = 0ull;
 		o3tx_cmd.rptr = 0ull;
@@ -186,14 +177,9 @@ octnet_prepare_pci_cmd(octeon_device_t * oct,
 		o3tx_cmd.irh = 0ull;
 
 		irh = (octeon_instr_irh_t *) & o3_cmd.irh;
-		if((oct->chip_id == OCTEON_CN83XX_PF) || (oct->chip_id == OCTEON_CN83XX_VF))
+		if (OCTEON_CN83XX_PF_OR_VF(oct->chip_id))
 			irh = (octeon_instr_irh_t *) & o3_cmd.irh;
-		if(oct->chip_id == OCTEON_CN93XX_PF ||
-		   oct->chip_id == OCTEON_CN98XX_PF ||
-		   oct->chip_id == OCTEON_CNXK_PF   ||
-		   oct->chip_id == OCTEON_CN93XX_VF ||
-		   oct->chip_id == OCTEON_CN98XX_VF ||
-		   oct->chip_id == OCTEON_CNXK_VF)
+		if (OCTEON_CN9PLUS_PF_OR_VF(oct->chip_id))
 			irh = (octeon_instr_irh_t *) & o3tx_cmd.irh;
 		if (setup->s.cksum_offset)
 			irh->rlenssz = setup->s.cksum_offset;
@@ -209,14 +195,9 @@ octnet_prepare_pci_cmd(octeon_device_t * oct,
 
 
 		/* copy the 64B CN78xx cmd to actual 64B command */
-		if((oct->chip_id == OCTEON_CN83XX_PF) || (oct->chip_id == OCTEON_CN83XX_VF))
+		if (OCTEON_CN83XX_PF_OR_VF(oct->chip_id))
 			memcpy(cmd, (const void *)&o3_cmd, 64);
-		if(oct->chip_id == OCTEON_CN93XX_PF ||
-		   oct->chip_id == OCTEON_CN98XX_PF ||
-		   oct->chip_id == OCTEON_CNXK_PF   ||
-		   oct->chip_id == OCTEON_CN93XX_VF ||
-		   oct->chip_id == OCTEON_CN98XX_VF ||
-		   oct->chip_id == OCTEON_CNXK_VF)
+		if (OCTEON_CN9PLUS_PF_OR_VF(oct->chip_id))
 			memcpy(cmd, (const void *)&o3tx_cmd, 64);
 
 	}

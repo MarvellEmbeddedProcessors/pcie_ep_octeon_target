@@ -376,14 +376,13 @@ int octeon_tx_enable_msix_interrupts(octeon_device_t * oct)
 
 	num_ioq_vectors = oct->num_oqs;
 
-	if (oct->chip_id == OCTEON_CN83XX_VF) {
+	if (OCTEON_CN83XX_VF(oct->chip_id)) {
 		non_ioq_intrs = OCTEON_NUM_NON_IOQ_INTR;
 		oct_irq_names = octtx_intr_names[0];
-	} else if (oct->chip_id == OCTEON_CN93XX_VF ||
-		   oct->chip_id == OCTEON_CN98XX_VF) {
+	} else if (OCTEON_CN9XXX_VF(oct->chip_id)) {
 		non_ioq_intrs = 0;
 		oct_irq_names = octtx2_intr_names[0];
-	} else if (oct->chip_id == OCTEON_CNXK_VF) {
+	} else if (OCTEON_CNXK_VF(oct->chip_id)) {
 		non_ioq_intrs = 0;
 		oct_irq_names = octtx2_cnxk_intr_names[0];
 	}
@@ -695,7 +694,7 @@ static int octeon_chip_specific_setup(octeon_device_t * oct)
 				 oct->octeon_id, OCTEON_MAJOR_REV(oct),
 				 OCTEON_MINOR_REV(oct));
 
-		oct->chip_id = OCTEON_CN83XX_VF;
+		oct->chip_id = OCTEON_CN83XX_ID_VF;
 		return setup_cn83xx_octeon_vf_device(oct);
 
 	case OCTEON_CN93XX_PCIID_VF:
@@ -703,7 +702,7 @@ static int octeon_chip_specific_setup(octeon_device_t * oct)
 				 oct->octeon_id, OCTEON_MAJOR_REV(oct),
 				 OCTEON_MINOR_REV(oct));
 
-		oct->chip_id = OCTEON_CN93XX_VF;
+		oct->chip_id = OCTEON_CN93XX_ID_VF;
 		return setup_cn93xx_octeon_vf_device(oct);
 #if 1
 	case OCTEON_CN98XX_PCIID_VF:
@@ -711,7 +710,7 @@ static int octeon_chip_specific_setup(octeon_device_t * oct)
 				 oct->octeon_id, OCTEON_MAJOR_REV(oct),
 				 OCTEON_MINOR_REV(oct));
 
-		oct->chip_id = OCTEON_CN98XX_VF;
+		oct->chip_id = OCTEON_CN98XX_ID_VF;
 		return setup_cn98xx_octeon_vf_device(oct);
 #endif
 	case OCTEON_CNXK_PCIID_VF:
@@ -719,7 +718,7 @@ static int octeon_chip_specific_setup(octeon_device_t * oct)
 				 oct->octeon_id, OCTEON_MAJOR_REV(oct),
 				 OCTEON_MINOR_REV(oct));
 
-		oct->chip_id = OCTEON_CNXK_VF;
+		oct->chip_id = OCTEON_CNXK_ID_VF;
 		return setup_cnxk_octeon_vf_device(oct);
 	default:
 		cavium_error("OCTEON_VF: Unknown device found (dev_id: %x)\n",
@@ -910,14 +909,14 @@ int octeon_device_init(octeon_device_t * octeon_dev)
 #endif
 
 #ifdef BUILD_FOR_EMULATOR
-	if(octeon_dev->chip_id == OCTEON_CN93XX_PF) {
+	if (OCTEON_CN93XX_PF(octeon_dev->chip_id)) {
 		/* init_ioqs proc entry is used for starting base module in
 		 * case of emulator. Driver can sucessfully return from here. */
 		return 0;
 	}
 #else
 
-	if(octeon_dev->chip_id == OCTEON_CN83XX_VF) {
+	if (OCTEON_CN83XX_VF(octeon_dev->chip_id)) {
 #define SDP_HOST_LOADED                 0xDEADBEEFULL
 		octeon_write_csr64(octeon_dev, CN83XX_SLI_EPF_SCRATCH(0),
 						   SDP_HOST_LOADED);

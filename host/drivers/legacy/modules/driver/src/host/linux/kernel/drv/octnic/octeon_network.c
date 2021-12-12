@@ -183,8 +183,7 @@ void octnet_link_ctrl_cmd_completion(void *nctrl_ptr)
 			octeon_device_t *oct =
 			    (octeon_device_t *) priv->oct_dev;
 			/* For 83XX, only lower 3 bytes of mac address is configurable */
-			if ((oct->chip_id == OCTEON_CN83XX_PF)
-			    || (oct->chip_id == OCTEON_CN83XX_VF))
+			if (OCTEON_CN83XX_PF_OR_VF(oct->chip_id))
 				cavium_memcpy(pndev->dev_addr + 3,
 					      ((uint8_t *) & nctrl->udd[0]) + 5,
 					      ETH_ALEN - 3);
@@ -936,8 +935,7 @@ struct net_device_stats *octnet_stats(struct net_device *pndev)
 	int i, total_rings;
 
 	total_rings = oct_dev->sriov_info.rings_per_pf;
-	if (oct_dev->chip_id == OCTEON_CN93XX_VF ||
-	    oct_dev->chip_id == OCTEON_CN98XX_VF)
+	if (OCTEON_CN9XXX_VF(oct_dev->chip_id))
 		total_rings = oct_dev->sriov_info.rings_per_vf;
 	memset(stats, 0, sizeof(struct net_device_stats));
 	cavium_print(PRINT_FLOW, "octnet_stats: network stats called\n");
@@ -1142,8 +1140,7 @@ oct_get_ethtool_stats(struct net_device *netdev,
 	rx_packets = rx_bytes = rx_dropped = 0;
 
 	total_rings = oct_dev->sriov_info.rings_per_pf;
-	if (oct_dev->chip_id == OCTEON_CN93XX_VF ||
-	    oct_dev->chip_id == OCTEON_CN98XX_VF)
+	if (OCTEON_CN9XXX_VF(oct_dev->chip_id))
 		total_rings = oct_dev->sriov_info.rings_per_vf;
 	for (i = 0; i < total_rings; i++) {
 		instr_queue =  oct_dev->instr_queue[i];
@@ -1201,8 +1198,7 @@ static void oct_get_strings(struct net_device *netdev, u32 stringset, u8 * data)
 	}
 
 	total_rings = oct_dev->sriov_info.rings_per_pf;
-	if (oct_dev->chip_id == OCTEON_CN93XX_VF ||
-	    oct_dev->chip_id == OCTEON_CN98XX_VF)
+	if (OCTEON_CN9XXX_VF(oct_dev->chip_id))
 		total_rings = oct_dev->sriov_info.rings_per_vf;
 	num_stats = ARRAY_LENGTH(oct_iq_stats_strings);
 	for (i = 0; i < total_rings; i++) {
@@ -1229,8 +1225,7 @@ static int oct_get_sset_count(struct net_device *netdev, int sset)
 	octeon_device_t *oct_dev = priv->oct_dev;
 
 	total_rings = oct_dev->sriov_info.rings_per_pf;
-	if (oct_dev->chip_id == OCTEON_CN93XX_VF ||
-	    oct_dev->chip_id == OCTEON_CN98XX_VF)
+	if (OCTEON_CN9XXX_VF(oct_dev->chip_id))
 		total_rings = oct_dev->sriov_info.rings_per_vf;
 	return ARRAY_LENGTH(ethtool_stats_keys) +
 		(total_rings * ARRAY_LENGTH(oct_iq_stats_strings)) +
@@ -1244,8 +1239,7 @@ static int oct_get_stats_count(struct net_device *netdev)
 	octeon_device_t *oct_dev = priv->oct_dev;
 
 	total_rings = oct_dev->sriov_info.rings_per_pf;
-	if (oct_dev->chip_id == OCTEON_CN93XX_VF ||
-	    oct_dev->chip_id == OCTEON_CN98XX_VF)
+	if (OCTEON_CN9XXX_VF(oct_dev->chip_id))
 		total_rings = oct_dev->sriov_info.rings_per_vf;
 	return ARRAY_LENGTH(ethtool_stats_keys) +
 		(total_rings * ARRAY_LENGTH(oct_iq_stats_strings)) +

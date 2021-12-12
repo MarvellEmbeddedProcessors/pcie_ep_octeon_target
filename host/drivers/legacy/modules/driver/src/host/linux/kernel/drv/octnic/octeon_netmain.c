@@ -235,15 +235,9 @@ int octnet_get_inittime_link_status(void *oct, void *props_ptr)
         /* Currently DPI is not accessible from the DPDK based nic firmware,
 	 *  So firmware cannot communicate the link status info to host driver,
 	 *  hence hardcoding link_info details here in the host driver itself. */
-	if ((oct_dev->chip_id == OCTEON_CN83XX_PF)
-	    || (oct_dev->chip_id == OCTEON_CN83XX_VF))
+	if (OCTEON_CN83XX_PF_OR_VF(oct_dev->chip_id))
 		num_q = octnet_get_num_ioqs(oct_dev);
-	else if (oct_dev->chip_id == OCTEON_CN93XX_PF ||
-		 oct_dev->chip_id == OCTEON_CN98XX_PF ||
-		 oct_dev->chip_id == OCTEON_CNXK_PF ||
-		 oct_dev->chip_id == OCTEON_CN93XX_VF ||
-		 oct_dev->chip_id == OCTEON_CN98XX_VF ||
-		 oct_dev->chip_id == OCTEON_CNXK_VF)
+	else if (OCTEON_CN9PLUS_PF_OR_VF(oct_dev->chip_id))
 		num_q = octnet_get_num_ioqs(oct_dev);
 
         ls->status = 0;
@@ -253,9 +247,7 @@ int octnet_get_inittime_link_status(void *oct, void *props_ptr)
         ls->link_info[0].hw_addr = (0x20f000b9849 + oct_dev->octeon_id);
 
 	/* Increment MAC addresses for VFs */
-	if (oct_dev->chip_id == OCTEON_CN93XX_VF
-	    || oct_dev->chip_id == OCTEON_CN98XX_VF
-	    || oct_dev->chip_id == OCTEON_CNXK_VF)
+	if (OCTEON_CN9PLUS_VF(oct_dev->chip_id))
 		ls->link_info[0].hw_addr += mac_offset++;
 
 //        ls->link_info[0].hw_addr = 0x000FB71188BC;
@@ -642,8 +634,7 @@ octnet_setup_nic_device(int octeon_id, oct_link_info_t * link_info, int ifidx)
 	pndev->hw_features = NETIF_F_SG;
 #if 0
 	/* Notify the n/w stack regarding TSO capability feature */
-	if ((oct->chip_id == OCTEON_CN83XX_PF)
-	    || (oct->chip_id == OCTEON_CN83XX_VF)) {
+	if (OCTEON_CN83XX_PF_OR_VF(oct->chip_id)) {
 		pndev->features |= NETIF_F_TSO;
 		pndev->features |= NETIF_F_GRO;
 		netif_set_gso_max_size(pndev, OCTNIC_GSO_MAX_SIZE);
@@ -651,7 +642,7 @@ octnet_setup_nic_device(int octeon_id, oct_link_info_t * link_info, int ifidx)
 #endif
 #else
 	/* Increasing default mtu when EtherPCI is enabled */
-	if (oct->chip_id == OCTEON_CN83XX_PF)
+	if (OCTEON_CN83XX_PF(oct->chip_id))
 		pndev->mtu = 16000;
 #endif
 
@@ -800,21 +791,21 @@ octeon_config_t *octeon_dev_conf(octeon_device_t * oct)
 	uint16_t chip_id = oct->chip_id;
 
 	switch (chip_id) {
-	case OCTEON_CN83XX_PF:
+	case OCTEON_CN83XX_ID_PF:
 		return ((octeon_cn83xx_pf_t *) (oct->chip))->conf;
 
-	case OCTEON_CN83XX_VF:
+	case OCTEON_CN83XX_ID_VF:
 		return ((octeon_cn83xx_vf_t *) (oct->chip))->conf;
-	case OCTEON_CN93XX_PF:
-	case OCTEON_CN98XX_PF:
+	case OCTEON_CN93XX_ID_PF:
+	case OCTEON_CN98XX_ID_PF:
 		return ((octeon_cn93xx_pf_t *) (oct->chip))->conf;
-	case OCTEON_CN93XX_VF:
-	case OCTEON_CN98XX_VF:
+	case OCTEON_CN93XX_ID_VF:
+	case OCTEON_CN98XX_ID_VF:
 		return ((octeon_cn93xx_vf_t *) (oct->chip))->conf;
 
-	case OCTEON_CNXK_PF:
+	case OCTEON_CNXK_ID_PF:
 		return ((octeon_cnxk_pf_t *) (oct->chip))->conf;
-	case OCTEON_CNXK_VF:
+	case OCTEON_CNXK_ID_VF:
 		return ((octeon_cnxk_vf_t *) (oct->chip))->conf;
 	/* VSR: TODO: add for CNXK VF too */
 	default:
@@ -845,11 +836,7 @@ static inline uint32_t octnet_get_num_ioqs(octeon_device_t * octeon_dev)
 	uint32_t num_ioqs = 0, vf_rings = 0;
 	octeon_config_t *conf = octeon_dev_conf(octeon_dev);
 
-	if ((octeon_dev->chip_id == OCTEON_CN83XX_PF) ||
-	    (octeon_dev->chip_id == OCTEON_CN93XX_PF) ||
-	    (octeon_dev->chip_id == OCTEON_CN98XX_PF) ||
-	    (octeon_dev->chip_id == OCTEON_CNXK_PF))	{
-
+	if (OCTEON_CN8PLUS_PF(octeon_dev->chip_id)) {
 		num_ioqs = octeon_dev->sriov_info.rings_per_pf;
 		vf_rings = octeon_dev->sriov_info.rings_per_vf;
 
@@ -858,20 +845,17 @@ static inline uint32_t octnet_get_num_ioqs(octeon_device_t * octeon_dev)
 
 		octeon_dev->sriov_info.rings_per_pf = num_ioqs;
 
-	} else if (octeon_dev->chip_id == OCTEON_CN83XX_VF) {
+	} else if (OCTEON_CN83XX_VF(octeon_dev->chip_id)) {
 
 		num_ioqs = octeon_dev->rings_per_vf;
 
-	} else if (octeon_dev->chip_id == OCTEON_CN93XX_VF ||
-		   octeon_dev->chip_id == OCTEON_CN98XX_VF ||
-		   octeon_dev->chip_id == OCTEON_CNXK_VF) {
+	} else if (OCTEON_CN9PLUS_VF(octeon_dev->chip_id)) {
 
 		num_ioqs = octeon_dev->rings_per_vf;
 
 	} else {
 
 		num_ioqs = CFG_GET_PORTS_NUM_IOQ(conf);
-
 	}
 
 	return num_ioqs;
@@ -1015,14 +999,7 @@ octnet_setup_io_queues(octeon_device_t * octeon_dev,
 		baseq = octnet_get_intf_baseq(octeon_dev, ifidx);
 
 		for (index = 0; index < num_ioqs; index++) {
-			if ((octeon_dev->chip_id == OCTEON_CN83XX_PF)
-			    || (octeon_dev->chip_id == OCTEON_CN83XX_VF)
-			    || (octeon_dev->chip_id == OCTEON_CNXK_PF)
-			    || (octeon_dev->chip_id == OCTEON_CNXK_VF)
-			    || (octeon_dev->chip_id == OCTEON_CN98XX_PF)
-			    || (octeon_dev->chip_id == OCTEON_CN98XX_VF)
-			    || (octeon_dev->chip_id == OCTEON_CN93XX_PF)
-			    || (octeon_dev->chip_id == OCTEON_CN93XX_VF)) {
+			if (OCTEON_CN8PLUS_PF_OR_VF(octeon_dev->chip_id)) {
 				/* check and release ioq reset before setting up the ioqs */
 				octeon_reset_ioq(octeon_dev, (baseq + index));
 			}
@@ -1186,18 +1163,17 @@ int octnet_init_nic_module(int octeon_id, void *octeon_dev)
     cavium_print_msg("IO queue creation success\n");
 	if (oct->drv_flags & OCTEON_MSIX_CAPABLE) {
 #ifdef  ETHERPCI
-		if (oct->chip_id == OCTEON_CN83XX_PF)
+		if (OCTEON_CN83XX_PF(oct->chip_id))
 			CFG_GET_OQ_MAX_BASE_Q(CHIP_FIELD(oct, cn83xx_pf, conf))
 			    = MAX_OCTEON_LINKS;
 #else
-		if (oct->chip_id == OCTEON_CN83XX_PF)
+		if (OCTEON_CN83XX_PF(oct->chip_id))
 			CFG_GET_OQ_MAX_BASE_Q(CHIP_FIELD(oct, cn83xx_pf, conf))
 			    = oct->sriov_info.rings_per_pf;
-		else if (oct->chip_id == OCTEON_CN93XX_PF ||
-			 oct->chip_id == OCTEON_CN98XX_PF)
+		else if (OCTEON_CN9XXX_PF(oct->chip_id))
 			CFG_GET_OQ_MAX_BASE_Q(CHIP_FIELD(oct, cn93xx_pf, conf))
 			    = oct->sriov_info.rings_per_pf;
-		else if (oct->chip_id == OCTEON_CNXK_PF)
+		else if (OCTEON_CNXK_PF(oct->chip_id))
 			CFG_GET_OQ_MAX_BASE_Q(CHIP_FIELD(oct, cnxk_pf, conf))
 			    = oct->sriov_info.rings_per_pf;
 #endif
@@ -1221,19 +1197,13 @@ int octnet_init_nic_module(int octeon_id, void *octeon_dev)
 
 	octnet_enable_io_queues(octeon_dev, ls);
 
-    if ((oct->chip_id == OCTEON_CN83XX_PF) ||
-        (oct->chip_id == OCTEON_CN83XX_VF) ||
-	(oct->chip_id == OCTEON_CN93XX_VF) ||
-	(oct->chip_id == OCTEON_CN98XX_VF) ||
-	(oct->chip_id == OCTEON_CNXK_VF)   ||
-	(oct->chip_id == OCTEON_CN93XX_PF) ||
-	(oct->chip_id == OCTEON_CN98XX_PF) ||
-	(oct->chip_id == OCTEON_CNXK_PF))
-        /* dbell needs to be programmed after enabling OQ. */
-        for (j = 0; j < oct->num_oqs; j++) {
-            OCTEON_WRITE32(oct->droq[j]->pkts_credit_reg,
-                oct->droq[j]->max_count);
-        }
+	if (OCTEON_CN8PLUS_PF_OR_VF(oct->chip_id)) {
+		/* dbell needs to be programmed after enabling OQ. */
+		for (j = 0; j < oct->num_oqs; j++) {
+			OCTEON_WRITE32(oct->droq[j]->pkts_credit_reg,
+				       oct->droq[j]->max_count);
+		}
+	}
 
 	cavium_atomic_set(&oct->status, OCT_DEV_RUNNING);
 #ifndef ETHERPCI
@@ -1369,10 +1339,7 @@ octnet_init_failure:
 	cavium_error("OCTNIC: Initialization Failed\n");
 
 #if 0 //this is not processed by NPU
-	if ((oct->chip_id == OCTEON_CN83XX_PF)
-	    || (oct->chip_id == OCTEON_CN83XX_VF)
-	    || (oct->chip_id == OCTEON_CN93XX_PF) ||
-	    (oct->chip_id == OCTEON_CN98XX_PF)) {
+	if (OCTEON_CN8PLUS_PF_OR_VF(oct->chip_id)) {
 		/* Send short command to firmware to free these interface's PCAM entry */
 		octeon_send_short_command(oct, HOST_NW_STOP_OP, 0, NULL, 0);
 	}
@@ -1530,10 +1497,7 @@ int octnet_stop_nic_module(int octeon_id, void *oct)
 	num_ioqs = octnet_get_num_ioqs(octeon_dev);
 
 #if 0 //this is not processed by NPU
-	if ((octeon_dev->chip_id == OCTEON_CN83XX_PF)
-	    || (octeon_dev->chip_id == OCTEON_CN83XX_VF)
-	    || (octeon_dev->chip_id == OCTEON_CN93XX_PF)
-	    || (octeon_dev->chip_id == OCTEON_CN98XX_PF)) {
+	if (OCTEON_CN8PLUS_PF_OR_VF(octeon_dev->chip_id)) {
 		/* Send short command to firmware to free these interface's PCAM entry */
 		octeon_send_short_command(oct, HOST_NW_STOP_OP, 0, NULL, 0);
 	}

@@ -65,8 +65,7 @@ static inline uint64_t OCTEON_PCI_WIN_READ(octeon_device_t * oct, uint64_t addr)
 {
 	uint64_t val64;
 
-	if ((oct->chip_id == OCTEON_CN83XX_PF) ||
-	    (oct->chip_id == OCTEON_CN83XX_VF))
+	if (OCTEON_CN83XX_PF_OR_VF(oct->chip_id))
 		addr |= 1ull << 49; /* read 8 bytes */
 	else
 		addr |= 1ull << 53; /* read 8 bytes */

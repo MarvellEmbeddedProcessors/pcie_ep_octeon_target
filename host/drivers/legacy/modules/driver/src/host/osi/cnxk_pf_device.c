@@ -919,7 +919,7 @@ static void cnxk_enable_pf_interrupt(void *chip, uint8_t intr_flag)
 	pf_ring_ctl = octeon_read_csr64(oct,
 			CNXK_SDP_MAC_PF_RING_CTL(oct->pcie_port));
 
-	if (oct->chip_id == OCTEON_CNXK_PF) {
+	if (OCTEON_CNXK_PF(oct->chip_id)) {
 		trs = (pf_ring_ctl >> CNXK_SDP_MAC_PF_RING_CTL_RPPF_BIT_POS)
 			& CNXK_SDP_MAC_PF_RING_CTL_RPPF;
 	} else {
@@ -968,7 +968,7 @@ static void cnxk_disable_pf_interrupt(void *chip, uint8_t intr_flag)
 	pf_ring_ctl = octeon_read_csr64(oct,
 			CNXK_SDP_MAC_PF_RING_CTL(oct->pcie_port));
 
-	if (oct->chip_id == OCTEON_CNXK_PF) {
+	if (OCTEON_CNXK_PF(oct->chip_id)) {
 		trs = (pf_ring_ctl >> CNXK_SDP_MAC_PF_RING_CTL_RPPF_BIT_POS)
 			& CNXK_SDP_MAC_PF_RING_CTL_RPPF;
 	} else {
@@ -1103,7 +1103,7 @@ static int resume_cnxk_setup(octeon_device_t * oct)
 	if (1) {
 		/* FIXME: Who programs RPPF in SDP_MACX_PF_RING_CTL register? */
 		regval = 0;
-		if(oct->chip_id == OCTEON_CNXK_PF) {
+		if (OCTEON_CNXK_PF(oct->chip_id)) {
 			regval = (npfs  << CNXK_SDP_MAC_PF_RING_CTL_NPFS_BIT_POS);
 			regval |= (pf_srn << CNXK_SDP_MAC_PF_RING_CTL_SRN_BIT_POS);
 			regval |= (rppf << CNXK_SDP_MAC_PF_RING_CTL_RPPF_BIT_POS);
@@ -1277,7 +1277,7 @@ octeon_wait_fw_info(struct work_struct *work)
 			regval = 0;
 
 			printk("exchg complete for %d\n", oct->octeon_id);
-			if(oct->chip_id == OCTEON_CNXK_PF) {
+			if (OCTEON_CNXK_PF(oct->chip_id)) {
 				regval = (0  << CNXK_SDP_MAC_PF_RING_CTL_NPFS_BIT_POS);
 				regval |= (0 << CNXK_SDP_MAC_PF_RING_CTL_SRN_BIT_POS);
 				regval |= (1 << CNXK_SDP_MAC_PF_RING_CTL_RPPF_BIT_POS);

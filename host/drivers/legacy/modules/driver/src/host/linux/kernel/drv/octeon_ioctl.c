@@ -576,11 +576,11 @@ int octeon_ioctl_get_num_ioqs(unsigned int cmd UNUSED, void *arg)
 	}
 
 	switch (oct_dev->chip_id) {
-	case OCTEON_CN83XX_PF:
+	case OCTEON_CN83XX_ID_PF:
 		num_ioqs = oct_dev->sriov_info.rings_per_pf;
 		break;
 
-	case OCTEON_CN83XX_VF:
+	case OCTEON_CN83XX_ID_VF:
 		num_ioqs = oct_dev->rings_per_vf;
 		break;
 

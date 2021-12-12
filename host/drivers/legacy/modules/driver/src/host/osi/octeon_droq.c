@@ -267,9 +267,7 @@ int octeon_delete_droq(octeon_device_t * oct, uint32_t q_no)
 #endif
 
 #ifdef OCT_TX2_ISM_INT
-	if (oct->chip_id == OCTEON_CN93XX_PF ||
-	    oct->chip_id == OCTEON_CN98XX_PF ||
-	    oct->chip_id == OCTEON_CNXK_PF) {
+	if (OCTEON_CN9PLUS_PF(oct->chip_id)) {
 		if (droq->ism.pkt_cnt_addr)
 			octeon_pci_free_consistent(oct->pci_dev, 8,
 						   droq->ism.pkt_cnt_addr, droq->ism.pkt_cnt_dma,
@@ -318,20 +316,19 @@ int octeon_init_droq(octeon_device_t * oct, uint32_t q_no, void *app_ctx)
 	else
 		droq->app_ctx = (void *)(long)q_no;
 
-	if (oct->chip_id == OCTEON_CN83XX_PF) {
+	if (OCTEON_CN83XX_PF(oct->chip_id)) {
 		cn83xx_pf_config_t *conf83 = CHIP_FIELD(oct, cn83xx_pf, conf);
 		c_num_descs = CFG_GET_OQ_NUM_DESC(conf83);
 		c_buf_size = CFG_GET_OQ_BUF_SIZE(conf83);
 		c_pkts_per_intr = CFG_GET_OQ_PKTS_PER_INTR(conf83);
 		c_refill_threshold = CFG_GET_OQ_REFILL_THRESHOLD(conf83);
-	} else if (oct->chip_id == OCTEON_CN93XX_PF ||
-		   oct->chip_id == OCTEON_CN98XX_PF) {
+	} else if (OCTEON_CN9XXX_PF(oct->chip_id)) {
 		cn93xx_pf_config_t *conf93 = CHIP_FIELD(oct, cn93xx_pf, conf);
 		c_num_descs = CFG_GET_OQ_NUM_DESC(conf93);
 		c_buf_size = CFG_GET_OQ_BUF_SIZE(conf93);
 		c_pkts_per_intr = CFG_GET_OQ_PKTS_PER_INTR(conf93);
 		c_refill_threshold = CFG_GET_OQ_REFILL_THRESHOLD(conf93);
-	} else if (oct->chip_id == OCTEON_CNXK_PF) {
+	} else if (OCTEON_CNXK_PF(oct->chip_id)) {
 		cnxk_pf_config_t *conf_cnxk = CHIP_FIELD(oct, cnxk_pf, conf);
 		c_num_descs = CFG_GET_OQ_NUM_DESC(conf_cnxk);
 		c_buf_size = CFG_GET_OQ_BUF_SIZE(conf_cnxk);
@@ -367,9 +364,7 @@ int octeon_init_droq(octeon_device_t * oct, uint32_t q_no, void *app_ctx)
 		     q_no, droq->max_count);
 
 #ifdef OCT_TX2_ISM_INT	
-	if (oct->chip_id == OCTEON_CN93XX_PF ||
-	    oct->chip_id == OCTEON_CN98XX_PF ||
-	    oct->chip_id == OCTEON_CNXK_PF) {
+	if (OCTEON_CN9PLUS_PF(oct->chip_id)) {
 		droq->ism.pkt_cnt_addr =
 		    octeon_pci_alloc_consistent(oct->pci_dev, 8,
 						&droq->ism.pkt_cnt_dma, droq->app_ctx);
@@ -651,7 +646,7 @@ octeon_reset_recv_buf_size(octeon_device_t * oct, int q_no, uint32_t newsize)
 	     __CVM_FUNCTION__, oct->droq[oq_no]->buffer_size, newsize, num_qs,
 	     oq_no);
 
-	if (oct->chip_id == OCTEON_CN83XX_PF) {
+	if (OCTEON_CN83XX_PF(oct->chip_id)) {
 		cn83xx_pf_setup_global_output_regs(oct);
 		num_qs = oct->num_oqs;
 		oq_no = 0;
@@ -1049,8 +1044,7 @@ static inline void octeon_droq_drop_packets(octeon_droq_t * droq, uint32_t cnt)
 		     *) (droq->recv_buf_list[droq->host_read_index].data);
 #endif
 		/* Swap length field on 83xx*/
-		if (oct->chip_id == OCTEON_CN83XX_PF || oct->chip_id == OCTEON_CN93XX_PF ||
-		    oct->chip_id == OCTEON_CN98XX_PF || oct->chip_id == OCTEON_CNXK_PF)
+		if (OCTEON_CN8PLUS_PF(oct->chip_id))
 			octeon_swap_8B_data((uint64_t *) &(info->length), 1);
 
 		if (info->length) {
@@ -1304,8 +1298,7 @@ octeon_droq_fast_process_packets_reuse_bufs(octeon_device_t * oct,
 #endif        
 
 		/* Swap length field on 83xx*/
-		if (oct->chip_id == OCTEON_CN83XX_PF || oct->chip_id == OCTEON_CN93XX_PF ||
-		    oct->chip_id == OCTEON_CN98XX_PF || oct->chip_id == OCTEON_CNXK_PF)
+		if (OCTEON_CN8PLUS_PF(oct->chip_id)) {
 			octeon_swap_8B_data((uint64_t *) &(info->length), 1);
 
 		if(cavium_unlikely(!info->length))  {
@@ -1478,8 +1471,7 @@ octeon_droq_slow_process_packets(octeon_device_t * oct,
 		resp_hdr = (octeon_resp_hdr_t *) & info->resp_hdr;
         
 		/* Swap length field on 83xx*/
-		if (oct->chip_id == OCTEON_CN83XX_PF || oct->chip_id == OCTEON_CN93XX_PF ||
-		    oct->chip_id == OCTEON_CN98XX_PF)
+		if (OCTEON_CN8PLUS_PF(oct->chip_id))
 			octeon_swap_8B_data((uint64_t *) &(info->length), 1);
 		
 #if 0
@@ -1557,8 +1549,7 @@ octeon_droq_process_packets(octeon_device_t * oct, octeon_droq_t * droq)
 		     *) (droq->recv_buf_list[droq->host_read_index].data);
 #endif
 		/* Swap length field on 83xx*/
-		if (oct->chip_id == OCTEON_CN83XX_PF || oct->chip_id == OCTEON_CN93XX_PF ||
-		    oct->chip_id == OCTEON_CN98XX_PF)
+		if (OCTEON_CN8PLUS_PF(oct->chip_id))
 			octeon_swap_8B_data((uint64_t *) &(info->length), 1);
 
 		buf_cnt = 0;

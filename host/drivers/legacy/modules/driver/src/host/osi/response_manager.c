@@ -149,9 +149,7 @@ release_soft_instr(octeon_device_t * octeon_dev,
 
 	cavium_print(PRINT_FLOW, "release soft Instr...\n");
 
-	if ((octeon_dev->chip_id == OCTEON_CN83XX_PF)
-	    || (octeon_dev->chip_id == OCTEON_CN83XX_VF)) {
-
+	if (OCTEON_CN83XX_PF_OR_VF(octeon_dev->chip_id)) {
 		memcpy(&o3_cmd, &soft_instr->command, 64);
 #ifndef IOQ_PERF_MODE_O3
 		soft_instr->command.rptr = o3_cmd.rptr;
@@ -179,8 +177,7 @@ release_soft_instr(octeon_device_t * octeon_dev,
 		/* rptr is being swapped in __do_instruction_processing() in 
 		request_manager.c along with irh. Before unmapping the rptr ,
 		swap to get the original iova.  */
-		if ((octeon_dev->chip_id == OCTEON_CN83XX_PF)
-			|| (octeon_dev->chip_id == OCTEON_CN83XX_VF))
+		if (OCTEON_CN83XX_PF_OR_VF(octeon_dev->chip_id))
 			octeon_swap_8B_data(&soft_instr->command.rptr, 1);
 
 		if (!soft_instr->irh.scatter) {

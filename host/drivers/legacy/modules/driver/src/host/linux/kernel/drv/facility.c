@@ -23,9 +23,7 @@ void mv_facility_conf_init(octeon_device_t *oct)
 	memset(&oct->facility_conf, 0,
 	       sizeof(mv_facility_conf_t) * MV_FACILITY_COUNT);
 
-	if((oct->chip_id == OCTEON_CN93XX_PF) ||
-	   (oct->chip_id == OCTEON_CN98XX_PF) ||
-	   (oct->chip_id == OCTEON_CNXK_PF))
+	if (OCTEON_CN9PLUS_PF(oct->chip_id))
 		bar1_addr = oct->mmio[2].hw_addr;
 	else
 		bar1_addr = oct->mmio[1].hw_addr;
@@ -174,9 +172,8 @@ int mv_send_facility_dbell(int handle, int dbell)
 	if (irq >= facility_map->h2t_dbell_start &&
 	    irq < (facility_map->h2t_dbell_start +
 		     facility_map->h2t_dbell_count)) {
-		if ((octeon_device[0]->chip_id == OCTEON_CN93XX_PF) ||
-		    (octeon_device[0]->chip_id == OCTEON_CN98XX_PF) ||
-		    (octeon_device[0]->chip_id == OCTEON_CNXK_PF))
+
+		if (OCTEON_CN9PLUS_PF(octeon_device[0]->chip_id))
 			*(volatile uint32_t *)(octeon_device[inst]->mmio[2].hw_addr +
 			 	octeon_device[inst]->npu_memmap_info.gicd_offset) = irq;
 		else

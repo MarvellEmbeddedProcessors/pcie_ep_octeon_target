@@ -226,7 +226,7 @@ fill_droq_status(octeon_device_t * oct, int oq_no, struct seq_file *str)
 
 	switch (oct->chip_id) {
 
-	case OCTEON_CN83XX_PF:
+	case OCTEON_CN83XX_ID_PF:
 		seq_printf(str, "Intr Threshold Registers Pkt: %d Time: %d\n",
 			   octeon_read_csr(oct,
 					   CN83XX_SDP_EPF_R_OUT_INT_LEVELS(0, oq_no)),
@@ -260,7 +260,7 @@ void print_status(struct seq_file *s, octeon_device_t * oct)
 		   get_oct_state_string(&oct->status));
 	switch (oct->chip_id) {
 
-	case OCTEON_CN83XX_PF:
+	case OCTEON_CN83XX_ID_PF:
 		seq_printf(s, "Interrupt Mask: 0x%016llx  ",
 			   CVM_CAST64(CHIP_FIELD(oct, cn83xx_pf, intr_mask64)));
 		break;
@@ -521,7 +521,7 @@ static int iq_perf_show(struct seq_file *s, void *v UNUSED)
 	cavium_print_msg("check for iq mask %llx\n", proc_iq_mask);
 	if (proc_iq_mask)
 	    switch (oct->chip_id) {
-            case OCTEON_CN83XX_PF:
+            case OCTEON_CN83XX_ID_PF:
            		run_perf_test_83(oct);
                 break;
        }
@@ -535,11 +535,11 @@ static int csrreg_show(struct seq_file *s, void *v UNUSED)
 
 	switch (oct->chip_id) {
 
-	case OCTEON_CN83XX_PF:
+	case OCTEON_CN83XX_ID_PF:
 		return cn83xx_pf_read_csrreg_buf(s, oct);
-	case OCTEON_CN93XX_PF:
-	case OCTEON_CN98XX_PF:
-	case OCTEON_CNXK_PF:
+	case OCTEON_CN93XX_ID_PF:
+	case OCTEON_CN98XX_ID_PF:
+	case OCTEON_CNXK_ID_PF:
 		return cn93xx_pf_read_csrreg_buf(s, oct);
 	}
 
@@ -552,7 +552,7 @@ static int configreg_show(struct seq_file *s, void *v UNUSED)
 
 	switch (oct->chip_id) {
 
-	case OCTEON_CN83XX_PF:
+	case OCTEON_CN83XX_ID_PF:
 		return cn83xx_pf_read_configreg_buf(s, oct);
 	}
 
@@ -1595,11 +1595,11 @@ int cn93xx_pf_read_csrreg_buf(struct seq_file *s, octeon_device_t * oct)
     }
 
     mac = octeon_read_csr64(oct, 0x2c100) & 0xff ;
-    if (oct->chip_id == OCTEON_CN93XX_PF)
+    if (OCTEON_CN93XX_PF(oct->chip_id))
 	    count = octeon_read_csr64(oct, (0x2c000 | (mac << 4))) >> 16 ;
-    else if (oct->chip_id == OCTEON_CN98XX_PF)
+    else if (OCTEON_CN98XX_PF(oct->chip_id))
 	    count = (octeon_read_csr64(oct, (0x2c000 | (mac << 4))) >> 32) & 0x3F;
-    else if (oct->chip_id == OCTEON_CNXK_PF)
+    else if (OCTEON_CNXK_PF(oct->chip_id))
 	    count = (octeon_read_csr64(oct, (0x2c000 | (mac << 4))) >> 16) & 0x3F;
 
     /* Reg dump of IOQ registers */

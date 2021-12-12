@@ -90,10 +90,7 @@ static void *__retrieve_octeon_config_info(octeon_device_t * oct)
 
 	if (oct_conf_info[oct_id].conf_type != OCTEON_CONFIG_TYPE_DEFAULT) {
 
-		if (((oct->chip_id == OCTEON_CN83XX_PF) || 
-		    (oct->chip_id == OCTEON_CN93XX_PF) ||
-		    (oct->chip_id == OCTEON_CN98XX_PF) ||
-		    (oct->chip_id == OCTEON_CNXK_PF)) &&
+		if ((OCTEON_CN8PLUS_PF(oct->chip_id)) &&
 		    (oct_conf_info[oct_id].conf_type ==
 		     OCTEON_CONFIG_TYPE_CUSTOM))
 			return oct_conf_info[oct_id].custom;
@@ -103,12 +100,11 @@ static void *__retrieve_octeon_config_info(octeon_device_t * oct)
 		     oct_id, oct_conf_info[oct_id].conf_type, oct->chip_id);
 		return NULL;
 	}
-	if (oct->chip_id == OCTEON_CN83XX_PF)
+	if (OCTEON_CN83XX_PF(oct->chip_id))
 		return (void *)&default_cn83xx_pf_conf;
-	else if (oct->chip_id == OCTEON_CN93XX_PF ||
-		 oct->chip_id == OCTEON_CN98XX_PF)
+	else if (OCTEON_CN9XXX_PF(oct->chip_id))
 		return (void *)&default_cn93xx_pf_conf;
-	else if (oct->chip_id == OCTEON_CNXK_PF)
+	else if (OCTEON_CNXK_PF(oct->chip_id))
 		return (void *)&default_cnxk_pf_conf;
 	return NULL;
 }
@@ -117,12 +113,12 @@ static int __verify_octeon_config_info(octeon_device_t * oct, void *conf)
 {
 	switch (oct->chip_id) {
 
-	case OCTEON_CN83XX_PF:
+	case OCTEON_CN83XX_ID_PF:
 		return validate_cn83xx_pf_config_info(conf);
-	case OCTEON_CN93XX_PF:
-	case OCTEON_CN98XX_PF:
+	case OCTEON_CN93XX_ID_PF:
+	case OCTEON_CN98XX_ID_PF:
 		return validate_cn93xx_pf_config_info(conf);
-	case OCTEON_CNXK_PF:
+	case OCTEON_CNXK_ID_PF:
 		return validate_cnxk_pf_config_info(conf);
 	default:
 		cavium_error("Chip config verification failed. Invalid chipid :%d\n",
@@ -195,16 +191,16 @@ octeon_device_t *octeon_allocate_device_mem(int pci_id)
 
 	switch (pci_id) {
 
-	case OCTEON_CN83XX_PF:
+	case OCTEON_CN83XX_ID_PF:
 		configsize = sizeof(octeon_cn83xx_pf_t);
 		break;
 
-	case OCTEON_CN93XX_PF:
-	case OCTEON_CN98XX_PF:
+	case OCTEON_CN93XX_ID_PF:
+	case OCTEON_CN98XX_ID_PF:
 		configsize = sizeof(octeon_cn93xx_pf_t);
 		break;
 
-	case OCTEON_CNXK_PF:
+	case OCTEON_CNXK_ID_PF:
 		configsize = sizeof(octeon_cnxk_pf_t);
 		break;
 
@@ -435,14 +431,13 @@ int octeon_setup_instr_queues(octeon_device_t * oct)
 {
 	int i, num_iqs = 0, retval = 0;
 
-	if (oct->chip_id == OCTEON_CN83XX_PF)
+	if (OCTEON_CN83XX_PF(oct->chip_id))
 		num_iqs =
 		    CFG_GET_IQ_MAX_BASE_Q(CHIP_FIELD(oct, cn83xx_pf, conf));
-	else if (oct->chip_id == OCTEON_CN93XX_PF ||
-		 oct->chip_id == OCTEON_CN98XX_PF)
+	else if (OCTEON_CN9XXX_PF(oct->chip_id))
 		num_iqs =
 		    CFG_GET_IQ_MAX_BASE_Q(CHIP_FIELD(oct, cn93xx_pf, conf));
-	else if (oct->chip_id == OCTEON_CNXK_PF)
+	else if (OCTEON_CNXK_PF(oct->chip_id))
 		num_iqs =
 		    CFG_GET_IQ_MAX_BASE_Q(CHIP_FIELD(oct, cnxk_pf, conf));
 
@@ -466,14 +461,13 @@ int octeon_setup_output_queues(octeon_device_t * oct)
 {
 	int i, num_oqs = 0, retval = 0;
 
-	if (oct->chip_id == OCTEON_CN83XX_PF)
+	if (OCTEON_CN83XX_PF(oct->chip_id))
 		num_oqs =
 		    CFG_GET_OQ_MAX_BASE_Q(CHIP_FIELD(oct, cn83xx_pf, conf));
-	else if (oct->chip_id == OCTEON_CN93XX_PF ||
-		 oct->chip_id == OCTEON_CN98XX_PF)
+	else if (OCTEON_CN9XXX_PF(oct->chip_id))
 		num_oqs =
 		    CFG_GET_OQ_MAX_BASE_Q(CHIP_FIELD(oct, cn93xx_pf, conf));
-	else if (oct->chip_id == OCTEON_CNXK_PF)
+	else if (OCTEON_CNXK_PF(oct->chip_id))
 		num_oqs =
 		    CFG_GET_OQ_MAX_BASE_Q(CHIP_FIELD(oct, cnxk_pf, conf));
 
@@ -500,16 +494,15 @@ int octeon_setup_mbox(octeon_device_t * oct)
 	if (!(oct->drv_flags & OCTEON_MBOX_CAPABLE))
 		return 0;
 
-	if (oct->chip_id == OCTEON_CN83XX_PF)
+	if (OCTEON_CN83XX_PF(oct->chip_id))
 		num_ioqs =
 		    CFG_GET_TOTAL_PF_RINGS(CHIP_FIELD(oct, cn83xx_pf, conf),
 					   oct->pf_num);
-	else if (oct->chip_id == OCTEON_CN93XX_PF ||
-		 oct->chip_id == OCTEON_CN98XX_PF)
+	else if (OCTEON_CN9XXX_PF(oct->chip_id))
 		num_ioqs =
 		    CFG_GET_TOTAL_PF_RINGS(CHIP_FIELD(oct, cn93xx_pf, conf),
 					   oct->pf_num);
-	else if (oct->chip_id == OCTEON_CNXK_PF)
+	else if (OCTEON_CNXK_PF(oct->chip_id))
 		num_ioqs =
 		    CFG_GET_TOTAL_PF_RINGS(CHIP_FIELD(oct, cnxk_pf, conf),
 					   oct->pf_num);
@@ -547,7 +540,7 @@ int octeon_delete_mbox(octeon_device_t * oct)
 	if (!(oct->drv_flags & OCTEON_MBOX_CAPABLE))
 		return 0;
 
-	if (oct->chip_id == OCTEON_CN83XX_PF)
+	if (OCTEON_CN83XX_PF(oct->chip_id))
 		num_ioqs =
 		    CFG_GET_TOTAL_PF_RINGS(CHIP_FIELD(oct, cn83xx_pf, conf),
 					   oct->pf_num);
@@ -609,7 +602,7 @@ void octeon_reset_ioq(octeon_device_t * octeon_dev, int ioq)
 
 	ioq += octeon_dev->sriov_info.pf_srn;
 
-	if (octeon_dev->chip_id == OCTEON_CN83XX_PF) {
+	if (OCTEON_CN83XX_PF(octeon_dev->chip_id)) {
 			/* wait for IDLE to set to 1 */
 		do {
 			reg_val = octeon_read_csr64(octeon_dev,
@@ -623,8 +616,7 @@ void octeon_reset_ioq(octeon_device_t * octeon_dev, int ioq)
 						    (octeon_dev->epf_num, ioq));
 		} while (!(reg_val & CN83XX_R_OUT_CTL_IDLE));
 
-	} else if (octeon_dev->chip_id == OCTEON_CN93XX_PF ||
-		   octeon_dev->chip_id == OCTEON_CN98XX_PF) {
+	} else if (OCTEON_CN9XXX_PF(octeon_dev->chip_id)) {
 	    		/* wait for IDLE to set to 1 */
 	    	do {
 	    		reg_val = octeon_read_csr64(octeon_dev,
@@ -635,7 +627,7 @@ void octeon_reset_ioq(octeon_device_t * octeon_dev, int ioq)
 	    		reg_val = octeon_read_csr64(octeon_dev,
 	    					    CN93XX_SDP_R_OUT_CONTROL(ioq));
 	    	} while (!(reg_val & CN93XX_R_OUT_CTL_IDLE));
-	} else if (octeon_dev->chip_id == OCTEON_CNXK_PF) {
+	} else if (OCTEON_CNXK_PF(octeon_dev->chip_id)) {
 		/* wait for IDLE to set to 1 */
 		do {
 			reg_val = octeon_read_csr64(octeon_dev,
@@ -651,18 +643,16 @@ void octeon_reset_ioq(octeon_device_t * octeon_dev, int ioq)
 
 void octeon_set_io_queues_off(octeon_device_t * oct)
 {
-	if (oct->chip_id == OCTEON_CN83XX_PF) {
+	if (OCTEON_CN83XX_PF(oct->chip_id)) {
 	}
-	else if ((oct->chip_id == OCTEON_CN93XX_PF) ||
-		 (oct->chip_id == OCTEON_CN98XX_PF) ||
-		 (oct->chip_id == OCTEON_CNXK_PF)) {
+	else if (OCTEON_CN9PLUS_PF(oct->chip_id)) {
 	}
 }
 
 void octeon_set_droq_pkt_op(octeon_device_t * oct, int q_no, int enable)
 {
 
-	if (oct->chip_id == OCTEON_CN83XX_PF) {
+	if (OCTEON_CN83XX_PF(oct->chip_id)) {
 		if (enable)
 			oct->fn_list.enable_input_queue(oct, q_no);
 		else
@@ -1159,7 +1149,7 @@ int oct_reinit_oq(octeon_device_t * oct, int oq_no)
 	droq->last_pkt_count = 0;
 	droq->pkts_pending = 0;
 
-	if (oct->chip_id == OCTEON_CN83XX_PF)
+	if (OCTEON_CN83XX_PF(oct->chip_id))
 		cn83xx_pf_setup_global_oq_reg(oct, oq_no);
 
 	oct->fn_list.setup_oq_regs(oct, oq_no);
@@ -1180,7 +1170,7 @@ int oct_reinit_iq(octeon_device_t * oct, int iq_no)
 	octeon_instr_queue_t *iq =
 	    (octeon_instr_queue_t *) oct->instr_queue[iq_no];
 
-	if (oct->chip_id == OCTEON_CN83XX_PF)
+	if (OCTEON_CN83XX_PF(oct->chip_id))
 		cn83xx_pf_setup_global_iq_reg(oct, iq_no);
 	else if (oct->chip_id == OCTEON_CN73XX_PF)
 		cn73xx_pf_setup_global_iq_reg(oct, iq_no);
@@ -1380,12 +1370,12 @@ int oct_init_base_module(int octeon_id, void *octeon_dev)
 	}
 
 	/* Send an indication to f/w saying ioq creation is completed */
-	if (oct->chip_id == OCTEON_CN83XX_PF) {
+	if (OCTEON_CN83XX_PF(oct->chip_id)) {
 		octeon_write_csr64(oct, CN83XX_SDP_SCRATCH(0), 0x11223344ULL);
-	} else if (oct->chip_id == OCTEON_CN93XX_PF ||
-		   oct->chip_id == OCTEON_CN98XX_PF) {
+
+	} else if (OCTEON_CN9XXX_PF(oct->chip_id)) {
 		octeon_write_csr64(oct, CN93XX_SDP_EPF_SCRATCH, 0x11223344ULL);
-	} else if (oct->chip_id == OCTEON_CNXK_PF) {
+	} else if (OCTEON_CNXK_PF(oct->chip_id)) {
 		octeon_write_csr64(oct, CNXK_SDP_EPF_SCRATCH, 0x11223344ULL);
 	}
     
@@ -1557,14 +1547,13 @@ octeon_config_t *octeon_get_conf(octeon_device_t * oct)
 
 	/* check the OCTEON Device model & return the corresponding octeon configuration.
 	 **/
-	if (oct->chip_id == OCTEON_CN83XX_PF)
+	if (OCTEON_CN83XX_PF(oct->chip_id))
 		default_oct_conf =
 		    (octeon_config_t *) (CHIP_FIELD(oct, cn83xx_pf, conf));
-	else if (oct->chip_id == OCTEON_CN93XX_PF ||
-		 oct->chip_id == OCTEON_CN98XX_PF)
+	else if (OCTEON_CN9XXX_PF(oct->chip_id))
 		default_oct_conf =
 		    (octeon_config_t *) (CHIP_FIELD(oct, cn93xx_pf, conf));
-	else if (oct->chip_id == OCTEON_CNXK_PF)
+	else if (OCTEON_CNXK_PF(oct->chip_id))
 		default_oct_conf =
 		    (octeon_config_t *) (CHIP_FIELD(oct, cnxk_pf, conf));
 
@@ -1715,7 +1704,7 @@ octeon_wait_for_npu_base(void *octptr, unsigned long arg UNUSED)
 	 * Bits: 00-31  Signature indicating NPU base driver ready
 	 * Bits: 32-63  offset in BAR1 where the memory map structure is written
 	 **/
-	if(octeon_dev->chip_id == OCTEON_CN83XX_PF) {
+	if (OCTEON_CN83XX_PF(octeon_dev->chip_id)) {
 		reg_val = octeon_read_csr64(octeon_dev, CN83XX_SDP_SCRATCH(0));
 		if((reg_val & 0xffffffff) != NPU_BASE_READY_MAGIC) {
 			return OCT_POLL_FN_CONTINUE;
@@ -1735,10 +1724,8 @@ octeon_wait_for_npu_base(void *octptr, unsigned long arg UNUSED)
 		/* setup the Host device access for RPC */
 		if (host_device_access_init(octeon_dev->octeon_id) < 0)
 			pr_err("host_device_access_init failed\n");
-	} else if(octeon_dev->chip_id == OCTEON_CN93XX_PF ||
-		  octeon_dev->chip_id == OCTEON_CN98XX_PF ||
-		  octeon_dev->chip_id == OCTEON_CNXK_PF) {
-		if (octeon_dev->chip_id == OCTEON_CNXK_PF)
+	} else if (OCTEON_CN9PLUS_PF(octeon_dev->chip_id)) {
+		if (OCTEON_CNXK_PF(octeon_dev->chip_id))
 			reg_val = octeon_read_csr64(octeon_dev,
 						    CNXK_SDP_EPF_SCRATCH);
 		else
@@ -1783,18 +1770,18 @@ octeon_wait_for_npu_base(void *octptr, unsigned long arg UNUSED)
 	mps_val = fls(mps) - 8;
 	mrrs_val = fls(mrrs) - 8;
 
-	if (octeon_dev->chip_id == OCTEON_CN83XX_PF)
+	if (OCTEON_CN83XX_PF(octeon_dev->chip_id))
 		port = octeon_dev->pcie_port;
-	else if (octeon_dev->chip_id == OCTEON_CN93XX_PF)
+	else if (OCTEON_CN93XX_PF(octeon_dev->chip_id))
 		port = octeon_dev->pcie_port / 2; //its either 0 or 1
 	/*
 	 * Due to SDP-38594 the workaround is to pass the PEM number through the
 	 * memmap structure from the EP
 	 */
-	else if (octeon_dev->chip_id == OCTEON_CN98XX_PF) {
+	else if (OCTEON_CN98XX_PF(octeon_dev->chip_id)) {
 		dpi_num = npu_map->pem_num / 2;
 		port = npu_map->pem_num & 0x1;
-	} else if (octeon_dev->chip_id == OCTEON_CNXK_PF) {
+	} else if (OCTEON_CNXK_PF(octeon_dev->chip_id)) {
 		port = octeon_dev->pcie_port / 2; //VSR TODO: validate this
 		printk("%s: CNXK port=%d pcie_port=%d\n",
 		       __func__, port, octeon_dev->pcie_port);
@@ -1802,7 +1789,7 @@ octeon_wait_for_npu_base(void *octptr, unsigned long arg UNUSED)
 
 	if (!dpi_num) {
 		uint64_t dpi_port_cfg;
-		if (octeon_dev->chip_id == OCTEON_CNXK_PF)
+		if (OCTEON_CNXK_PF(octeon_dev->chip_id))
 			dpi_port_cfg = CNXK_DPI0_EBUS_PORTX_CFG(port);
 		else
 			dpi_port_cfg = DPI0_EBUS_PORTX_CFG(port);
@@ -1830,9 +1817,7 @@ octeon_get_app_mode(void *octptr, unsigned long arg UNUSED)
     uint64_t epf_rinfo;
     uint16_t vf_srn;
  
-    if(octeon_dev->chip_id == OCTEON_CN93XX_PF ||
-       octeon_dev->chip_id == OCTEON_CN98XX_PF ||
-       octeon_dev->chip_id == OCTEON_CNXK_PF) {
+    if (OCTEON_CN9PLUS_PF(octeon_dev->chip_id)) {
 	//octeon_dev->app_mode = CVM_DRV_BASE_APP;
 	reg_val = 0;
         if(((g_app_mode[octeon_dev->octeon_id] & 0xffff) != CVM_DRV_BASE_APP) && 
@@ -1887,12 +1872,11 @@ octeon_get_app_mode(void *octptr, unsigned long arg UNUSED)
             core_clk, coproc_clk);
     cavium_print(PRINT_DEBUG,"Application mode:%d pkind:%d\n", 
             octeon_dev->app_mode, octeon_dev->pkind);
-    if (octeon_dev->chip_id == OCTEON_CN83XX_PF)
+    if (OCTEON_CN83XX_PF(octeon_dev->chip_id))
     	default_oct_conf = (octeon_config_t *) (CHIP_FIELD(octeon_dev, cn83xx_pf, conf));
-    else if (octeon_dev->chip_id == OCTEON_CN93XX_PF ||
-	     octeon_dev->chip_id == OCTEON_CN98XX_PF)
+    else if (OCTEON_CN9XXX_PF(octeon_dev->chip_id))
 		default_oct_conf = (octeon_config_t *) (CHIP_FIELD(octeon_dev, cn93xx_pf, conf));
-    else if (octeon_dev->chip_id == OCTEON_CNXK_PF)
+    else if (OCTEON_CNXK_PF(octeon_dev->chip_id))
 		default_oct_conf = (octeon_config_t *)
 				   (CHIP_FIELD(octeon_dev, cnxk_pf, conf));
 	
@@ -1928,14 +1912,14 @@ octeon_hostfw_handshake(void *octptr, unsigned long arg UNUSED)
 
 
 	switch (oct->chip_id) {
-	case OCTEON_CN83XX_PF:
+	case OCTEON_CN83XX_ID_PF:
 		scratch_reg_addr = CN83XX_SDP_SCRATCH(0);
 		break;
-	case OCTEON_CN93XX_PF:
-	case OCTEON_CN98XX_PF:
+	case OCTEON_CN93XX_ID_PF:
+	case OCTEON_CN98XX_ID_PF:
 		scratch_reg_addr = CN93XX_SDP_EPF_SCRATCH;
 		break;
-	case OCTEON_CNXK_PF:
+	case OCTEON_CNXK_ID_PF:
 		scratch_reg_addr = CNXK_SDP_EPF_SCRATCH;
 		break;
 	}
@@ -2122,7 +2106,7 @@ octeon_hostfw_handshake(void *octptr, unsigned long arg UNUSED)
 			octeon_write_csr64(oct, scratch_reg_addr,
 					   HOSTFW_HS_ACK);
 
-			if (oct->chip_id == OCTEON_CN83XX_PF)
+			if (OCTEON_CN83XX_PF(oct->chip_id))
 				cavium_atomic_set(&oct->hostfw_hs_state,
 						  HOSTPF0_HS_INIT);
 			else
@@ -2184,7 +2168,7 @@ octeon_hostfw_handshake(void *octptr, unsigned long arg UNUSED)
 		/* complete the IOQ's creation and misc initialisation (only for CN83XX) */
 		if (((oct->app_mode == CVM_DRV_BASE_APP)
 		     || (oct->app_mode == CVM_DRV_ZLIB_APP))
-		    && (oct->chip_id == OCTEON_CN83XX_PF)) {
+		    && (OCTEON_CN83XX_PF(oct->chip_id))) {
 			octeon_register_base_handler();
 		}
 
@@ -2511,9 +2495,7 @@ uint32_t get_octeon_count(void)
 	oct = get_octeon_device(0);
 	/* 93xx(96xx) supports only one device for now */
 #ifdef USE_SINGLE_PF
-	if (oct && (oct->chip_id == OCTEON_CN93XX_PF ||
-		    oct->chip_id == OCTEON_CN98XX_PF ||
-		    oct->chip_id == OCTEON_CNXK_PF))
+	if (oct && (OCTEON_CN9PLUS_PF(oct->chip_id)))
 		return 1;
 	else
 #endif
@@ -2522,7 +2504,7 @@ uint32_t get_octeon_count(void)
 
 uint32_t octeon_get_cycles_per_usec(octeon_device_t * oct)
 {
-	if (oct->chip_id == OCTEON_CN83XX_PF)
+	if (OCTEON_CN83XX_PF(oct->chip_id))
 		return (CFG_GET_CORE_TICS_PER_US
 			(CHIP_FIELD(oct, cn83xx_pf, conf)));
 
@@ -2690,9 +2672,7 @@ void octeon_iq_intr_tune(struct work_struct *work)
 		if (print)
 			printk("%s: IQ-%d set to %d\n", __func__, i, intr_level);
 		/* 10 microseconds or packet count */
-		if ((oct->chip_id == OCTEON_CN93XX_PF) ||
-		    (oct->chip_id == OCTEON_CN98XX_PF) ||
-		    (oct->chip_id == OCTEON_CNXK_PF))
+		if (OCTEON_CN9PLUS_PF(oct->chip_id))
 			OCTEON_WRITE64(iq->intr_lvl_reg, (1UL << 62) | (10UL << 32) | intr_level);
 		else
 			OCTEON_WRITE32(iq->intr_lvl_reg, intr_level);

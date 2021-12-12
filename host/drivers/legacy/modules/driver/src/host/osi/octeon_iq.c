@@ -62,12 +62,11 @@ int octeon_init_instr_queue(octeon_device_t * oct, int iq_no)
 #endif
 #endif	
 
-	if (oct->chip_id == OCTEON_CN83XX_PF)
+	if (OCTEON_CN83XX_PF(oct->chip_id))
 		conf = &(CFG_GET_IQ_CFG(CHIP_FIELD(oct, cn83xx_pf, conf)));
-	else if (oct->chip_id == OCTEON_CN93XX_PF ||
-		 oct->chip_id == OCTEON_CN98XX_PF)
+	else if (OCTEON_CN9XXX_PF(oct->chip_id))
 		conf = &(CFG_GET_IQ_CFG(CHIP_FIELD(oct, cn93xx_pf, conf)));
-	else if (oct->chip_id == OCTEON_CNXK_PF)
+	else if (OCTEON_CNXK_PF(oct->chip_id))
 		conf = &(CFG_GET_IQ_CFG(CHIP_FIELD(oct, cnxk_pf, conf)));
 
 	if (!conf) {
@@ -90,9 +89,7 @@ int octeon_init_instr_queue(octeon_device_t * oct, int iq_no)
 	}
 
 #ifdef OCT_TX2_ISM_INT	
-	if (oct->chip_id == OCTEON_CN93XX_PF ||
-	    oct->chip_id == OCTEON_CN98XX_PF ||
-	    oct->chip_id == OCTEON_CNXK_PF) {
+	if (OCTEON_CN9PLUS_PF(oct->chip_id)) {
 		iq->ism.pkt_cnt_addr =
 		    octeon_pci_alloc_consistent(oct->pci_dev, 8,
 						&iq->ism.pkt_cnt_dma, iq->app_ctx);
@@ -187,21 +184,18 @@ int octeon_delete_instr_queue(octeon_device_t * oct, int iq_no)
 	octeon_unregister_poll_fn(oct->octeon_id, check_db_timeout, iq_no);
 #endif	
 
-	if (oct->chip_id == OCTEON_CN83XX_PF)
+	if (OCTEON_CN83XX_PF(oct->chip_id))
 		desc_size =
 		    CFG_GET_IQ_INSTR_TYPE(CHIP_FIELD(oct, cn83xx_pf, conf));
-	else if (oct->chip_id == OCTEON_CN93XX_PF ||
-		 oct->chip_id == OCTEON_CN98XX_PF)
+	else if (OCTEON_CN9XXX_PF(oct->chip_id))
 		desc_size =
 		    CFG_GET_IQ_INSTR_TYPE(CHIP_FIELD(oct, cn93xx_pf, conf));
-	else if (oct->chip_id == OCTEON_CNXK_PF)
+	else if (OCTEON_CNXK_PF(oct->chip_id))
 		desc_size =
 		    CFG_GET_IQ_INSTR_TYPE(CHIP_FIELD(oct, cnxk_pf, conf));
 
 #ifdef OCT_TX2_ISM_INT
-	if (oct->chip_id == OCTEON_CN93XX_PF ||
-	    oct->chip_id == OCTEON_CN98XX_PF ||
-	    oct->chip_id == OCTEON_CNXK_PF) {
+	if (OCTEON_CNPLUS_PF(oct->chip_id)) {
 		if (iq->ism.pkt_cnt_addr)
 			octeon_pci_free_consistent(oct->pci_dev, 8,
 						   iq->ism.pkt_cnt_addr, iq->ism.pkt_cnt_dma,

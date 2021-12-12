@@ -498,9 +498,7 @@ __do_instruction_processing(octeon_device_t * oct,
 #endif
 
 	if((si->alloc_flags & OCTEON_DIRECT_GATHER) &&
-		(oct->chip_id == OCTEON_CN93XX_PF || oct->chip_id == OCTEON_CN93XX_VF ||
-		 oct->chip_id == OCTEON_CN98XX_PF || oct->chip_id == OCTEON_CN98XX_VF ||
-		 oct->chip_id == OCTEON_CNXK_PF || oct->chip_id == OCTEON_CNXK_VF)) {
+		(OCTEON_CN9PLUS_PF_OR_VF(oct->chip_id))) {
 		cavium_error("OCTEONTX2 dont support direct gather mode\n");
 		return retval;
 	}
@@ -519,14 +517,7 @@ __do_instruction_processing(octeon_device_t * oct,
 
 	/* The first 32 bytes are always used by the driver. The last 32 bytes
 	   may contain direct gather information in CN63XX. */
-	if ((oct->chip_id == OCTEON_CN83XX_PF) ||
-	    (oct->chip_id == OCTEON_CN83XX_VF) ||
-	    (oct->chip_id == OCTEON_CN93XX_PF) ||
-	    (oct->chip_id == OCTEON_CN93XX_VF) ||
-            (oct->chip_id == OCTEON_CN98XX_PF) ||
-	    (oct->chip_id == OCTEON_CN98XX_VF) ||
-            (oct->chip_id == OCTEON_CNXK_PF)   ||
-	    (oct->chip_id == OCTEON_CNXK_VF)) {
+	if (OCTEON_CN8PLUS_PF_OR_VF(oct->chip_id)) {
 		memset(&ihx, 0, sizeof(octeon_instr_ihx_t));
 		memset(&pki_ih3, 0, sizeof(octeon_instr_pki_ih3_t));
 		memset(&o3_cmd, 0, sizeof(octeon_instr3_64B_t));
@@ -606,19 +597,11 @@ __do_instruction_processing(octeon_device_t * oct,
 	si->irh.rid = cavium_getpid();
 
 	/* There is are changs for 83XX, cann't fit with O3 case */
-	if ((oct->chip_id == OCTEON_CN83XX_PF) ||
-	    (oct->chip_id == OCTEON_CN83XX_VF) ||
-	    (oct->chip_id == OCTEON_CN93XX_PF) ||
-	    (oct->chip_id == OCTEON_CN93XX_VF) ||
-	    (oct->chip_id == OCTEON_CN98XX_PF) ||
-	    (oct->chip_id == OCTEON_CN98XX_VF) ||
-	    (oct->chip_id == OCTEON_CNXK_PF)   ||
-	    (oct->chip_id == OCTEON_CNXK_VF)) {
+	if (OCTEON_CN8PLUS_PF_OR_VF(oct->chip_id)) {
 		/* Fill up SDD IHX */
 		ihx.pkind = oct->pkind;
 
-		if ((oct->chip_id == OCTEON_CN83XX_PF) ||
-		    (oct->chip_id == OCTEON_CN83XX_VF))
+		if (OCTEON_CN83XX_PF_OR_VF(oct->chip_id))
 			ihx.fsz = si->ih.fsz + 8;	/* extra 8B for PKI IH */
 		ihx.fsz = si->ih.fsz + 8;	/* extra 8 bytes for EXHDR */
 
@@ -630,7 +613,7 @@ __do_instruction_processing(octeon_device_t * oct,
         } else {
         	ihx.tlen = si->ih.dlengsz + ihx.fsz;
 	}
-	if((oct->chip_id == OCTEON_CN83XX_PF) || (oct->chip_id == OCTEON_CN83XX_VF)) {
+	if (OCTEON_CN83XX_PF_OR_VF(oct->chip_id)) {
 		/* Fill up PKI IH3 */
 		pki_ih3.w = 1;
 		pki_ih3.raw = si->ih.raw;
@@ -656,7 +639,7 @@ __do_instruction_processing(octeon_device_t * oct,
 	/* copy ih3 */
 	o3_cmd.ih3 = *((uint64_t *) & ihx);
 
-	if((oct->chip_id == OCTEON_CN83XX_PF) || (oct->chip_id == OCTEON_CN83XX_VF)) {
+	if (OCTEON_CN83XX_PF_OR_VF(oct->chip_id)) {
 		/* copy pki_ih3 */
 		o3_cmd.pki_ih3 = *((uint64_t *) & pki_ih3);
 	}

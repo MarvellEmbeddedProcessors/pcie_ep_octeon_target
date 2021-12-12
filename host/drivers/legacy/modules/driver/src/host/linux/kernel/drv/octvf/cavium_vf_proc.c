@@ -226,7 +226,7 @@ fill_droq_status(octeon_device_t * oct, int oq_no, struct seq_file *str)
 
 	switch (oct->chip_id) {
 
-	case OCTEON_CN83XX_VF:
+	case OCTEON_CN83XX_ID_VF:
 		seq_printf(str, "Intr Threshold Registers Pkt: %d Time: %d\n",
 			   octeon_read_csr(oct,
 					   CN83XX_VF_SDP_EPF_R_OUT_INT_LEVELS(0, oq_no)),
@@ -477,7 +477,7 @@ static int csrreg_show(struct seq_file *s, void *v UNUSED)
 
 	// switch case for checking other vf dev models
 	switch (oct->chip_id) {
-    case OCTEON_CN83XX_VF:
+    case OCTEON_CN83XX_ID_VF:
 		return cn83xx_vf_read_csrreg_buf(s, oct);
 	}
 
@@ -491,7 +491,7 @@ static int configreg_show(struct seq_file *s, void *v UNUSED)
 	// switch case for checking other vf dev models
 	switch (oct->chip_id) {
 	
-  //  case OCTEON_CN83XX_VF:
+  //  case OCTEON_CN83XX_ID_VF:
 //		return cn83xx_vf_read_configreg_buf(s, oct);
 	}
 

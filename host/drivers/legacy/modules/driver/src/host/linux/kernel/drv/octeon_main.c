@@ -316,44 +316,35 @@ void octeon_disable_msix_interrupts(octeon_device_t * oct_dev)
 	int i = 0;
 	int non_ioq_intrs = 0;
 
-	if(oct_dev->chip_id == OCTEON_CN83XX_PF)
+	if (OCTEON_CN83XX_PF(oct_dev->chip_id))
 		non_ioq_intrs = OCTEON_NUM_NON_IOQ_INTR;
-	else if(oct_dev->chip_id == OCTEON_CN93XX_PF ||
-		oct_dev->chip_id == OCTEON_CN98XX_PF)
+	else if (OCTEON_CN9XXX_PF(oct_dev->chip_id))
 		non_ioq_intrs = OCTEONTX2_NUM_NON_IOQ_INTR;
-	else if(oct_dev->chip_id == OCTEON_CNXK_PF)
+	else if (OCTEON_CNXK_PF(oct_dev->chip_id))
 		non_ioq_intrs = CNXK_NUM_NON_IOQ_INTR;
 
 	if (oct_dev->num_irqs) {
-	    if (oct_dev->chip_id == OCTEON_CN83XX_PF ||
-		oct_dev->chip_id == OCTEON_CN93XX_PF ||
-		oct_dev->chip_id == OCTEON_CN98XX_PF ||
-		oct_dev->chip_id == OCTEON_CNXK_PF) {
-
-            for (i = 0; i < non_ioq_intrs; i++) {
-	    		/* Free non ioq MSI-X vector */
-		    	free_irq(oct_dev->msix_entries[i].vector,
-			    	 oct_dev);
-             }
-
-	    	/* Free ioq MSI-X vector */
-            for (i = 0; i < oct_dev->num_irqs-non_ioq_intrs; i++) {
-		    	free_irq(oct_dev->msix_entries[i+non_ioq_intrs].vector,
-			    	 oct_dev->ioq_vector[i]);
-		    }
-        }
-        else {
-    		for (i = 0; i < (oct_dev->num_irqs - 1); i++) {
-	    		/* free MSI-X vector */
-		    	free_irq(oct_dev->msix_entries[i].vector,
-			    	 oct_dev->ioq_vector[i]);
-		    }
-            /* non-iov vector's argument is octeon_dev struct */
-// *INDENT-OFF*
-            free_irq(oct_dev->msix_entries[oct_dev->num_irqs -1].vector, oct_dev);
-// *INDENT-ON*
-
-        }
+		if (OCTEON_CN8PLUS_PF(oct_dev->chip_id)) {
+			for (i = 0; i < non_ioq_intrs; i++) {
+				/* Free non ioq MSI-X vector */
+				free_irq(oct_dev->msix_entries[i].vector,
+					 oct_dev);
+			}
+			/* Free ioq MSI-X vector */
+			for (i = 0; i < oct_dev->num_irqs-non_ioq_intrs; i++) {
+				free_irq(oct_dev->msix_entries[i+non_ioq_intrs].vector,
+					 oct_dev->ioq_vector[i]);
+			}
+		} else {
+			for (i = 0; i < (oct_dev->num_irqs - 1); i++) {
+				/* free MSI-X vector */
+				free_irq(oct_dev->msix_entries[i].vector,
+					 oct_dev->ioq_vector[i]);
+			}
+			/* non-iov vector's argument is octeon_dev struct */
+			free_irq(oct_dev->msix_entries[oct_dev->num_irqs -1].vector,
+				 oct_dev);
+		}
 		pci_disable_msix(oct_dev->pci_dev);
 		cavium_free_virt(oct_dev->msix_entries);
 		oct_dev->msix_entries = NULL;
@@ -449,14 +440,13 @@ int octeon_tx_enable_msix_interrupts(octeon_device_t * oct)
 
 	num_ioq_vectors = oct->num_oqs;
 
-	if (oct->chip_id == OCTEON_CN83XX_PF) {
+	if (OCTEON_CN83XX_PF(oct->chip_id)) {
 		non_ioq_intrs = OCTEON_NUM_NON_IOQ_INTR;
 		oct_irq_names = octtx_intr_names[0];
-	} else if (oct->chip_id == OCTEON_CN93XX_PF ||
-		   oct->chip_id == OCTEON_CN98XX_PF) {
+	} else if (OCTEON_CN9XXX_PF(oct->chip_id)) {
 		non_ioq_intrs = OCTEONTX2_NUM_NON_IOQ_INTR;
 		oct_irq_names = octtx2_intr_names[0];
-	} if (oct->chip_id == OCTEON_CNXK_PF) {
+	} else if (OCTEON_CNXK_PF(oct->chip_id)) {
 		non_ioq_intrs = CNXK_NUM_NON_IOQ_INTR;
 		oct_irq_names = octtx2_cnxk_intr_names[0];
 	}
@@ -728,9 +718,7 @@ void octeon_destroy_resources(octeon_device_t * oct_dev)
 	case OCT_DEV_PCI_MAP_DONE:
 		octeon_unmap_pci_barx(oct_dev, 0);
 		octeon_unmap_pci_barx(oct_dev, 1);
-		if (oct_dev->chip_id == OCTEON_CN93XX_PF ||
-		    oct_dev->chip_id == OCTEON_CN98XX_PF ||
-		    oct_dev->chip_id == OCTEON_CNXK_PF) {
+		if (OCTEON_CN9PLUS_PF(oct_dev->chip_id)) {
 			flush_workqueue(oct_dev->sdp_wq.wq);
 			destroy_workqueue(oct_dev->sdp_wq.wq);
 			octeon_unmap_pci_barx(oct_dev, 2);
@@ -843,7 +831,7 @@ enum setup_stage octeon_chip_specific_setup(octeon_device_t * oct)
 			}
 #endif
 			oct->sriov_info.num_vfs = num_vfs;
-			oct->chip_id = OCTEON_CN83XX_PF;
+			oct->chip_id = OCTEON_CN83XX_ID_PF;
 
 			return setup_cn83xx_octeon_pf_device(oct);
 		case OCTEON_CN93XX_PCIID_PF:
@@ -861,7 +849,7 @@ enum setup_stage octeon_chip_specific_setup(octeon_device_t * oct)
 			}
 #endif
 			oct->sriov_info.num_vfs = num_vfs;
-			oct->chip_id = OCTEON_CN93XX_PF;
+			oct->chip_id = OCTEON_CN93XX_ID_PF;
 			return setup_cn93xx_octeon_pf_device(oct);
 		case OCTEON_CN98XX_PCIID_PF:
 			cavium_print_msg("OCTEON[%d]: CN98XX PASS%d.%d on %02x:%02x:%x\n",
@@ -880,7 +868,7 @@ enum setup_stage octeon_chip_specific_setup(octeon_device_t * oct)
 			}
 #endif
 			oct->sriov_info.num_vfs = num_vfs;
-			oct->chip_id = OCTEON_CN98XX_PF;
+			oct->chip_id = OCTEON_CN98XX_ID_PF;
 			return setup_cn98xx_octeon_pf_device(oct); //use 93xx PF setup for now
 
 		case OCTEON_CNXK_PCIID_PF:
@@ -892,7 +880,7 @@ enum setup_stage octeon_chip_specific_setup(octeon_device_t * oct)
 
 			oct->pf_num = oct->octeon_id;
 			oct->sriov_info.num_vfs = num_vfs;
-			oct->chip_id = OCTEON_CNXK_PF;
+			oct->chip_id = OCTEON_CNXK_ID_PF;
 			return setup_cnxk_octeon_pf_device(oct);
 	default:
 		cavium_error("OCTEON: Unknown device found (dev_id: %x)\n",
@@ -1085,19 +1073,16 @@ resume_device_init:
 #endif
 
 #ifdef BUILD_FOR_EMULATOR
-	if(octeon_dev->chip_id == OCTEON_CN93XX_PF) {
+	if (OCTEON_CN93XX_PF(octeon_dev->chip_id)) {
 		/* init_ioqs proc entry is used for starting base module in
 		 * case of emulator. Driver can sucessfully return from here. */
 		return 0;
 	}
 #else
 
-	if(octeon_dev->chip_id == OCTEON_CN83XX_PF ||
-	   octeon_dev->chip_id == OCTEON_CN93XX_PF ||
-	   octeon_dev->chip_id == OCTEON_CN98XX_PF ||
-	   octeon_dev->chip_id == OCTEON_CNXK_PF) {
+	if (OCTEON_CN8PLUS_PF(octeon_dev->chip_id)) {
 #define SDP_HOST_LOADED                 0xDEADBEEFULL
-		if (octeon_dev->chip_id == OCTEON_CN83XX_PF)
+		if (OCTEON_CN83XX_PF(octeon_dev->chip_id))
 			octeon_write_csr64(octeon_dev,
 					   CN83XX_SLI_EPF_SCRATCH(0),
 					   SDP_HOST_LOADED);
