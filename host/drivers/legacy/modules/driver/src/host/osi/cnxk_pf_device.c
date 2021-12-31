@@ -9,32 +9,12 @@
 #include "octeon-pci.h"
 #include <linux/log2.h>
 
-#define FW_TO_HOST 0x2
-#define HOST_TO_FW 0x1
 //int g_app_mode[2] = {CVM_DRV_APP_START, CVM_DRV_APP_START};
 extern int g_app_mode[];
-static u8 g_vf_srn[2];
-enum info_exhg_state {
-	/* State where F/W isn't posted anything */
-	NO_EXHG,
-	/* State where Host posts its ring info */
-	RINFO_HOST,
-	/* State where F/W acks the host ring info */
-	RINFO_FW_ACK
-};
-
-struct fw_handshake_wrk {
-	octeon_device_t *oct;
-	enum info_exhg_state exhg_state;
-};
-static struct fw_handshake_wrk hs_wrk[2];
 
 extern int octeon_device_init(octeon_device_t *, int);
 extern void mv_facility_irq_handler(octeon_device_t *oct, uint64_t event_word);
 
-extern int num_rings_per_pf;
-extern int num_rings_per_vf;
-static int num_rings_per_pf_pt[2], num_rings_per_vf_pt[2], pf_srn_pt[2];
 extern void cnxk_iq_intr_handler(octeon_ioq_vector_t * ioq_vector);
 
 void cnxk_dump_iq_regs(octeon_device_t * oct)
@@ -1063,128 +1043,86 @@ static inline int lowerpow2roundup(int x)
 	return x - (x >> 1);
 }
 
-union ring {
-        u64 u;
-        struct {
-                u64 dir:2;
-                u64 rpvf:8;
-                u64 rppf:8;
-                u64 numvf:8;
-                u64 pf_srn:8;
-                u64 rsvd:2;
-                u64 raz:28;
-        } s;
-};
 
-static int resume_cnxk_setup(octeon_device_t * oct)
+static int
+octeon_get_fw_info(octeon_device_t *oct)
 {
-	uint64_t npfs = 0, rppf = 0, pf_srn = pf_srn_pt[oct->octeon_id];
-	uint64_t nvfs = 0, rpvf = 0, vf_srn = 0;
-	int i, j, srn;
-	int vf_rings = 0;
-	uint64_t regval = 0ull;
+	uint64_t npfs = 0, rppf = 0, pf_srn = 0;
+	uint64_t rpvf = 0, vf_srn = 0;
+	uint64_t max_nvfs;
+	uint32_t srn;
+	int i, j;
+	u64 regval;
 	octeon_cnxk_pf_t *cnxk = (octeon_cnxk_pf_t *) oct->chip;
 
+	regval = octeon_read_csr64(oct,
+			CNXK_SDP_MAC_PF_RING_CTL(oct->pcie_port));
+	cavium_print_msg("SDP_MAC_PF_RING_CTL[%d]:0x%llx\n", oct->pcie_port,
+				regval);
+	pf_srn = (regval & CNXK_SDP_MAC_PF_RING_CTL_SRN) >>
+		CNXK_SDP_MAC_PF_RING_CTL_SRN_BIT_POS;
+	rppf = (regval & CNXK_SDP_MAC_PF_RING_CTL_RPPF) >>
+		CNXK_SDP_MAC_PF_RING_CTL_RPPF_BIT_POS;
+	if (rppf == 0) {
+		cavium_print_msg("PF ring control not initilaized\n");
+		return -1;
+	}
+	regval = octeon_read_csr64(oct, CNXK_SDP_EPF_RINFO);
+	cavium_print_msg("SDP_EPF_RINFO[0x%x]:0x%llx\n", CNXK_SDP_EPF_RINFO, regval);
+	vf_srn = (regval & CNXK_SDP_EPF_RINFO_SRN) >>
+		CNXK_SDP_EPF_RINFO_SRN_BIT_POS;
+	rpvf = (regval & CNXK_SDP_EPF_RINFO_RPVF) >>
+		CNXK_SDP_EPF_RINFO_RPVF_BIT_POS;
+	max_nvfs = (regval & CNXK_SDP_EPF_RINFO_NVFS) >>
+		CNXK_SDP_EPF_RINFO_NVFS_BIT_POS;
+
+	if (oct->sriov_info.num_vfs > max_nvfs)
+		oct->sriov_info.num_vfs = max_nvfs;
+
 	npfs = 1;
-	rppf = num_rings_per_pf;
-	rpvf = num_rings_per_vf;
-	if(oct->sriov_info.num_vfs) {
-		/* VF is enabled, Assign ring to VF */
-		nvfs = oct->sriov_info.num_vfs;
-		vf_srn = g_vf_srn[oct->octeon_id];
-	} else {
-		/* No VF enabled, Assign ring to PF */
-		nvfs = 0;
-		vf_srn = 0;
+	/* Assign rings to PF */
+	for (i = 0; i < rppf; i++) {
+		regval = octeon_read_csr64(oct, CNXK_SDP_EPVF_RING(pf_srn + i));
+		cavium_print_msg("SDP_EPVF_RING[0x%llx]:0x%llx\n",
+				CNXK_SDP_EPVF_RING(pf_srn + i), regval);
+		regval = 0;
+		if (oct->pcie_port == 2)
+			regval |= (8 << CNXK_SDP_FUNC_SEL_EPF_BIT_POS);
+		regval |= (0 << CNXK_SDP_FUNC_SEL_FUNC_BIT_POS);
+
+		octeon_write_csr64(oct, CNXK_SDP_EPVF_RING(pf_srn + i), regval);
+
+		regval = octeon_read_csr64(oct, CNXK_SDP_EPVF_RING(pf_srn + i));
+		cavium_print_msg("SDP_EPVF_RING[0x%llx]:0x%llx\n",
+				CNXK_SDP_EPVF_RING(pf_srn + i), regval);
 	}
 
-	/* Only PF0 needs to program these */
-	//if(!oct->octeon_id) {
-	if (1) {
-		/* FIXME: Who programs RPPF in SDP_MACX_PF_RING_CTL register? */
-		regval = 0;
-		if (OCTEON_CNXK_PF(oct->chip_id)) {
-			regval = (npfs  << CNXK_SDP_MAC_PF_RING_CTL_NPFS_BIT_POS);
-			regval |= (pf_srn << CNXK_SDP_MAC_PF_RING_CTL_SRN_BIT_POS);
-			regval |= (rppf << CNXK_SDP_MAC_PF_RING_CTL_RPPF_BIT_POS);
-		}
+	oct->drv_flags |= OCTEON_SRIOV_MODE;
+	oct->drv_flags |= OCTEON_MBOX_CAPABLE;
 
-		octeon_write_csr64(oct, CNXK_SDP_MAC_PF_RING_CTL(oct->pcie_port), 
-					regval);
-		/* Get RPPF from MACX_PF_RING_CTL */
-		regval = octeon_read_csr64(oct,
-				CNXK_SDP_MAC_PF_RING_CTL(oct->pcie_port));
-
-		cavium_print_msg("SDP_MAC_PF_RING_CTL[%d]:0x%llx\n", oct->pcie_port,
-					regval);
-		/* Assign rings to PF */
-		for (i = 0; i < rppf; i++) {
-			regval = octeon_read_csr64(oct, CNXK_SDP_EPVF_RING(pf_srn + i));
+	/* Assign rings to VF */
+	for (j = 0; j < oct->sriov_info.num_vfs; j++) {
+		srn = vf_srn + (j * rpvf);
+		for (i = 0; i < rpvf; i++) {
+			regval = octeon_read_csr64(oct, CNXK_SDP_EPVF_RING(srn + i));
 			cavium_print_msg("SDP_EPVF_RING[0x%llx]:0x%llx\n",
-					CNXK_SDP_EPVF_RING(pf_srn + i), regval);
+					CNXK_SDP_EPVF_RING(srn + i), regval);
 			regval = 0;
-			/* VSR: TODO: is pcie_port==2 means second PEM ? */
 			if (oct->pcie_port == 2)
 				regval |= (8 << CNXK_SDP_FUNC_SEL_EPF_BIT_POS);
-			regval |= (0 << CNXK_SDP_FUNC_SEL_FUNC_BIT_POS);
+			regval |= ((j+1) << CNXK_SDP_FUNC_SEL_FUNC_BIT_POS);
 
-			octeon_write_csr64(oct, CNXK_SDP_EPVF_RING(pf_srn + i), regval);
+			octeon_write_csr64(oct, CNXK_SDP_EPVF_RING(srn + i), regval);
 
-			regval = octeon_read_csr64(oct, CNXK_SDP_EPVF_RING(pf_srn + i));
+			regval = octeon_read_csr64(oct, CNXK_SDP_EPVF_RING(srn + i));
 			cavium_print_msg("SDP_EPVF_RING[0x%llx]:0x%llx\n",
-					CNXK_SDP_EPVF_RING(pf_srn + i), regval);
+					CNXK_SDP_EPVF_RING(srn + i), regval);
 		}
 	}
-
-	if (!oct->sriov_info.num_vfs) {
-		oct->drv_flags |= OCTEON_NON_SRIOV_MODE;
-
-		cavium_print_msg(" num_vfs is zero, SRIOV is not enabled.\n");
-		vf_rings = 0;
-	} else {
-
-		oct->drv_flags |= OCTEON_SRIOV_MODE;
-		oct->drv_flags |= OCTEON_MBOX_CAPABLE;
-
-		/* Program RINFO register */
-		regval = octeon_read_csr64(oct, CNXK_SDP_EPF_RINFO);
-		cavium_print_msg("SDP_EPF_RINFO[0x%x]:0x%llx\n", CNXK_SDP_EPF_RINFO, regval);
-
-		regval = 0;
-		regval |= (vf_srn << CNXK_SDP_EPF_RINFO_SRN_BIT_POS);
-		regval |= (rpvf << CNXK_SDP_EPF_RINFO_RPVF_BIT_POS);
-		regval |= (nvfs << CNXK_SDP_EPF_RINFO_NVFS_BIT_POS);
-
-		octeon_write_csr64(oct, CNXK_SDP_EPF_RINFO, regval);
-
-		regval = octeon_read_csr64(oct, CNXK_SDP_EPF_RINFO);
-		cavium_print_msg("SDP_EPF_RINFO[0x%x]:0x%llx\n", CNXK_SDP_EPF_RINFO, regval);
-
-		/* Assign ring0 to VF */
-		for (j = 0; j < nvfs; j++) {
-			srn = vf_srn + (j * num_rings_per_vf_pt[oct->octeon_id]);
-			for (i = 0; i < rpvf; i++) {
-				regval = octeon_read_csr64(oct, CNXK_SDP_EPVF_RING(srn + i));
-				cavium_print_msg("SDP_EPVF_RING[0x%llx]:0x%llx\n",
-						CNXK_SDP_EPVF_RING(srn + i), regval);
-				regval = 0;
-				if (oct->pcie_port == 2)
-					regval |= (8 << CNXK_SDP_FUNC_SEL_EPF_BIT_POS);
-				regval |= ((j+1) << CNXK_SDP_FUNC_SEL_FUNC_BIT_POS);
-
-				octeon_write_csr64(oct, CNXK_SDP_EPVF_RING(srn + i), regval);
-
-				regval = octeon_read_csr64(oct, CNXK_SDP_EPVF_RING(srn + i));
-				cavium_print_msg("SDP_EPVF_RING[0x%llx]:0x%llx\n",
-						CNXK_SDP_EPVF_RING(srn + i), regval);
-			}
-		}
-	}
-
 	oct->sriov_info.rings_per_vf = rpvf;
 	/** All the remaining queues are handled by Physical Function */
 	//oct->sriov_info.pf_srn = oct->octeon_id * num_rings_per_pf_pt;
-	oct->sriov_info.pf_srn = pf_srn_pt[oct->octeon_id];
+	oct->sriov_info.pf_srn = pf_srn;
 	oct->sriov_info.rings_per_pf = rppf;
 
 	oct->sriov_info.sriov_enabled = 0;
@@ -1197,129 +1135,34 @@ static int resume_cnxk_setup(octeon_device_t * oct)
 	CFG_GET_IQ_MAX_BASE_Q(CHIP_FIELD(oct, cnxk_pf, conf)) = oct->sriov_info.rings_per_pf;
 	CFG_GET_OQ_MAX_BASE_Q(CHIP_FIELD(oct, cnxk_pf, conf)) = oct->sriov_info.rings_per_pf;
 
+	g_app_mode[oct->octeon_id] = CVM_DRV_NIC_APP;
+
 	return 0;
 }
 
-static void
-octeon_wait_fw_info(struct work_struct *work)
-{
-	struct cavium_wq *fw_hs_wq;
-	struct fw_handshake_wrk *fw_hs_wrk;
-	union ring rinfo;
-	octeon_device_t *oct;
-	u64 regval;
 
-	fw_hs_wq = container_of(work,struct cavium_wq, wk.work.work);
-	fw_hs_wrk = (struct fw_handshake_wrk *)fw_hs_wq->wk.ctxptr;
-	oct = fw_hs_wrk->oct;
-	printk("OCTEON id = %d\n", oct->octeon_id);
-	rinfo.u = octeon_read_csr64(oct, CNXK_SDP_R_IN_PKT_CNT(0));
-	if (rinfo.s.dir == FW_TO_HOST) {
-		if (fw_hs_wrk->exhg_state == NO_EXHG) {
-			printk("pf_srn %d rpf %d rvf %d nvf %d\n", rinfo.s.pf_srn,
-			       rinfo.s.rppf, rinfo.s.rpvf, rinfo.s.numvf);
-
-			/*
-			 * For now, rings per PF and rings per VF must match
-			 * the firmware DTB, as this is the only way that host
-			 * and target agree on the layout of the rings.
-			 * The firmware config determines the layout of the rings,
-			 * so the host needs to be updated to account for that
-			 * layout when not using all the rings configured by
-			 * the firmware.
-			 * IPBUSW-12515 is the Jira issue tracking this fix.
-			 */
-#if 0
-			pf_srn_pt[oct->octeon_id] = rinfo.s.pf_srn;
-			g_vf_srn[oct->octeon_id] = rinfo.s.pf_srn + rinfo.s.rppf;
-			num_rings_per_pf_pt[oct->octeon_id] = num_rings_per_pf;
-			num_rings_per_vf_pt[oct->octeon_id] = num_rings_per_vf;
-			if (num_rings_per_pf_pt[oct->octeon_id] != 1)
-				num_rings_per_pf_pt[oct->octeon_id] =
-					roundup_pow_of_two(num_rings_per_pf);
-			if (num_rings_per_vf_pt[oct->octeon_id] != 1)
-				num_rings_per_vf_pt[oct->octeon_id] =
-					roundup_pow_of_two(num_rings_per_vf);
-
-			if (num_rings_per_pf_pt[oct->octeon_id] > rinfo.s.rppf)
-				num_rings_per_pf_pt[oct->octeon_id] = rinfo.s.rppf;
-			if (num_rings_per_vf_pt[oct->octeon_id] > rinfo.s.rpvf)
-				num_rings_per_vf_pt[oct->octeon_id] = rinfo.s.rpvf;
-#else
-			if (oct->sriov_info.num_vfs > rinfo.s.numvf)
-				oct->sriov_info.num_vfs = rinfo.s.numvf;
-			/* Take and use whatever the firmware provides for Ring counts */
-			pf_srn_pt[oct->octeon_id] = rinfo.s.pf_srn;
-			g_vf_srn[oct->octeon_id] = rinfo.s.pf_srn + rinfo.s.rppf;
-			num_rings_per_pf_pt[oct->octeon_id] = rinfo.s.rppf;
-			num_rings_per_vf_pt[oct->octeon_id] = rinfo.s.rpvf;
-			if (num_rings_per_pf != rinfo.s.rppf
-			    || num_rings_per_vf != rinfo.s.rpvf) {
-				printk("NOTICE: rings per PF/VF adjusted to match NIC requirements\n");
-			}
-			printk("NOTICE: rings per PF: %d, VF: %d\n", rinfo.s.rppf, rinfo.s.rpvf);
-			num_rings_per_pf = rinfo.s.rppf;
-			num_rings_per_vf = rinfo.s.rpvf;
-#endif
-
-			rinfo.s.rppf = num_rings_per_pf;
-			rinfo.s.rpvf = num_rings_per_vf;
-			rinfo.s.numvf = oct->sriov_info.num_vfs;
-			rinfo.s.dir = HOST_TO_FW;
-			octeon_write_csr64(oct, CNXK_SDP_R_IN_PKT_CNT(0),
-					rinfo.u);
-			fw_hs_wrk->exhg_state = RINFO_HOST;
-		} else if (fw_hs_wrk->exhg_state == RINFO_HOST) {
-			fw_hs_wrk->exhg_state = RINFO_FW_ACK;
-			octeon_write_csr64(oct, CNXK_SDP_R_IN_PKT_CNT(0),
-					0xFFFFFFFFF);
-			/* Relinquish the ring as the exchange is complete */
-			regval = 0;
-
-			printk("exchg complete for %d\n", oct->octeon_id);
-			if (OCTEON_CNXK_PF(oct->chip_id)) {
-				regval = (0  << CNXK_SDP_MAC_PF_RING_CTL_NPFS_BIT_POS);
-				regval |= (0 << CNXK_SDP_MAC_PF_RING_CTL_SRN_BIT_POS);
-				regval |= (1 << CNXK_SDP_MAC_PF_RING_CTL_RPPF_BIT_POS);
-			}
-			octeon_write_csr64(oct,
-				CNXK_SDP_MAC_PF_RING_CTL(oct->pcie_port),
-				regval);
-			resume_cnxk_setup(fw_hs_wrk->oct);
-			octeon_device_init(fw_hs_wrk->oct, 1);
-			/* Enabling NIC module to continue */
-			g_app_mode[oct->octeon_id] = CVM_DRV_NIC_APP;
-
-			return;
-		}
-	}
-
-        queue_delayed_work(fw_hs_wq->wq, &fw_hs_wq->wk.work, HZ * 1);
-}
-
-
-enum setup_stage setup_cnxk_octeon_pf_device(octeon_device_t * oct)
+int setup_cnxk_octeon_pf_device(octeon_device_t * oct)
 {
 	octeon_cnxk_pf_t *cnxk = (octeon_cnxk_pf_t *) oct->chip;
-	u64 regval;
+	int ret;
 
 	cnxk->oct = oct;
 
 	if (octeon_map_pci_barx(oct, 0, 0))
-		return SETUP_FAIL;
+		return -1;
 
 	/* TODO: It is not required */
 	if (octeon_map_pci_barx(oct, 1, MAX_BAR1_IOREMAP_SIZE)) {
 		cavium_error("%s CNXK BAR1 map failed\n", __FUNCTION__);
 		octeon_unmap_pci_barx(oct, 0);
-		return SETUP_FAIL;
+		return -1;
 	}
 
 	if (octeon_map_pci_barx(oct, 2, MAX_BAR1_IOREMAP_SIZE)) {
 		cavium_error("%s CNXK BAR4 map failed\n", __FUNCTION__);
 		octeon_unmap_pci_barx(oct, 0);
 		octeon_unmap_pci_barx(oct, 1);
-		return SETUP_FAIL;
+		return -1;
 	}
 
 	cnxk->conf = (cnxk_pf_config_t *) oct_get_config_info(oct);
@@ -1363,81 +1206,16 @@ enum setup_stage setup_cnxk_octeon_pf_device(octeon_device_t * oct)
 
 	/* Update pcie port number in the device structure */
 	cnxk_get_pcie_qlmport(oct);
-
-/* TODO: Hardcoding ring configuration for validation on emulator.
- *       Remove following code after validation on emulator */
-#ifdef BUILD_FOR_EMULATOR
-
-#define NPFS	8
-#define PFS_SRN 0
-#define RPPF	2
-
-	/* No rings for VF's of this PF */
-	octeon_write_csr64(oct, CNXK_SDP_EPF_RINFO, 0ULL);
-	/* Program MACX_PF_RING_CTL from PF0 only. 
-	 * TODO: Condition check should done on the PF number not on octeon_id */
-	if(1) {
-		/* Hardcode NPFS = 8, RPPF = 2 and SRN = 0 */
-		regval = 0;
-		regval = (NPFS  << CNXK_SDP_MAC_PF_RING_CTL_NPFS_BIT_POS);
-		regval |= (PFS_SRN << CNXK_SDP_MAC_PF_RING_CTL_SRN_BIT_POS);
-		regval |= (RPPF << CNXK_SDP_MAC_PF_RING_CTL_RPPF_BIT_POS);
-
-		octeon_write_csr64(oct, CNXK_SDP_MAC_PF_RING_CTL(oct->pcie_port), 
-				regval);
-	}
-
-	oct->drv_flags |= OCTEON_NON_SRIOV_MODE;
-	oct->sriov_info.rings_per_vf = 0;
-	/* Starting ring number for this PF */
-	oct->sriov_info.pf_srn = oct->octeon_id * RPPF;
-	oct->sriov_info.rings_per_pf = RPPF;
-	CFG_GET_TOTAL_PF_RINGS(cnxk->conf, oct->pf_num) = RPPF;
-	CFG_GET_IQ_MAX_BASE_Q(CHIP_FIELD(oct, cnxk_pf, conf)) = PFS_SRN;
-	CFG_GET_OQ_MAX_BASE_Q(CHIP_FIELD(oct, cnxk_pf, conf)) = PFS_SRN;
-
-	cavium_print_msg(" OCTEON PF[%d] IOQ CONFIGURATION \n", oct->pf_num);
-	cavium_print_msg(" PF[%d] TOTAL NUMBER OF RINGS:%u \n", oct->pf_num,
-			 CFG_GET_TOTAL_PF_RINGS(cnxk->conf, oct->pf_num));
-	cavium_print_msg(" PF[%d] RINGS PER PF:%u \n", oct->pf_num,
-			 oct->sriov_info.rings_per_pf);
-	cavium_print_msg(" PF[%d] STARTING RING NUMBER:%u \n", oct->pf_num,
-			 oct->sriov_info.pf_srn);
-	cavium_print_msg(" PF[%d] TOTAL NUMBER OF VFs:%u \n", oct->pf_num,
-			 oct->sriov_info.num_vfs);
-	cavium_print_msg(" PF[%d] RINGS PER VF:%u \n", oct->pf_num,
-			 oct->sriov_info.rings_per_vf);
-	return SETUP_SUCCESS;
-#else
-	/* 
-	 * Take control of the first ring, as the ring info 
-	 * from F/W is exchanged through its register.
-	 */
-	regval = 0;
-	regval = (0ULL  << CNXK_SDP_MAC_PF_RING_CTL_NPFS_BIT_POS);
-	regval |= (0ULL << CNXK_SDP_MAC_PF_RING_CTL_SRN_BIT_POS);
-	regval |= (1ULL << CNXK_SDP_MAC_PF_RING_CTL_RPPF_BIT_POS);
-	
-	octeon_write_csr64(oct, CNXK_SDP_MAC_PF_RING_CTL(oct->pcie_port),
-			regval);
-
- 	oct->sdp_wq.wq = alloc_workqueue("sdp_epmode_fw_hs", WQ_MEM_RECLAIM, 0);
-
-	hs_wrk[oct->octeon_id].oct = oct;
-	hs_wrk[oct->octeon_id].exhg_state = NO_EXHG;
-	oct->sdp_wq.wk.ctxptr = &hs_wrk[oct->octeon_id];
-        INIT_DELAYED_WORK(&oct->sdp_wq.wk.work, octeon_wait_fw_info);
-        queue_delayed_work(oct->sdp_wq.wq, &oct->sdp_wq.wk.work, 0);
-
-	return SETUP_IN_PROGRESS;
-#endif
+	ret = octeon_get_fw_info(oct);
+	if (ret != 0)
+		goto free_barx;
+	return 0;
 
 free_barx:
 	octeon_unmap_pci_barx(oct, 0);
 	octeon_unmap_pci_barx(oct, 1);
 	octeon_unmap_pci_barx(oct, 2);
-	return SETUP_FAIL;
-
+	return -1;
 }
 
 int validate_cnxk_pf_config_info(cnxk_pf_config_t * conf_cnxk)

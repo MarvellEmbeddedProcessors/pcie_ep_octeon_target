@@ -733,13 +733,13 @@ int setup_cn83xx_octeon_vf_device(octeon_device_t * oct)
 	cn83xx->oct = oct;
 
 	if (octeon_map_pci_barx(oct, 0, 0))
-		return 1;
+		return -1;
 
 	cn83xx->conf = (cn83xx_vf_config_t *) oct_get_config_info(oct);
 	if (cn83xx->conf == NULL) {
 		cavium_error("%s No Config found for CN83XX\n", __FUNCTION__);
 		octeon_unmap_pci_barx(oct, 0);
-		return 1;
+		return -1;
 	}
 
 	/**  INPUT_CONTROL[RPVF] gives the VF IOq count  **/

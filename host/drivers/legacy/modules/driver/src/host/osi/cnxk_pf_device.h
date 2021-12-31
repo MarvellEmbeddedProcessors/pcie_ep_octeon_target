@@ -27,7 +27,7 @@ void cnxk_pf_setup_global_output_regs(octeon_device_t * oct);
 
 void cnxk_check_config_space_error_regs(octeon_device_t * oct);
 
-enum setup_stage setup_cnxk_octeon_pf_device(octeon_device_t * oct);
+int setup_cnxk_octeon_pf_device(octeon_device_t * oct);
 
 void cnxk_get_pf_num(octeon_device_t * oct);
 

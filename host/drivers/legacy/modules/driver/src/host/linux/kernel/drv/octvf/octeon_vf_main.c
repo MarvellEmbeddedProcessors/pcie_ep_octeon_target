@@ -18,14 +18,6 @@ int octeon_msix = 1;
 module_param(octeon_msix, int, 0);
 MODULE_PARM_DESC(octeon_msix, "Flag for enabling MSI-X interrupts");
 
-uint32_t num_rings_per_vf = 1;
-module_param(num_rings_per_vf, int, 0);
-MODULE_PARM_DESC(num_rings_per_vf, "Number of rings per VF");
-
-int num_vfs = 0;
-module_param(num_vfs, int, 0);
-MODULE_PARM_DESC(num_vfs, "Number of Virtual Functions");
-
 char sdp_packet_mode[5];
 module_param_string(sdp_packet_mode, sdp_packet_mode, sizeof(sdp_packet_mode), 0);
 MODULE_PARM_DESC(sdp_packet_mode, "Mode of SDP operation: <loop|nic>");
@@ -705,7 +697,7 @@ static int octeon_chip_specific_setup(octeon_device_t * oct)
 
 		oct->chip_id = OCTEON_CN93XX_ID_VF;
 		return setup_cn93xx_octeon_vf_device(oct);
-#if 1
+
 	case OCTEON_CN98XX_PCIID_VF:
 		cavium_print_msg("OCTEON_VF[%d]: CN98XX PASS%d.%d\n",
 				 oct->octeon_id, OCTEON_MAJOR_REV(oct),
@@ -713,7 +705,6 @@ static int octeon_chip_specific_setup(octeon_device_t * oct)
 
 		oct->chip_id = OCTEON_CN98XX_ID_VF;
 		return setup_cn98xx_octeon_vf_device(oct);
-#endif
 	case OCTEON_CNXK_PCIID_VF:
 		cavium_print_msg("OCTEON_VF[%d]: CNXK PASS%d.%d\n",
 				 oct->octeon_id, OCTEON_MAJOR_REV(oct),
@@ -726,7 +717,7 @@ static int octeon_chip_specific_setup(octeon_device_t * oct)
 			     dev_id);
 	}
 
-	return 1;
+	return -1;
 }
 
 /* OS-specific initialization for each Octeon device. */
@@ -790,7 +781,6 @@ octeon_wait_for_npu_base(void *octptr, unsigned long arg);
 int octeon_device_init(octeon_device_t * octeon_dev)
 {
 	int ret;
-	enum setup_stage stage;
 	octeon_poll_ops_t poll_ops;
 
 	cavium_atomic_set(&octeon_dev->status, OCT_DEV_BEGIN_STATE);
@@ -798,18 +788,15 @@ int octeon_device_init(octeon_device_t * octeon_dev)
 	/* Enable access to the octeon device and make its DMA capability
 	   known to the OS. */
 	if (octeon_pci_os_setup(octeon_dev))
-		return 1;
+		return -1;
 
-	stage = octeon_chip_specific_setup(octeon_dev);
+	ret = octeon_chip_specific_setup(octeon_dev);
 	/* Identify the Octeon type and map the BAR address space. */
-	if (stage == SETUP_FAIL) {
+	if (ret == -1) {
 #ifndef ETHERPCI
 		cavium_error("OCTEON_VF: Chip specific setup failed\n");
 #endif
-		return 1;
-	} else if (stage == SETUP_IN_PROGRESS) {
-		cavium_print_msg(" Chip specific setup in progress\n");
-		return 0;
+		return ret;
 	}
 
 	cavium_print_msg("OCTEON_VF Chip specific setup completed\n");

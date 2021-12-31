@@ -26,8 +26,6 @@ struct fw_handshake_wrk {
 	enum info_exhg_state exhg_state;
 };
 
-extern int num_rings_per_pf;
-extern int num_rings_per_vf;
 
 void cnxk_dump_vf_iq_regs(octeon_device_t * oct)
 {
@@ -771,13 +769,13 @@ int setup_cnxk_octeon_vf_device(octeon_device_t * oct)
 	cnxk->oct = oct;
 
 	if (octeon_map_pci_barx(oct, 0, 0))
-		return 1;
+		return -1;
 
 	cnxk->conf = (cnxk_vf_config_t *) oct_get_config_info(oct);
 	if (cnxk->conf == NULL) {
 		cavium_error("%s No Config found for CNXK\n", __FUNCTION__);
 		octeon_unmap_pci_barx(oct, 0);
-		return 1;
+		return -1;
 	}
 
 	reg_val =
@@ -824,7 +822,7 @@ int setup_cnxk_octeon_vf_device(octeon_device_t * oct)
 
 	octeon_get_app_mode(oct, 0);
 
-	return SETUP_SUCCESS;
+	return 0;
 }
 
 int validate_cnxk_vf_config_info(cnxk_vf_config_t * conf_cnxk)

@@ -26,9 +26,6 @@ struct fw_handshake_wrk {
 	enum info_exhg_state exhg_state;
 };
 
-extern int num_rings_per_pf;
-extern int num_rings_per_vf;
-
 void cn93xx_dump_vf_iq_regs(octeon_device_t * oct)
 {
 
@@ -799,13 +796,13 @@ int setup_cn98xx_octeon_vf_device(octeon_device_t * oct)
 	cn98xx->oct = oct;
 
 	if (octeon_map_pci_barx(oct, 0, 0))
-		return 1;
+		return -1;
 
 	cn98xx->conf = (cn93xx_vf_config_t *) oct_get_config_info(oct);
 	if (cn98xx->conf == NULL) {
 		cavium_error("%s No Config found for CN93XX\n", __FUNCTION__);
 		octeon_unmap_pci_barx(oct, 0);
-		return 1;
+		return -1;
 	}
 
 	reg_val =
@@ -856,7 +853,7 @@ int setup_cn98xx_octeon_vf_device(octeon_device_t * oct)
 	oct->fn_list.dump_registers = cn93xx_dump_vf_initialized_regs;
 
 	octeon_get_app_mode(oct, 0);
-	return SETUP_SUCCESS;
+	return 0;
 }
 
 int setup_cn93xx_octeon_vf_device(octeon_device_t * oct)
@@ -870,13 +867,13 @@ int setup_cn93xx_octeon_vf_device(octeon_device_t * oct)
 	cn93xx->oct = oct;
 
 	if (octeon_map_pci_barx(oct, 0, 0))
-		return 1;
+		return -1;
 
 	cn93xx->conf = (cn93xx_vf_config_t *) oct_get_config_info(oct);
 	if (cn93xx->conf == NULL) {
 		cavium_error("%s No Config found for CN93XX\n", __FUNCTION__);
 		octeon_unmap_pci_barx(oct, 0);
-		return 1;
+		return -1;
 	}
 
 	reg_val =
@@ -922,7 +919,7 @@ int setup_cn93xx_octeon_vf_device(octeon_device_t * oct)
 	oct->fn_list.dump_registers = cn93xx_dump_vf_initialized_regs;
 
 	octeon_get_app_mode(oct, 0);
-	return SETUP_SUCCESS;
+	return 0;
 }
 
 int validate_cn93xx_vf_config_info(cn93xx_vf_config_t * conf93xx)

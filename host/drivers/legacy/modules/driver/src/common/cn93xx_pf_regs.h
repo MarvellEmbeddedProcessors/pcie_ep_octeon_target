@@ -498,9 +498,13 @@
 /* Width of RPPF field in CN93XX_SDP_MAC_PF_RING_CTL register */
 #define    CN93XX_SDP_MAC_PF_RING_CTL_RPPF		    0x3F
 
-#define    CN98XX_SDP_MAC_PF_RING_CTL_SRN_BIT_POS	    0
-#define    CN98XX_SDP_MAC_PF_RING_CTL_RPPF_BIT_POS	    32
+
 #define    CN98XX_SDP_MAC_PF_RING_CTL_NPFS_BIT_POS	    48
+#define    CN98XX_SDP_MAC_PF_RING_CTL_NPFS		    0xF
+#define    CN98XX_SDP_MAC_PF_RING_CTL_RPPF_BIT_POS	    32
+#define    CN98XX_SDP_MAC_PF_RING_CTL_RPPF		    0x3F
+#define    CN98XX_SDP_MAC_PF_RING_CTL_SRN_BIT_POS	    0
+#define    CN98XX_SDP_MAC_PF_RING_CTL_SRN		    0xFF
 /* ############################# PEM Specific Registers ############################ */
 /** PEM(0..3)_BAR1_INDEX(0..15)address is defined as
  *  addr = (0x00011800C0000100  |port <<24 |idx <<3 )

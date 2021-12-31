@@ -33,12 +33,6 @@ typedef enum {
 	OCT_DRV_ACTIVE
 } OCTEON_DRIVER_STATUS;
 
-enum setup_stage {
-	SETUP_SUCCESS,
-	SETUP_FAIL,
-	SETUP_IN_PROGRESS
-};
-
 void octeon_unmap_pci_barx(octeon_device_t * oct, int baridx);
 
 int octeon_map_pci_barx(octeon_device_t * oct, int baridx, int max_map_len);

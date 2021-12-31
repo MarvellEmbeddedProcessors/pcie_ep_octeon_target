@@ -10,8 +10,6 @@
 
 extern void mv_facility_irq_handler(octeon_device_t *oct, uint64_t event_word);
 
-extern int num_rings_per_pf;
-extern int num_rings_per_vf;
 
 void cn83xx_dump_iq_regs(octeon_device_t * oct)
 {
@@ -1070,7 +1068,7 @@ static inline int lowerpow2roundup(int x)
 }
 
 #define CN83XX_MAX_VF 15
-enum setup_stage
+int
 setup_cn83xx_octeon_pf_device(octeon_device_t * oct)
 {
 	uint64_t epf_rinfo = 0;
@@ -1083,12 +1081,12 @@ setup_cn83xx_octeon_pf_device(octeon_device_t * oct)
 	cn83xx->oct = oct;
 
 	if (octeon_map_pci_barx(oct, 0, 0))
-		return SETUP_FAIL;
+		return -1;
 
 	if (octeon_map_pci_barx(oct, 1, MAX_BAR1_IOREMAP_SIZE)) {
 		cavium_error("%s CN83XX BAR1 map failed\n", __FUNCTION__);
 		octeon_unmap_pci_barx(oct, 0);
-		return SETUP_FAIL;
+		return -1;
 	}
 
 	cn83xx->conf = (cn83xx_pf_config_t *) oct_get_config_info(oct);
@@ -1096,7 +1094,7 @@ setup_cn83xx_octeon_pf_device(octeon_device_t * oct)
 		cavium_error("%s No Config found for CN83XX\n", __FUNCTION__);
 		octeon_unmap_pci_barx(oct, 0);
 		octeon_unmap_pci_barx(oct, 1);
-		return SETUP_FAIL;
+		return -1;
 	}
 #ifdef IOQ_PERF_MODE_O3
 	/* NOTE: MAC credit register not accessible through Host. */
@@ -1163,19 +1161,13 @@ setup_cn83xx_octeon_pf_device(octeon_device_t * oct)
 			     oct->sriov_info.num_vfs);
 			goto free_barx;
 		}
-		/* NPU kernel supports 8 queues per PF, to support > 8
-		 * fix kernel then remove below condition
-		 */
-		if (num_rings_per_pf > CN83XX_MAX_RINGS_PER_VF) {
-			num_rings_per_pf = CN83XX_MAX_RINGS_PER_VF;
-		}
 		if (oct->sriov_info.num_vfs > CN83XX_MAX_VF) {
 			cavium_error("OTX kernel supports upto %d VFs\n",
 					CN83XX_MAX_VF);
 			oct->sriov_info.num_vfs = CN83XX_MAX_VF;
 		}
 
-		vf_rings = num_rings_per_vf;
+		vf_rings = 8;
 
 		/** VF can support MAX up to 8 IOQs */
 		if (vf_rings > CN83XX_MAX_RINGS_PER_VF)
@@ -1188,7 +1180,7 @@ setup_cn83xx_octeon_pf_device(octeon_device_t * oct)
 			}
 
 			if ((vf_rings * oct->sriov_info.num_vfs) >
-			    (epf_trs - num_rings_per_pf)) {
+			    (epf_trs - 8)) {
 				cavium_error
 				    ("%s Required queue number exceeds total rings\n",
 				     __FUNCTION__);
@@ -1202,7 +1194,7 @@ setup_cn83xx_octeon_pf_device(octeon_device_t * oct)
 	oct->sriov_info.rings_per_vf = vf_rings;
 	/** All the remaining queues are handled by Physical Function */
 	oct->sriov_info.pf_srn = epf_srn + (vf_rings * oct->sriov_info.num_vfs);
-	oct->sriov_info.rings_per_pf = num_rings_per_pf;
+	oct->sriov_info.rings_per_pf = 8;
 
 	oct->sriov_info.sriov_enabled = 0;
 
@@ -1242,12 +1234,12 @@ setup_cn83xx_octeon_pf_device(octeon_device_t * oct)
 	cavium_print_msg(" PF[%d] RINGS PER VF:%u \n", oct->pf_num,
 			 oct->sriov_info.rings_per_vf);
 
-	return SETUP_SUCCESS;
+	return 0;
 
 free_barx:
 	octeon_unmap_pci_barx(oct, 0);
 	octeon_unmap_pci_barx(oct, 1);
-	return SETUP_FAIL;
+	return -1;
 
 }
 
