@@ -945,14 +945,42 @@ int octeon_setup_droq(int oct_id, int q_no, void *app_ctx)
 	return ret_val;
 }
 
+#define FW_STATUS_VSEC_ID 0xA3
+#define FW_STATUS_READY 1
+static u8 oct_get_fw_ready_status(octeon_device_t * oct)
+{
+	u32 pos = 0;
+	u16 vsec_id;
+	u8 status = 0;
+
+	while ((pos = pci_find_next_ext_capability(oct->pci_dev, pos,
+						   PCI_EXT_CAP_ID_VNDR))) {
+		pci_read_config_word(oct->pci_dev, pos + 4, &vsec_id);
+		if (vsec_id == FW_STATUS_VSEC_ID) {
+			pci_read_config_byte(oct->pci_dev, (pos + 8), &status);
+			cavium_print_msg("OCTEON[%d]:fw ready status %u\n",
+					 oct->octeon_id, status);
+			return status;
+		}
+	}
+	return 0;
+}
+
 /* Device initialization for each Octeon device. */
 int octeon_device_init(octeon_device_t * octeon_dev)
 {
 	int ret;
+	u8 status;
 	octeon_poll_ops_t poll_ops;
 
 	cavium_atomic_set(&octeon_dev->status, OCT_DEV_BEGIN_STATE);
 
+	/* make sure that Firmware is initialized before proceeding */
+	status = oct_get_fw_ready_status(octeon_dev);
+	if (status != FW_STATUS_READY) {
+		cavium_error("OCTEON: firmware not ready\n");
+		return 1;
+	}
 	/* Enable access to the octeon device and make its DMA capability
 	   known to the OS. */
 	if (octeon_pci_os_setup(octeon_dev))
