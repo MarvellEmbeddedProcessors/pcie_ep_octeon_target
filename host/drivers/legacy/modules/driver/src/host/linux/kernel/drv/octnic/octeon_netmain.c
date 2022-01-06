@@ -1182,14 +1182,6 @@ int octnet_init_nic_module(int octeon_id, void *octeon_dev)
 			cavium_error("OCTEON: ioq vector allocation failed\n");
 			goto octnet_msix_failure;
 		}
-
-		if (octeon_enable_msix_interrupts(oct)) {
-			octeon_delete_ioq_vector(oct);
-			cavium_error("OCTEON: setup msix interrupt failed\n");
-			goto octnet_msix_failure;
-		}
-		octeon_setup_irq_affinity(octeon_dev);
-
 	}
 
 	/* Enable Octeon device interrupts */
@@ -1315,6 +1307,15 @@ int octnet_init_nic_module(int octeon_id, void *octeon_dev)
 
 	}
 #endif
+	/* Enable MSI-X interrupts only after droq_ops.napi_fun is set up. */
+	if (oct->drv_flags & OCTEON_MSIX_CAPABLE) {
+		if (octeon_enable_msix_interrupts(oct)) {
+			octeon_delete_ioq_vector(oct);
+			cavium_error("OCTEON: setup msix interrupt failed\n");
+			goto octnet_msix_failure;
+		}
+		octeon_setup_irq_affinity(octeon_dev);
+	}
 
 	cavium_atomic_set(&octprops[octeon_id]->ls_flag, LINK_STATUS_FETCHED);
 	octprops[octeon_id]->last_check = cavium_jiffies;
@@ -1496,6 +1497,18 @@ int octnet_stop_nic_module(int octeon_id, void *oct)
 	num_intf = octnet_get_num_intf(octeon_dev);
 	num_ioqs = octnet_get_num_ioqs(octeon_dev);
 
+
+	/*
+	 * Must do this before unregistering DROQ ops, as those
+	 * delete the NAPI functions called by MSIX interrupt
+	 * handlers.
+	 */
+	if (octeon_dev->msix_on) {
+		octeon_clear_irq_affinity(octeon_dev);
+		octeon_disable_msix_interrupts(octeon_dev);
+		octeon_delete_ioq_vector(octeon_dev);
+	}
+
 #if 0 //this is not processed by NPU
 	if (OCTEON_CN8PLUS_PF_OR_VF(octeon_dev->chip_id)) {
 		/* Send short command to firmware to free these interface's PCAM entry */
@@ -1573,11 +1586,6 @@ int octnet_stop_nic_module(int octeon_id, void *oct)
 	octnet_destroy_io_queues(octeon_dev, &ls_resp);
 #endif
 
-	if (octeon_dev->msix_on) {
-		octeon_clear_irq_affinity(octeon_dev);
-		octeon_disable_msix_interrupts(octeon_dev);
-		octeon_delete_ioq_vector(octeon_dev);
-	}
 
 	cavium_print(PRINT_DEBUG, "disabled the io queues. destroying the io queues\n");
 	/* Clean up the NIC IOQs. */
