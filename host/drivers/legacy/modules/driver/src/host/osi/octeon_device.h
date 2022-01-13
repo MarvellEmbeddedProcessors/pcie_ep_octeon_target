@@ -192,22 +192,23 @@ enum octeon_pci_swap_mode {
 //Shuffeled the states, as per the init sequence. 
 //Removed the Pending list state, as now it is part of IQ.
 // Removed the STOPPING state, as it is not used anywhere.
-#define    OCT_DEV_BEGIN_STATE            0x0
-#define    OCT_DEV_PCI_MAP_DONE           0x1
-#define    OCT_DEV_DISPATCH_INIT_DONE     0x2
+#define    OCT_DEV_CHECK_FW               0x0
+#define    OCT_DEV_BEGIN_STATE            0x1
+#define    OCT_DEV_PCI_MAP_DONE           0x2
+#define    OCT_DEV_DISPATCH_INIT_DONE     0x3
 #ifdef USE_BUFFER_POOL
-#define    OCT_DEV_BUF_POOL_INIT_DONE     0x3
+#define    OCT_DEV_BUF_POOL_INIT_DONE     0x4
 #endif
-#define    OCT_DEV_RESP_LIST_INIT_DONE    0x4
-#define    OCT_DEV_HOST_OK                0x5
-#define    OCT_DEV_CORE_OK                0x6
-#define    OCT_DEV_INSTR_QUEUE_INIT_DONE  0x7
-#define    OCT_DEV_DROQ_INIT_DONE         0x8
-#define    OCT_DEV_RUNNING                0x9
-#define    OCT_DEV_IN_RESET               0xA
-#define    OCT_DEV_RESET_CLEANUP_DONE     0xB
-#define    OCT_DEV_STOPPING               0xC
-#define    OCT_DEV_STATE_INVALID          0xD
+#define    OCT_DEV_RESP_LIST_INIT_DONE    0x5
+#define    OCT_DEV_HOST_OK                0x6
+#define    OCT_DEV_CORE_OK                0x7
+#define    OCT_DEV_INSTR_QUEUE_INIT_DONE  0x8
+#define    OCT_DEV_DROQ_INIT_DONE         0x9
+#define    OCT_DEV_RUNNING                0xA
+#define    OCT_DEV_IN_RESET               0xB
+#define    OCT_DEV_RESET_CLEANUP_DONE     0xC
+#define    OCT_DEV_STOPPING               0xD
+#define    OCT_DEV_STATE_INVALID          0xE
 
 #define    OCT_DEV_STATES                 OCT_DEV_STATE_INVALID
 
@@ -476,6 +477,9 @@ struct iq_intr_wq {
  *  components.
  */
 struct _OCTEON_DEVICE {
+	/** work queue to initialize device */
+	struct cavium_wq dev_init_wq;
+
 	int num_iqs;
 
 	/** The input instruction queues */

@@ -591,6 +591,61 @@ int octeon_enable_sriov(octeon_device_t * oct)
 	return 0;
 }
 
+#define FW_STATUS_VSEC_ID 0xA3
+#define FW_STATUS_READY 1
+static u8 oct_get_fw_ready_status(octeon_device_t * oct)
+{
+	u32 pos = 0;
+	u16 vsec_id;
+	u8 status = 0;
+
+	while ((pos = pci_find_next_ext_capability(oct->pci_dev, pos,
+						   PCI_EXT_CAP_ID_VNDR))) {
+		pci_read_config_word(oct->pci_dev, pos + 4, &vsec_id);
+		if (vsec_id == FW_STATUS_VSEC_ID) {
+			pci_read_config_byte(oct->pci_dev, (pos + 8), &status);
+			cavium_print_msg("OCTEON[%d]:fw ready status %u\n",
+					 oct->octeon_id, status);
+			return status;
+		}
+	}
+	return 0;
+}
+
+static void octeon_device_init_work(struct work_struct *work)
+{
+	octeon_device_t *oct_dev;
+	struct cavium_wq *wq;
+	u8 status;
+
+	wq = container_of(work, struct cavium_wq, wk.work.work);
+	oct_dev = (octeon_device_t *)wq->wk.ctxptr;
+
+	cavium_atomic_set(&oct_dev->status, OCT_DEV_CHECK_FW);
+	while (true) {
+		status = oct_get_fw_ready_status(oct_dev);
+		if (status == FW_STATUS_READY)
+			break;
+
+		schedule_timeout_interruptible(HZ * 1);
+		if (cavium_atomic_read(&oct_dev->status) > OCT_DEV_RUNNING) {
+			cavium_atomic_set(&oct_dev->status, OCT_DEV_STATE_INVALID);
+			cavium_print_msg("OCTEON: Stopping firmware ready work.\n");
+			return;
+		}
+	}
+
+	if (octeon_device_init(oct_dev)) {
+		octeon_remove(oct_dev->pci_dev);
+		return;
+	}
+
+	octeon_state = OCT_DRV_ACTIVE;
+
+	cavium_print_msg("OCTEON: Octeon device %d is ready\n",
+			 oct_dev->octeon_id);
+}
+
 #if  LINUX_VERSION_CODE < KERNEL_VERSION(3,8,0)
 int __devinit
 octeon_probe(struct pci_dev *pdev, const struct pci_device_id *ent UNUSED)
@@ -616,15 +671,11 @@ int octeon_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	/* set linux specific device pointer */
 	oct_dev->pci_dev = (void *)pdev;
 
-	if (octeon_device_init(oct_dev)) {
-		octeon_remove(pdev);
-		return -ENOMEM;
-	}
+	oct_dev->dev_init_wq.wq = alloc_workqueue("dev_init_wq", WQ_MEM_RECLAIM, 0);
+	oct_dev->dev_init_wq.wk.ctxptr = oct_dev;
+	INIT_DELAYED_WORK(&oct_dev->dev_init_wq.wk.work, octeon_device_init_work);
+	queue_delayed_work(oct_dev->dev_init_wq.wq, &oct_dev->dev_init_wq.wk.work, 0);
 
-	octeon_state = OCT_DRV_ACTIVE;
-
-	cavium_print_msg("OCTEON: Octeon device %d is ready\n",
-			 oct_dev->octeon_id);
 	return 0;
 }
 
@@ -737,6 +788,18 @@ void octeon_remove(struct pci_dev *pdev)
 	oct_idx = oct_dev->octeon_id;
 	cavium_print_msg("OCTEON: Stopping octeon device %d\n", oct_idx);
 
+	if (cavium_atomic_read(&oct_dev->status) == OCT_DEV_CHECK_FW) {
+		cavium_atomic_set(&oct_dev->status, OCT_DEV_STOPPING);
+		while (true) {
+			if (cavium_atomic_read(&oct_dev->status) == OCT_DEV_STATE_INVALID)
+				return;
+
+			cavium_error("OCTEON: Waiting for firmware ready work to end.\n");
+			schedule_timeout_interruptible(HZ * 1);
+		}
+		goto before_exit;
+	}
+
 	/* Call the module handler for each module attached to the
 	   base driver. */
 	if (oct_dev->app_mode && (oct_dev->app_mode != CVM_DRV_INVALID_APP)
@@ -757,6 +820,7 @@ void octeon_remove(struct pci_dev *pdev)
 	   data structure to reflect this. Free the device structure. */
 	octeon_free_device_mem(oct_dev);
 
+before_exit:
 	cavium_print_msg("OCTEON: Octeon device %d removed\n", oct_idx);
 }
 
@@ -945,42 +1009,14 @@ int octeon_setup_droq(int oct_id, int q_no, void *app_ctx)
 	return ret_val;
 }
 
-#define FW_STATUS_VSEC_ID 0xA3
-#define FW_STATUS_READY 1
-static u8 oct_get_fw_ready_status(octeon_device_t * oct)
-{
-	u32 pos = 0;
-	u16 vsec_id;
-	u8 status = 0;
-
-	while ((pos = pci_find_next_ext_capability(oct->pci_dev, pos,
-						   PCI_EXT_CAP_ID_VNDR))) {
-		pci_read_config_word(oct->pci_dev, pos + 4, &vsec_id);
-		if (vsec_id == FW_STATUS_VSEC_ID) {
-			pci_read_config_byte(oct->pci_dev, (pos + 8), &status);
-			cavium_print_msg("OCTEON[%d]:fw ready status %u\n",
-					 oct->octeon_id, status);
-			return status;
-		}
-	}
-	return 0;
-}
-
 /* Device initialization for each Octeon device. */
 int octeon_device_init(octeon_device_t * octeon_dev)
 {
 	int ret;
-	u8 status;
 	octeon_poll_ops_t poll_ops;
 
 	cavium_atomic_set(&octeon_dev->status, OCT_DEV_BEGIN_STATE);
 
-	/* make sure that Firmware is initialized before proceeding */
-	status = oct_get_fw_ready_status(octeon_dev);
-	if (status != FW_STATUS_READY) {
-		cavium_error("OCTEON: firmware not ready\n");
-		return 1;
-	}
 	/* Enable access to the octeon device and make its DMA capability
 	   known to the OS. */
 	if (octeon_pci_os_setup(octeon_dev))
