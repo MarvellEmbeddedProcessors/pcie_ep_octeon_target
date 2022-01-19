@@ -16,7 +16,6 @@ cscope.in.out
 cscope.po.out
 
 # Ignore directories
-host/drivers/legacy/modules/driver/inc
 host/drivers/legacy/modules/driver/bin
 
 .*
