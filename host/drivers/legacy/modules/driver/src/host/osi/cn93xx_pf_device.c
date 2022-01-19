@@ -99,6 +99,12 @@ static int cn93xx_pf_soft_reset(octeon_device_t * oct)
 	cavium_print_msg
 	    ("OCTEON[%d]: BIST enabled for CN93XX soft reset\n",
 	     oct->octeon_id);
+	/* firmware ready status bit is supposed to be cleared by
+	 * core domain reset, but due to a hw bug, it is not.
+	 * so clear it manually here
+	 */
+	OCTEON_PCI_WIN_WRITE(oct, CN93XX_PEMX_CFG_WR((u64)oct->pcie_port),
+			     0x84d0ull);
 
 	/* Set core domain reset bit */
 	OCTEON_PCI_WIN_WRITE(oct, CN93XX_RST_CORE_DOMAIN_W1S, 1);

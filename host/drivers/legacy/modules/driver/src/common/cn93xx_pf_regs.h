@@ -519,6 +519,7 @@
            (CN93XX_PEM_BAR1_INDEX_START + ((port) << CN93XX_PEM_OFFSET) +  \
 			((idx) << CN93XX_BAR1_INDEX_OFFSET) )
 
+#define CN93XX_PEMX_CFG_WR(a)		  (0x8E0000000018ULL | (a << 36))
 /*---------------   PCI BAR1 index registers -------------*/
 
 /* BAR1 Mask */
