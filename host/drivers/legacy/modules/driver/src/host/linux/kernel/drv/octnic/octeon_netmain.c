@@ -265,6 +265,38 @@ int octnet_get_inittime_link_status(void *oct, void *props_ptr)
 	return (ls->status);
 }
 
+extern int oct_is_alive;
+oct_poll_fn_status_t
+octnet_check_alive(void *oct, unsigned long props_ptr)
+{
+	struct octdev_props_t *props;
+	oct_link_status_resp_t *ls;
+	static int retry_count;
+
+	props = (struct octdev_props_t *)props_ptr;
+	ls = props->ls;
+
+	if (!oct_is_alive && retry_count >= 10) {
+		ls->link_info[0].link.s.status = 0;
+		netif_carrier_off(props->pndev[0]);
+		octnet_stop_txqueue(props->pndev[0]);
+		retry_count = 0;
+	}
+
+	if (!oct_is_alive) {
+		retry_count++;
+	} else {
+		ls->link_info[0].link.s.status = 1;
+		netif_carrier_on(props->pndev[0]);
+		//octnet_start_txqueue(props->pndev[0]);
+		octnet_txqueues_wake(props->pndev[0]);
+	}
+
+	/* reset the value. Interrupt will set this value again */
+	oct_is_alive = 0;
+	return OCT_POLL_FN_CONTINUE;
+}
+
 /* Get the link status at run time. This routine does not sleep waiting for
    a response. The link status is updated in a callback called when a response
    arrives from the core app. */
@@ -1095,6 +1127,7 @@ int octnet_init_nic_module(int octeon_id, void *octeon_dev)
 	int ifidx, retval = 0;
 	int prev_status;
 	octeon_device_t *oct = (octeon_device_t *) octeon_dev;
+	octeon_poll_ops_t poll_ops;
 #ifndef ETHERPCI
 	int i, j;
 #endif
@@ -1329,7 +1362,6 @@ int octnet_init_nic_module(int octeon_id, void *octeon_dev)
 	/* Register a poll function to run every second to collect and update
 	   link status. */
 	{
-		octeon_poll_ops_t poll_ops;
 		poll_ops.fn = octnet_get_runtime_link_status;
 		poll_ops.fn_arg = (unsigned long)octprops[octeon_id];
 		poll_ops.ticks = OCTNET_LINK_QUERY_INTERVAL;
@@ -1337,6 +1369,14 @@ int octnet_init_nic_module(int octeon_id, void *octeon_dev)
 		octeon_register_poll_fn(octeon_id, &poll_ops);
 	}
 #endif
+	/* register a poll fn to check if octeon is alive */
+	poll_ops.fn = octnet_check_alive;
+	poll_ops.fn_arg = (unsigned long)octprops[octeon_id];
+	poll_ops.ticks = 2000;
+	strcpy(poll_ops.name, "Octeon Alive Status");
+	octeon_register_poll_fn(octeon_id, &poll_ops);
+
+
 	cavium_print_msg("OCTNIC: Network interfaces ready for Octeon %d\n",
 			 octeon_id);
 
@@ -1554,6 +1594,8 @@ int octnet_stop_nic_module(int octeon_id, void *oct)
 // *INDENT-ON*
 #endif
 
+	octeon_unregister_poll_fn(octeon_id, octnet_check_alive,
+				  (unsigned long)octprops[octeon_id]);
 	//cavium_atomic_set(&octeon_dev->status, OCT_DEV_CORE_OK);
 	//ls = NULL;
 

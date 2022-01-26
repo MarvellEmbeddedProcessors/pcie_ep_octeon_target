@@ -763,6 +763,9 @@ cvm_intr_return_t cn93xx_interrupt_handler(void *dev)
 	reg_val = octeon_read_csr64(oct, CN93XX_SDP_EPF_OEI_RINT);
 	if (reg_val) {
 		octeon_write_csr64(oct, CN93XX_SDP_EPF_OEI_RINT, reg_val);
+		/* used by octnic */
+		octeon_oei_irq_handler(oct, reg_val);
+
 		/* used by facility */
 		mv_facility_irq_handler(oct, reg_val);
 		goto irq_handled;

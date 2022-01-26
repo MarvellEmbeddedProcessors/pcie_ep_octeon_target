@@ -41,5 +41,6 @@ void octeon_destroy_resources(octeon_device_t * oct_dev);
 
 void octeon_stop_device(octeon_device_t * oct);
 
+void octeon_oei_irq_handler(octeon_device_t *oct, u64 reg_val);
 #endif
 /* $Id: octeon_main.h 141410 2016-06-30 14:37:41Z mchalla $ */

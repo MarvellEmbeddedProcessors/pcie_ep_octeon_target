@@ -15,4 +15,5 @@ struct otx_pcie_ep {
 	mv_facility_event_cb_t facility_handler[MV_FACILITY_COUNT];
 };
 
+void send_oei_trigger(int);
 #endif

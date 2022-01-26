@@ -14,17 +14,6 @@
 extern void *oei_trig_remap_addr;
 extern struct otx_pcie_ep *g_pcie_ep_dev[];
 
-union sdp_epf_oei_trig {
-	uint64_t u64;
-	struct {
-		uint64_t bit_num:6;
-		uint64_t rsvd2:12;
-		uint64_t clr:1;
-		uint64_t set:1;
-		uint64_t rsvd:44;
-	} s;
-};
-
 void mv_dump_facility_conf(mv_facility_conf_t *conf)
 {
 	printk("##### Target facility \"%s\" configuration #####\n", conf->name);
@@ -253,18 +242,12 @@ EXPORT_SYMBOL_GPL(mv_send_facility_dbell);
 
 int mv_send_facility_event(int handle)
 {
-	union sdp_epf_oei_trig trig;
-	uint64_t *addr;
 	int instance, type;
 
 	instance = FACILITY_INSTANCE(handle);
 	type = FACILITY_TYPE(handle);
 
-	trig.u64 = 0;
-	trig.s.set = 1;
-	trig.s.bit_num = type;
-	addr = oei_trig_remap_addr;
-	WRITE_ONCE(*addr, trig.u64);
+	send_oei_trigger(type);
 	return 0;
 }
 EXPORT_SYMBOL_GPL(mv_send_facility_event);

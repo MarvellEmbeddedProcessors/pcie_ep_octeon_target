@@ -14,6 +14,9 @@
 #include <linux/uaccess.h>
 #include <linux/slab.h>
 #include <linux/iommu.h>
+#include <linux/kthread.h>
+#include <linux/delay.h>
+#include <linux/sched/signal.h>
 #include "barmap.h"
 #include "ep_base.h"
 
@@ -43,6 +46,17 @@ enum supported_plat {
 	OTX3_CN10K,
 };
 
+union sdp_epf_oei_trig {
+	uint64_t u64;
+	struct {
+		uint64_t bit_num:6;
+		uint64_t rsvd2:12;
+		uint64_t clr:1;
+		uint64_t set:1;
+		uint64_t rsvd:44;
+	} s;
+};
+
 #define PEMX_BASE(a, b)		((a) | ((uint64_t)b << 36))
 #define PEM_DIS_PORT_OFFSET	0x50ull
 
@@ -68,6 +82,8 @@ enum supported_plat {
 	offset; })					\
 
 #define NPU_HANDSHAKE_SIGNATURE 0xABCDABCD
+#define KEEPALIVE_OEI_TRIG_BIT	5
+#define KEEPALIVE_INTERVAL_MS	5000
 
 void *oei_trig_remap_addr;
 void __iomem *nwa_internal_addr;
@@ -80,6 +96,7 @@ PCIE_EP_MATCH_DATA(otx_cn83xx, OTX_CN83XX);
 PCIE_EP_MATCH_DATA(otx2_cn9xxx, OTX2_CN9XXX);
 PCIE_EP_MATCH_DATA(otx3_cn10k, OTX3_CN10K);
 
+struct task_struct *ka_thread;
 const struct iommu_ops *smmu_ops;
 
 //TODO: fix the names npu_barmap_mem and npu_bar_map
@@ -117,6 +134,29 @@ static void npu_csr_write(uint64_t csr_addr, uint64_t val)
 	}
 	WRITE_ONCE(*addr, val);
 	iounmap(addr);
+}
+
+void send_oei_trigger(int type)
+{
+	uint64_t *addr = oei_trig_remap_addr;
+	union sdp_epf_oei_trig trig;
+
+	trig.u64 = 0;
+	trig.s.set = 1;
+	trig.s.bit_num = type;
+	WRITE_ONCE(*addr, trig.u64);
+}
+
+static int ep_keepalive_thread(void *arg)
+{
+	msleep_interruptible(KEEPALIVE_INTERVAL_MS);
+
+	while (!kthread_should_stop()) {
+		send_oei_trigger(KEEPALIVE_OEI_TRIG_BIT);
+		msleep_interruptible(KEEPALIVE_INTERVAL_MS);
+	}
+
+	return 0;
 }
 
 static irqreturn_t npu_base_interrupt(int irq, void *arg)
@@ -449,6 +489,13 @@ static int npu_base_probe(struct platform_device *pdev)
 	mv_facility_conf_init(pcie_ep_dev);
 	npu_device_access_init(instance);
 
+	ka_thread = kthread_create(ep_keepalive_thread, pcie_ep_dev, "ep_keepalive");
+	if (IS_ERR(ka_thread))
+		return PTR_ERR(ka_thread);
+
+	kthread_bind(ka_thread, cpumask_first(cpu_online_mask));
+	wake_up_process(ka_thread);
+
 	return 0;
 
 exit:
@@ -475,6 +522,9 @@ static int npu_base_remove(struct platform_device *pdev)
 		smmu_ops->remove_device(dev);
 
 	devm_kfree(dev, pcie_ep_dev);
+
+	if (ka_thread)
+		kthread_stop(ka_thread);
 
 	return 0;
 }

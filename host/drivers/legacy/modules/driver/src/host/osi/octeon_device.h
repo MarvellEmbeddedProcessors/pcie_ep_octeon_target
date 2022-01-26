@@ -238,6 +238,8 @@ enum {
 #define OTX2_PKIND		OTX2_GENERIC_PCIE_EP_PKIND
 #endif
 
+typedef void (*cavium_oei_cb_t)(void);
+
 /*---------------------------DISPATCH LIST-------------------------------*/
 
 /** The dispatch list entry.
@@ -634,6 +636,7 @@ struct _OCTEON_DEVICE {
 	struct npu_bar_map npu_memmap_info;
 	mv_facility_conf_t facility_conf[MV_FACILITY_COUNT];
 	mv_facility_event_cb_t facility_handler[MV_FACILITY_COUNT];
+	cavium_oei_cb_t oei_irq_handler;
 } ____cacheline_aligned_in_smp;
 
 #define CHIP_FIELD(oct, TYPE, field)             \
