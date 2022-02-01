@@ -16,8 +16,6 @@
 extern struct octdev_props_t *octprops[MAX_OCTEON_DEVICES];
 #define ARRAY_LENGTH(a) (sizeof(a)/ sizeof( (a)[0]))
 
-int oct_is_alive = 0;
-
 static struct {
 	const char str[ETH_GSTRING_LEN];
 } ethtool_stats_keys[] = {
@@ -125,9 +123,9 @@ void __setup_tx_poll_fn(octnet_os_devptr_t * pndev)
 	octeon_register_poll_fn(get_octeon_device_id(priv->oct_dev), &poll_ops);
 }
 
-void octnet_oei_irq_cb(void)
+void octnet_oei_irq_cb(octeon_device_t *oct)
 {
-	oct_is_alive = 1;
+	oct->is_alive_flag = 1;
 }
 
 /* Net device open */

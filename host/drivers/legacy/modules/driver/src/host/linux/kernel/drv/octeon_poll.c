@@ -308,7 +308,7 @@ static int oct_poll_thread(void *arg UNUSED)
 void octeon_oei_irq_handler(octeon_device_t *oct, u64 reg_val)
 {
 	if ((reg_val & 0x20) && oct->oei_irq_handler)
-		oct->oei_irq_handler();
+		oct->oei_irq_handler(oct);
 }
 EXPORT_SYMBOL(octeon_oei_irq_handler);
 /* $Id: octeon_poll.c 162810 2017-07-17 18:05:03Z mchalla $ */

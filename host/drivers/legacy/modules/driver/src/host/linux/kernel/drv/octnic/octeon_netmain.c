@@ -265,35 +265,45 @@ int octnet_get_inittime_link_status(void *oct, void *props_ptr)
 	return (ls->status);
 }
 
-extern int oct_is_alive;
+#define HB_LIMIT	10
 oct_poll_fn_status_t
 octnet_check_alive(void *oct, unsigned long props_ptr)
 {
 	struct octdev_props_t *props;
 	oct_link_status_resp_t *ls;
-	static int retry_count;
+	octeon_device_t *oct_dev = (octeon_device_t *) oct;
 
 	props = (struct octdev_props_t *)props_ptr;
 	ls = props->ls;
 
-	if (!oct_is_alive && retry_count >= 10) {
+	if (!oct_dev->is_alive_flag
+	    && oct_dev->heartbeat_miss_cnt >= HB_LIMIT
+	    && ls->link_info[0].link.s.status) {
+		cavium_print_msg("OCTNIC[%d] - setting link down down due to %d missed heartbeats.\n",
+				 oct_dev->octeon_id, HB_LIMIT);
 		ls->link_info[0].link.s.status = 0;
 		netif_carrier_off(props->pndev[0]);
 		octnet_stop_txqueue(props->pndev[0]);
-		retry_count = 0;
 	}
 
-	if (!oct_is_alive) {
-		retry_count++;
+	if (!oct_dev->is_alive_flag) {
+		oct_dev->heartbeat_miss_cnt++;
+		if (oct_dev->heartbeat_miss_cnt <= HB_LIMIT)
+			cavium_print_msg("OCTNIC[%d] - missed heartbeat: %d\n",
+					 oct_dev->octeon_id,
+					 oct_dev->heartbeat_miss_cnt);
 	} else {
+		if (ls->link_info[0].link.s.status == 0)
+			cavium_print_msg("OCTNIC[%d] - setting link up, hearbeat found.\n",
+					 oct_dev->octeon_id);
 		ls->link_info[0].link.s.status = 1;
 		netif_carrier_on(props->pndev[0]);
-		//octnet_start_txqueue(props->pndev[0]);
 		octnet_txqueues_wake(props->pndev[0]);
+		oct_dev->heartbeat_miss_cnt = 0;
 	}
 
 	/* reset the value. Interrupt will set this value again */
-	oct_is_alive = 0;
+	oct_dev->is_alive_flag = 0;
 	return OCT_POLL_FN_CONTINUE;
 }
 
@@ -1372,7 +1382,7 @@ int octnet_init_nic_module(int octeon_id, void *octeon_dev)
 	/* register a poll fn to check if octeon is alive */
 	poll_ops.fn = octnet_check_alive;
 	poll_ops.fn_arg = (unsigned long)octprops[octeon_id];
-	poll_ops.ticks = 2000;
+	poll_ops.ticks = CAVIUM_TICKS_PER_SEC*6;
 	strcpy(poll_ops.name, "Octeon Alive Status");
 	octeon_register_poll_fn(octeon_id, &poll_ops);
 

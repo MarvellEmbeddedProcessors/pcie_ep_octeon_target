@@ -238,7 +238,7 @@ enum {
 #define OTX2_PKIND		OTX2_GENERIC_PCIE_EP_PKIND
 #endif
 
-typedef void (*cavium_oei_cb_t)(void);
+typedef void (*cavium_oei_cb_t)(octeon_device_t *oct);
 
 /*---------------------------DISPATCH LIST-------------------------------*/
 
@@ -637,6 +637,8 @@ struct _OCTEON_DEVICE {
 	mv_facility_conf_t facility_conf[MV_FACILITY_COUNT];
 	mv_facility_event_cb_t facility_handler[MV_FACILITY_COUNT];
 	cavium_oei_cb_t oei_irq_handler;
+	int is_alive_flag;	/* flag set by irq handler if alive */
+	int heartbeat_miss_cnt; /* count of missed alive checks */
 } ____cacheline_aligned_in_smp;
 
 #define CHIP_FIELD(oct, TYPE, field)             \
