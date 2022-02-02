@@ -136,10 +136,16 @@ static void npu_csr_write(uint64_t csr_addr, uint64_t val)
 	iounmap(addr);
 }
 
+#define SDPX_EPFX_OEI_RINT_ENA_W1S(A,B)	(0x86E080020390 | \
+					(((A)&1)<<36) | (((B)&0xF)<<25))
 void send_oei_trigger(int type)
 {
 	uint64_t *addr = oei_trig_remap_addr;
 	union sdp_epf_oei_trig trig;
+
+	/* Don't send interrupts until OEI enabled by host */
+	if (!npu_csr_read(SDPX_EPFX_OEI_RINT_ENA_W1S(0,0)))
+		return;
 
 	trig.u64 = 0;
 	trig.s.set = 1;
