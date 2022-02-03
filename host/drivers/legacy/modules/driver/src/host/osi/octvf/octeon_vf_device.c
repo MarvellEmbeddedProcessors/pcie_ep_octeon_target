@@ -2420,7 +2420,6 @@ octeon_get_app_mode(void *octptr, unsigned long arg UNUSED)
 			break;  /* Should only have 1 matching app_type */
 		}
 	}
-	printk("RFRANZ: VF[%d] octmodhandlers index was: %d", octeon_dev->octeon_id, i);
     }
     octeon_probe_module_handlers(octeon_dev->octeon_id);
     return OCT_POLL_FN_FINISHED;
