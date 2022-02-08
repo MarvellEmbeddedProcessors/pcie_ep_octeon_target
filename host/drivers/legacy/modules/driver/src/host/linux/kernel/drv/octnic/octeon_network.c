@@ -613,7 +613,9 @@ int __octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 #endif
 
 	if (skb_put_padto(skb, ETH_ZLEN)) {
-		goto oct_xmit_failed;
+		oct_dev = priv->oct_dev;
+		oct_dev->instr_queue[q_no]->stats.instr_dropped++;
+		return OCT_NIC_TX_OK;
 	}
 	if (!OCTNET_IFSTATE_CHECK(priv, OCT_NIC_IFSTATE_TXENABLED)) {
 		return OCT_NIC_TX_BUSY;
