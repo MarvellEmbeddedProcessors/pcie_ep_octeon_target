@@ -28,6 +28,12 @@ static int host_sid_arr_count = 0;
 module_param_array(host_sid, uint, &host_sid_arr_count, 0644);
 MODULE_PARM_DESC(host_sid, "host stream id (((0x3 + PEM_NUM) << 16) + Host_requester id");
 
+static unsigned int  host_sid_rdwr[2] = {0x030000, 0x050000};
+static int host_sid_rdwr_arr_count = 0;
+module_param_array(host_sid_rdwr, uint, &host_sid_rdwr_arr_count, 0644);
+MODULE_PARM_DESC(host_sid_rdwr, "host additional stream id for hosts that " \
+		"use different stream id for read/write tlps");
+
 static unsigned int  pem_num[2] = {0,2};
 static int pem_num_arr_cnt = 0;
 module_param_array(pem_num, uint, &pem_num_arr_cnt, 0644);
@@ -446,6 +452,17 @@ static int npu_base_probe(struct platform_device *pdev)
 			dev_err(dev, "Error %d from iommu_fwspec_add_ids()\n",
 				ret);
 			goto exit;
+		}
+
+		if ((host_sid_rdwr_arr_count != 0) &&
+			(host_sid[instance] != host_sid_rdwr[instance])) {
+			ret = iommu_fwspec_add_ids(dev,
+					&host_sid_rdwr[instance], 1);
+			if (ret) {
+				dev_err(dev,
+				"Error %d from iommu_fwspec_add_ids()\n", ret);
+				goto exit;
+			}
 		}
 
 		ret = smmu_ops->add_device(dev);
