@@ -5,6 +5,9 @@ struct otx_pcie_ep {
 	uint64_t	pem_base;
 	uint64_t	sdp_base;
 	uint64_t	oei_trig_addr;
+	uint64_t	oei_trig_remap_addr;
+	uint64_t	oei_rint_ena_remap_addr;
+	struct task_struct *ka_thread;
 	unsigned int	instance;
 	unsigned int	plat_model;
 	struct device *plat_dev;
@@ -15,5 +18,5 @@ struct otx_pcie_ep {
 	mv_facility_event_cb_t facility_handler[MV_FACILITY_COUNT];
 };
 
-void send_oei_trigger(int);
+void send_oei_trigger(struct otx_pcie_ep *pcie_ep_dev, int type);
 #endif

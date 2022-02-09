@@ -85,7 +85,6 @@ union sdp_epf_oei_trig {
 #define KEEPALIVE_OEI_TRIG_BIT	5
 #define KEEPALIVE_INTERVAL_MS	5000
 
-void *oei_trig_remap_addr;
 void __iomem *nwa_internal_addr;
 EXPORT_SYMBOL(nwa_internal_addr);
 
@@ -96,7 +95,6 @@ PCIE_EP_MATCH_DATA(otx_cn83xx, OTX_CN83XX);
 PCIE_EP_MATCH_DATA(otx2_cn9xxx, OTX2_CN9XXX);
 PCIE_EP_MATCH_DATA(otx3_cn10k, OTX3_CN10K);
 
-struct task_struct *ka_thread;
 const struct iommu_ops *smmu_ops;
 
 //TODO: fix the names npu_barmap_mem and npu_bar_map
@@ -136,29 +134,33 @@ static void npu_csr_write(uint64_t csr_addr, uint64_t val)
 	iounmap(addr);
 }
 
-#define SDPX_EPFX_OEI_RINT_ENA_W1S(A,B)	(0x86E080020390 | \
-					(((A)&1)<<36) | (((B)&0xF)<<25))
-void send_oei_trigger(int type)
+void send_oei_trigger(struct otx_pcie_ep *pcie_ep_dev, int type)
 {
-	uint64_t *addr = oei_trig_remap_addr;
 	union sdp_epf_oei_trig trig;
+	uint64_t *addr;
 
 	/* Don't send interrupts until OEI enabled by host */
-	if (!npu_csr_read(SDPX_EPFX_OEI_RINT_ENA_W1S(0,0)))
+	addr = pcie_ep_dev->oei_rint_ena_remap_addr;
+	if (!READ_ONCE(*addr))
 		return;
 
 	trig.u64 = 0;
 	trig.s.set = 1;
 	trig.s.bit_num = type;
+	addr = pcie_ep_dev->oei_trig_remap_addr;
 	WRITE_ONCE(*addr, trig.u64);
 }
 
 static int ep_keepalive_thread(void *arg)
 {
+	struct otx_pcie_ep *pcie_ep_dev;
+
+	pcie_ep_dev = (struct otx_pcie_ep *)arg;
+
 	msleep_interruptible(KEEPALIVE_INTERVAL_MS);
 
 	while (!kthread_should_stop()) {
-		send_oei_trigger(KEEPALIVE_OEI_TRIG_BIT);
+		send_oei_trigger(pcie_ep_dev, KEEPALIVE_OEI_TRIG_BIT);
 		msleep_interruptible(KEEPALIVE_INTERVAL_MS);
 	}
 
@@ -296,9 +298,19 @@ static int npu_base_setup(struct otx_pcie_ep *pcie_ep_dev)
 	       bar_idx_addr, bar_idx_val);
 	npu_csr_write(bar_idx_addr, bar_idx_val);
 
-	oei_trig_remap_addr = ioremap(pcie_ep_dev->oei_trig_addr | (epf_num[instance] << 25), 8);
-	if (oei_trig_remap_addr == NULL) {
+	pcie_ep_dev->oei_trig_remap_addr =
+		ioremap(pcie_ep_dev->oei_trig_addr | (epf_num[instance] << 25), 8);
+	if (pcie_ep_dev->oei_trig_remap_addr == NULL) {
 		printk("Failed to ioremap oei_trig space\n");
+		return -1;
+	}
+
+#define SDPX_EPFX_OEI_RINT_ENA_W1S(A,B)	(0x86E080020390 | \
+					(((A)&1)<<36) | (((B)&0xF)<<25))
+	pcie_ep_dev->oei_rint_ena_remap_addr =
+		ioremap(SDPX_EPFX_OEI_RINT_ENA_W1S(sdp_num[instance], epf_num[instance]), 8);
+	if (pcie_ep_dev->oei_rint_ena_remap_addr == NULL) {
+		printk("Failed to ioremap oei_rint_ena space\n");
 		return -1;
 	}
 	if (pcie_ep_dev->plat_model == OTX2_CN9XXX ||
@@ -495,12 +507,13 @@ static int npu_base_probe(struct platform_device *pdev)
 	mv_facility_conf_init(pcie_ep_dev);
 	npu_device_access_init(instance);
 
-	ka_thread = kthread_create(ep_keepalive_thread, pcie_ep_dev, "ep_keepalive");
-	if (IS_ERR(ka_thread))
-		return PTR_ERR(ka_thread);
 
-	kthread_bind(ka_thread, cpumask_first(cpu_online_mask));
-	wake_up_process(ka_thread);
+	pcie_ep_dev->ka_thread = kthread_create(ep_keepalive_thread, pcie_ep_dev, "ep_keepalive");
+	if (IS_ERR(pcie_ep_dev->ka_thread))
+		return PTR_ERR(pcie_ep_dev->ka_thread);
+
+	kthread_bind(pcie_ep_dev->ka_thread, cpumask_first(cpu_online_mask));
+	wake_up_process(pcie_ep_dev->ka_thread);
 
 	return 0;
 
@@ -527,10 +540,10 @@ static int npu_base_remove(struct platform_device *pdev)
 	if (smmu_ops)
 		smmu_ops->remove_device(dev);
 
-	devm_kfree(dev, pcie_ep_dev);
+	if (pcie_ep_dev->ka_thread)
+		kthread_stop(pcie_ep_dev->ka_thread);
 
-	if (ka_thread)
-		kthread_stop(ka_thread);
+	devm_kfree(dev, pcie_ep_dev);
 
 	return 0;
 }

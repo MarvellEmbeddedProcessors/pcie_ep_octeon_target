@@ -247,7 +247,7 @@ int mv_send_facility_event(int handle)
 	instance = FACILITY_INSTANCE(handle);
 	type = FACILITY_TYPE(handle);
 
-	send_oei_trigger(type);
+	send_oei_trigger(g_pcie_ep_dev[instance], type);
 	return 0;
 }
 EXPORT_SYMBOL_GPL(mv_send_facility_event);
