@@ -621,6 +621,10 @@ static struct net_device_ops octnetdevops = {
 
 void octnet_napi_enable(octnet_priv_t * priv);
 
+void octnet_oei_irq_cb(octeon_device_t *oct)
+{
+	oct->is_alive_flag = 1;
+}
 /*
    Called during init time for each interface. This routine after the NIC
    module receives the link status information from core app at init time.
@@ -819,6 +823,7 @@ octnet_setup_nic_device(int octeon_id, oct_link_info_t * link_info, int ifidx)
 #endif
 
 	octnet_print_link_info(pndev);
+	oct->oei_irq_handler = octnet_oei_irq_cb;
 
 	return 0;
 
