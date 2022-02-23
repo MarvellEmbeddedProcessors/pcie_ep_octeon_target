@@ -410,14 +410,14 @@ static inline void octnet_stop_queue(octnet_os_devptr_t * pndev, int q)
 }
 
 static inline int
-octnet_check_txq_state(octnet_priv_t * priv, struct sk_buff *skb)
+octnet_check_txq_state(octnet_priv_t *priv, u16 queue_mapping)
 {
 
 	int q = 0, iq = 0;
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,18)
 #if !defined(ETHERPCI)
 	if (netif_is_multiqueue(priv->pndev)) {
-		q = skb->queue_mapping;
+		q = queue_mapping;
 		iq = priv->txq + (q % priv->linfo.num_txpciq);
 	} else
 #endif

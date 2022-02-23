@@ -457,18 +457,19 @@ void octnic_free_netbuf(void *buf)
 	struct sk_buff *skb;
 	struct octnet_buf_free_info *finfo;
 	octnet_priv_t *priv;
+	u16 queue_mapping;
 
 	finfo = (struct octnet_buf_free_info *)buf;
 	skb = finfo->skb;
 	priv = finfo->priv;
+	queue_mapping = skb->queue_mapping;
 
 	octeon_unmap_single_buffer(get_octeon_device_id(priv->oct_dev),
 				   finfo->dptr, skb->len,
 				   CAVIUM_PCI_DMA_TODEVICE);
 	free_recv_buffer((cavium_netbuf_t *) skb);
 
-	octnet_check_txq_state(priv, skb);	/* mq support: sub-queue state check */
-
+	octnet_check_txq_state(priv, queue_mapping);	/* mq support: sub-queue state check */
 }
 
 void octnic_free_netsgbuf(void *buf)
@@ -477,6 +478,7 @@ void octnic_free_netsgbuf(void *buf)
 	struct sk_buff *skb;
 	octnet_priv_t *priv;
 	struct octnic_gather *g;
+	u16 queue_mapping;
 	int i, frags;
 
 	finfo = (struct octnet_buf_free_info *)buf;
@@ -484,6 +486,7 @@ void octnic_free_netsgbuf(void *buf)
 	priv = finfo->priv;
 	g = finfo->g;
 	frags = skb_shinfo(skb)->nr_frags;
+	queue_mapping = skb->queue_mapping;
 
 	octeon_unmap_single_buffer(get_octeon_device_id(priv->oct_dev),
 				   g->sg[0].ptr[0], (skb->len - skb->data_len),
@@ -517,7 +520,7 @@ void octnic_free_netsgbuf(void *buf)
 
 	free_recv_buffer((cavium_netbuf_t *) skb);
 
-	octnet_check_txq_state(priv, skb);	/* mq support: sub-queue state check */
+	octnet_check_txq_state(priv, queue_mapping);	/* mq support: sub-queue state check */
 }
 
 void print_ip_header(struct iphdr *ip)
