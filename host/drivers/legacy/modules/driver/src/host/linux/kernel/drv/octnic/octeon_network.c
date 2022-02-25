@@ -155,7 +155,7 @@ int octnet_stop(struct net_device *pndev)
 	/* This is a hack that allows DHCP to continue working. */
 	set_bit(__LINK_STATE_START, &priv->pndev->state);
 #endif
-	octnet_txqueues_stop(pndev);
+	octnet_stop_txqueue(pndev);
 
 	CVM_MOD_DEC_USE_COUNT;
 

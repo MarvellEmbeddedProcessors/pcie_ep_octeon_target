@@ -770,14 +770,8 @@ octnet_setup_nic_device(int octeon_id, oct_link_info_t * link_info, int ifidx)
 	if (oct->pkind == OTX2_GENERIC_PCIE_EP_PKIND)
 		pndev->features |= NETIF_F_HW_CSUM;
 
-#if 0
-	/*
-	 * If enabled, this causes "NETDEV WATCHDOG" errors
-	 * when the driver is loaded and packets are transmitted.
-	 * The mechanism for the failure is unknown.
-	 */
+	pndev->watchdog_timeo = TXTIMEOUT;
 	SET_NETDEV_DEV(pndev, &oct->pci_dev->dev);
-#endif
 	/* Register the network device with the OS */
 	if (register_netdev(pndev)) {
 		cavium_error("OCTNIC: Device registration failed\n");

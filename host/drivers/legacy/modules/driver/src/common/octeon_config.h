@@ -279,6 +279,9 @@
 /* For multi function support in 73xx*/
 #define MAX_PF_FUNCTIONS		16
 
+/* TX timeout value for watchdog timer */
+#define TXTIMEOUT			5*HZ
+
 /* Represents invalid Link IOQ number */
 #define INVALID_IOQ_NO			0xff
 
