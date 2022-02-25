@@ -1411,14 +1411,8 @@ octeon_droq_fast_process_packets_reuse_bufs(octeon_device_t * oct,
 
 		if(cavium_likely(nicbuf)) {
 			if(cavium_likely(droq->ops.fptr)) {
-#ifdef OCT_NIC_USE_NAPI
 				droq->ops.fptr(oct->octeon_id, nicbuf, pkt_len, resp_hdr,
 					(pkt_count < OCTEON_PKTPUSH_THRESHOLD) && (pkt == (pkt_count - 1)), &droq->napi);
-#else
-				/* tuned for TCP_RR/STREAM perf: add last packet arg: speed-up packet push */
-				droq->ops.fptr(oct->octeon_id, nicbuf, pkt_len, resp_hdr,
-					(pkt_count < OCTEON_PKTPUSH_THRESHOLD) && (pkt == (pkt_count - 1)), NULL);
-#endif
 			}
 			else
 				free_recv_buffer(nicbuf);
@@ -1873,11 +1867,10 @@ int octeon_unregister_droq_ops(int oct_id, uint32_t q_no)
 
 	cavium_spin_lock(&droq->lock);
 
-#ifdef OCT_NIC_USE_NAPI
 	/* reset napi related structures */
 	droq->ops.napi_fun = NULL;
 	droq->ops.poll_mode = 0;
-#endif
+
 	droq->fastpath_on = 0;
 	droq->ops.drop_on_max = 0;
 #if  defined(FAST_PATH_DROQ_DISPATCH)

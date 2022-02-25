@@ -13,17 +13,15 @@ MODULE_AUTHOR("Cavium Networks");
 MODULE_DESCRIPTION("Octeon Host PCI Nic Driver");
 MODULE_LICENSE("GPL");
 
-#ifdef OCT_NIC_USE_NAPI
 extern void octnet_napi_drv_callback(int oct_id, int oq_no, int event);
 extern void octnet_napi_callback(void *);
-#endif
 
 static inline uint32_t octnet_get_num_ioqs(octeon_device_t * octeon_dev);
 struct octdev_props_t *octprops[MAX_OCTEON_DEVICES];
 
 octeon_config_t *octeon_dev_conf(octeon_device_t * oct);
 
-#if defined(USE_DROQ_THREADS) && defined(OCT_NIC_USE_NAPI)
+#if defined(USE_DROQ_THREADS)
 #error "Enable either USE_DROQ_THREADS or OCT_NIC_USE_NAPI"
 #endif
 
@@ -48,10 +46,7 @@ void get_nic_compile_options(char *copts)
 #if defined(OCTEON_EXCLUDE_BASE_LOAD)
 	get_base_compile_options(copts);
 #endif
-
-#ifdef OCT_NIC_USE_NAPI
 	strcat(copts, "NAPI");
-#endif
 }
 
 void octnet_print_link_info(octnet_os_devptr_t * pndev)
@@ -412,12 +407,8 @@ int octnet_setup_net_queues(int octeon_id, octnet_priv_t * priv)
 
 	memset(&droq_ops, 0, sizeof(octeon_droq_ops_t));
 
-#ifdef OCT_NIC_USE_NAPI
 	droq_ops.poll_mode = 1;
 	droq_ops.napi_fn = octnet_napi_drv_callback;
-#else
-	droq_ops.drop_on_max = 1;
-#endif
 	cavium_print(PRINT_DEBUG,
 		     "Setting droq ops for q %d poll_mode: %d napi_fn: %p drop: %d\n",
 		     priv->rxq, droq_ops.poll_mode, droq_ops.napi_fn,
@@ -731,11 +722,6 @@ octnet_setup_nic_device(int octeon_id, oct_link_info_t * link_info, int ifidx)
 		priv->linfo.txpciq[j] = link_info->txpciq[j];
 		priv->linfo.rxpciq[j] = link_info->rxpciq[j];
 	}
-#if 0
-	if (OCT_NIC_USE_NAPI) {
-		octnet_setup_napi(priv);
-	}
-#endif
 
 	cavium_print(PRINT_DEBUG, "OCTNIC: if%d gmx: %d hw_addr: 0x%llx\n",
 		     ifidx, priv->linfo.gmxport,
@@ -805,14 +791,6 @@ octnet_setup_nic_device(int octeon_id, oct_link_info_t * link_info, int ifidx)
 	priv->txq = priv->linfo.txpciq[0];
 	priv->rxq = priv->linfo.rxpciq[0];
 
-#if 0
-	if (OCT_NIC_USE_NAPI) {
-		if (octnet_setup_net_queues(octeon_id, priv))
-			goto setup_nic_dev_fail;
-
-		octnet_napi_enable(priv);
-	}
-#endif
 #endif
 
 	OCTNET_IFSTATE_SET(priv, OCT_NIC_IFSTATE_REGISTERED);
@@ -1141,9 +1119,7 @@ int octnet_init_nic_module(int octeon_id, void *octeon_dev)
 	int i, j;
 #endif
 
-#ifdef OCT_NIC_USE_NAPI
 	octeon_droq_t *droq;
-#endif
 	octeon_config_t *conf;
 	conf = octeon_dev_conf(octeon_dev);
 
@@ -1316,22 +1292,15 @@ int octnet_init_nic_module(int octeon_id, void *octeon_dev)
 	/* Loop through for the number of interfaces gets created */
 	for (i = 0; i < ls->link_count; i++) {	/* setup rxQs: TCP_RR/STREAM perf. */
 		octeon_droq_ops_t droq_ops;
-#ifdef OCT_NIC_USE_NAPI
 		struct net_device *netdev = octprops[octeon_id]->pndev[i];
-#endif
 
 		memset(&droq_ops, 0, sizeof(octeon_droq_ops_t));
-#ifdef OCT_NIC_USE_NAPI
 		droq_ops.poll_mode = 1;
 		droq_ops.napi_fun = octnet_napi_callback;
-#else
-		droq_ops.drop_on_max = 1;
-#endif
 		/* Register the droq ops structure so that we can start handling packets
 		 * received on the Octeon interfaces. */
 		/* Sending the droq number of the interface */
 		for (j = 0; j < ls->link_info[i].num_rxpciq; j++) {
-#ifdef OCT_NIC_USE_NAPI
 			int q_no = ls->link_info[i].rxpciq[j];
 			droq = oct->droq[q_no];
 			/* NIC mode performance tuning: increased the budget from 64 to 96 */
@@ -1343,7 +1312,6 @@ int octnet_init_nic_module(int octeon_id, void *octeon_dev)
 			       __func__, octeon_id, i, droq->q_no, q_no);
 
 			napi_enable(&droq->napi);
-#endif
 			if (octeon_register_droq_ops
 			    (octeon_id, ls->link_info[i].rxpciq[j],
 			     &droq_ops)) {
@@ -1527,10 +1495,7 @@ int octnet_stop_nic_module(int octeon_id, void *oct)
 	octeon_config_t *conf;
 	uint32_t ifidx = 0, num_intf = 0, num_ioqs = 0, baseq = 0;
 #endif
-
-#ifdef OCT_NIC_USE_NAPI
 	octeon_droq_t *droq;
-#endif
 
 	cavium_print_msg
 	    ("OCTNIC: Stopping network interfaces for Octeon device %d\n",
@@ -1575,7 +1540,6 @@ int octnet_stop_nic_module(int octeon_id, void *oct)
 
 		for (j = 0; j < num_ioqs; j++) {
 
-#ifdef OCT_NIC_USE_NAPI
 			int q_no = (baseq + j);
 			droq = octeon_dev->droq[q_no];
 			/* Disable napi on this droq */
@@ -1587,7 +1551,6 @@ int octnet_stop_nic_module(int octeon_id, void *oct)
             cavium_print(PRINT_DEBUG,
             "Disabled and deleted napi context from droq:%d q_no:%d\n",
 			     droq->q_no, q_no);
-#endif
 			octeon_unregister_droq_ops(octeon_id, (baseq + j));
 		}
 	}

@@ -12,12 +12,8 @@ typedef struct {
 	int index;
 } iq_post_status_t;
 
-#ifdef OCT_NIC_IQ_USE_NAPI
 void __check_db_timeout(octeon_device_t *oct, u64 iq_no);
 void check_db_timeout(struct work_struct *work);
-#else
-oct_poll_fn_status_t check_db_timeout(void *octptr, unsigned long iq_no);
-#endif
 
 extern void cn83xx_dump_regs(octeon_device_t *, int iq_no);
 static inline int IQ_INSTR_MODE_64B(octeon_device_t * oct, int iq_no)
@@ -101,11 +97,7 @@ int wait_for_iq_instr_fetch(octeon_device_t * oct, int q_no)
 
 		pending = cavium_atomic_read(&instr_queue->instr_pending);
 		if (pending)
-#ifdef OCT_NIC_IQ_USE_NAPI
 			__check_db_timeout(oct, q_no);
-#else			
-			check_db_timeout(oct, q_no);
-#endif			
 		instr_cnt += pending;
 
 		if (instr_cnt == 0)
@@ -131,11 +123,7 @@ int wait_for_instr_fetch(octeon_device_t * oct)
 			pending = cavium_atomic_read(&oct->instr_queue[i]->instr_pending);
 // *INDENT-ON*
 			if (pending)
-#ifdef OCT_NIC_IQ_USE_NAPI
 				__check_db_timeout(oct, i);
-#else			
-				check_db_timeout(oct, i);
-#endif				
 			instr_cnt += pending;
 		}
 
@@ -391,7 +379,6 @@ flush_instr_queue(octeon_device_t * oct, octeon_instr_queue_t * iq)
 	process_noresponse_list(oct, iq);
 }
 
-#ifdef OCT_NIC_IQ_USE_NAPI
 /* Process instruction queue after timeout.
  *  * This routine gets called from a workqueue or when removing the module.
  *   */
@@ -421,46 +408,6 @@ void __check_db_timeout(octeon_device_t *oct, u64 iq_no)
 
 	//lio_enable_irq(NULL, iq); //TODO
 }
-
-#if 0
-void check_db_timeout(struct work_struct *work)
-{
-	struct cavium_wk *wk = (struct cavium_wk *)work;
-	octeon_device_t *oct = (octeon_device_t *)wk->ctxptr;
-	u64 iq_no = wk->ctxul;
-	struct cavium_wq *db_wq = &oct->check_db_wq[iq_no];
-	u32 delay = 10;
-
-	__check_db_timeout(oct, iq_no);
-	queue_delayed_work(db_wq->wq, &db_wq->wk.work, msecs_to_jiffies(delay));
-}
-#endif
-
-#else
-/* Called by the Poll thread at regular intervals to check the instruction
- * queue for commands to be posted and for commands that were fetched by Octeon.
- */
-oct_poll_fn_status_t check_db_timeout(void *octptr, unsigned long iq_no)
-{
-	octeon_device_t *oct = (octeon_device_t *) octptr;
-	octeon_instr_queue_t *iq;
-
-	iq = oct->instr_queue[iq_no];
-
-	/* If cavium_jiffies - last_db_time < db_timeout do nothing  */
-	if (!cavium_check_timeout
-	    (cavium_jiffies, (iq->last_db_time + iq->db_timeout))) {
-		return OCT_POLL_FN_CONTINUE;
-	}
-	iq->last_db_time = cavium_jiffies;
-
-	/* Flush the instruction queue */
-	if (iq->do_auto_flush)
-		octeon_flush_iq(oct, iq, 1);
-
-	return OCT_POLL_FN_CONTINUE;
-}
-#endif
 
 extern void
 delete_soft_instr_buffers(octeon_device_t *, octeon_soft_instruction_t *);
@@ -748,12 +695,6 @@ __do_instruction_processing(octeon_device_t * oct,
 		}
 
 	}
-
-#ifndef OCT_NIC_IQ_USE_NAPI
-	if (iq->do_auto_flush) {
-		octeon_flush_iq(oct, iq, (iq->max_count / 2));
-	}
-#endif
 
 	return retval;
 }
@@ -1505,10 +1446,6 @@ octeon_send_noresponse_command(octeon_device_t * oct,
 		INCR_INSTRQUEUE_PKT_COUNT(oct, iq_no, instr_dropped, 1);
 	}
 
-#ifndef OCT_NIC_IQ_USE_NAPI
-	if (iq->do_auto_flush)
-		octeon_flush_iq(oct, iq, iq->max_count/2);
-#endif		
 
 	return st.status;
 }
@@ -1600,7 +1537,6 @@ octeon_iq_post_command(octeon_device_t * oct,
   * queue to which they had posted a command before.
   */
 
-#ifdef OCT_NIC_IQ_USE_NAPI
 extern void (*noresp_buf_free_fn[MAX_OCTEON_DEVICES][NORESP_TYPES + 1]) (void *);
 /* Can only run in process context */
 int
@@ -1670,10 +1606,8 @@ lio_process_iq_request_list(octeon_device_t *oct,
 //	printk("## IQ-%d processed (%d/%d) read_idx=%u flush=%u\n", iq->iq_no, inst_count, napi_budget, iq->octeon_read_index, iq->flush_index);
 	return inst_count;
 }
-#endif
 
 
-#ifdef OCT_NIC_IQ_USE_NAPI
 int
 octeon_flush_iq(octeon_device_t *oct, octeon_instr_queue_t *iq,
         uint32_t napi_budget)
@@ -1718,17 +1652,6 @@ octeon_flush_iq(octeon_device_t *oct, octeon_instr_queue_t *iq,
 	//printk("%s: DONE; Q-%d budget=%u; tot_inst_processed=%u read_idx=%u flush=%u\n", __func__, iq->iq_no, napi_budget, tot_inst_processed, iq->octeon_read_index, iq->flush_index);
 	return tx_done;
 }
-#else
-void
-octeon_flush_iq(octeon_device_t * oct, octeon_instr_queue_t * iq,
-		uint32_t pending_thresh)
-{
-
-	if (cavium_atomic_read(&iq->instr_pending) >= pending_thresh) {
-		flush_instr_queue(oct, iq);
-	}
-}
-#endif
 
 void octeon_perf_flush_iq(octeon_device_t * oct, octeon_instr_queue_t * iq)
 {

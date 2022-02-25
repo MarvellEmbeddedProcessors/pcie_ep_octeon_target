@@ -1970,7 +1970,8 @@ octeon_hostfw_handshake(void *octptr, unsigned long arg UNUSED)
 					 app_name);
 
 			/* NAPI and RX reuse buffers should be disabled for Base mode */
-#if defined(OCT_NIC_USE_NAPI) || defined(OCT_REUSE_RX_BUFS)
+			/* TODO is base mode supported since NAPI is required???? */
+#if defined(OCT_REUSE_RX_BUFS)
 			if ((oct->app_mode == CVM_DRV_BASE_APP)
 			    || (oct->app_mode == CVM_DRV_ZLIB_APP)) {
 				cavium_print_msg

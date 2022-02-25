@@ -145,10 +145,9 @@ int octnet_stop(struct net_device *pndev)
 	octnet_priv_t *priv = GET_NETDEV_PRIV(pndev);
 
 	OCTNET_IFSTATE_RESET(priv, OCT_NIC_IFSTATE_RUNNING);
-#ifdef OCT_NIC_USE_NAPI
-	/* This is a hack that allows DHCP to continue working. */
+	/* This is a NAPI hack that allows DHCP to continue working. */
 	set_bit(__LINK_STATE_START, &priv->pndev->state);
-#endif
+
 	octnet_stop_txqueue(pndev);
 
 	CVM_MOD_DEC_USE_COUNT;
@@ -880,10 +879,8 @@ void octnet_napi_callback(octeon_droq_t * droq)
 
 int octnet_napi_poll_fn(struct napi_struct *napi, int budget)
 {
-#ifdef OCT_NIC_IQ_USE_NAPI
 	octeon_instr_queue_t *iq;
 	int tx_done = 0, iq_no;
-#endif
 	octeon_droq_t *droq;
 	int work_done;
 
@@ -892,7 +889,6 @@ int octnet_napi_poll_fn(struct napi_struct *napi, int budget)
 
 	work_done = octeon_droq_process_poll_pkts(droq, budget);
 	//printk("work_done:%d budget:%d\n", work_done, budget);
-#ifdef OCT_NIC_IQ_USE_NAPI
 	iq_no = droq->q_no;
 	iq = droq->oct_dev->instr_queue[iq_no];
 	if (iq) {
@@ -920,18 +916,6 @@ int octnet_napi_poll_fn(struct napi_struct *napi, int budget)
 		return 0;
 	}
 	return (!tx_done) ? (budget) : (work_done);
-#else	
-	if (work_done < budget) {
-		napi_complete(napi);
-		octeon_enable_irq(droq, iq);
-		return 0;
-	}
-
-	if (work_done > budget) {
-		cavium_error("work_done(%d) > budget(%d)\n", work_done, budget);
-	}
-	return work_done;
-#endif	
 }
 
 struct net_device_stats *octnet_stats(struct net_device *pndev)

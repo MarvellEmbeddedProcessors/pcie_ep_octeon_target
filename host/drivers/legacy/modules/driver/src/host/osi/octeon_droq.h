@@ -20,11 +20,6 @@
  *  Either of these can be used for multi Rx processing.
  **/
 
-/* By default DROQ Threads are enabled */
-#ifndef OCT_NIC_USE_NAPI
-#define USE_DROQ_THREADS
-#endif
-
 #if !defined(USE_DROQ_THREADS) && !defined(USE_DROQ_TASKLETS)
 //#define USE_DROQ_TASKLETS
 #endif

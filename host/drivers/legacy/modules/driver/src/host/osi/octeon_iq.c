@@ -9,12 +9,6 @@
 
 extern int octeon_init_nr_free_list(octeon_instr_queue_t * iq, int count);
 
-
-#ifdef OCT_NIC_IQ_USE_NAPI
-#else
-extern oct_poll_fn_status_t check_db_timeout(void *octptr, unsigned long iq_no);
-#endif
-
 void octeon_init_iq_intr_moderation(octeon_device_t *oct)
 {
 	struct iq_intr_wq *iq_intr_wq;
@@ -55,12 +49,6 @@ int octeon_init_instr_queue(octeon_device_t * oct, int iq_no)
 	octeon_instr_queue_t *iq;
 	octeon_iq_config_t *conf = NULL;
 	uint32_t q_size;
-#ifdef OCT_NIC_IQ_USE_NAPI
-#else	
-#ifndef APP_CMD_POST
-	octeon_poll_ops_t poll_ops;
-#endif
-#endif	
 
 	if (OCTEON_CN83XX_PF(oct->chip_id))
 		conf = &(CFG_GET_IQ_CFG(CHIP_FIELD(oct, cn83xx_pf, conf)));
@@ -156,21 +144,6 @@ int octeon_init_instr_queue(octeon_device_t * oct, int iq_no)
 
 	oct->fn_list.setup_iq_regs(oct, iq_no);
 
-
-#ifdef OCT_NIC_IQ_USE_NAPI
-#else
-#ifndef APP_CMD_POST
-//this path is taken when IQ NAPI is disabled
-	poll_ops.fn = check_db_timeout;
-	poll_ops.fn_arg = (unsigned long)iq_no;
-	poll_ops.ticks = 1000;
-	cavium_strncpy(poll_ops.name, sizeof(poll_ops.name), "Doorbell Timeout",
-		       sizeof(poll_ops.name) - 1);
-	poll_ops.rsvd = 0xff;
-	octeon_register_poll_fn(oct->octeon_id, &poll_ops);
-#endif
-#endif	
-
 	return 0;
 }
 
@@ -178,11 +151,6 @@ int octeon_delete_instr_queue(octeon_device_t * oct, int iq_no)
 {
 	uint64_t desc_size = 0, q_size;
 	octeon_instr_queue_t *iq = oct->instr_queue[iq_no];
-
-#ifdef OCT_NIC_IQ_USE_NAPI
-#else	
-	octeon_unregister_poll_fn(oct->octeon_id, check_db_timeout, iq_no);
-#endif	
 
 	if (OCTEON_CN83XX_PF(oct->chip_id))
 		desc_size =

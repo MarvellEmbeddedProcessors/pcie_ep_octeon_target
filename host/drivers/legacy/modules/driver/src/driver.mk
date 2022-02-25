@@ -93,9 +93,7 @@ OCTDRVFLAGS += -DBUFPTR_ONLY_MODE
             $(findstring OCTEON_CN78XX, $(OCTEON_MODEL)), \
             $(findstring OCTEON_CN23XX, $(OCTEON_MODEL))), )
 OCTDRVFLAGS += -DENABLE_OCTEON_III=1
-#Enable this flag to use NAPI for only NIC mode operation.
-OCTDRVFLAGS += -DOCT_NIC_USE_NAPI
-OCTDRVFLAGS += -DOCT_NIC_IQ_USE_NAPI
+
 #Enable this flag to use driver loopback of packets
 #Note: normal rx/tx will not work when this mode is enabled
 #OCTDRVFLAGS += -DOCT_NIC_LOOPBACK

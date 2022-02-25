@@ -15,10 +15,6 @@ void (*noresp_buf_free_fn[MAX_OCTEON_DEVICES][NORESP_TYPES + 1]) (void *);
 int octeon_setup_response_list(octeon_device_t * oct)
 {
 	int i, ret = 0;
-#ifdef OCT_NIC_IQ_USE_NAPI
-#else	
-	octeon_poll_ops_t poll_ops;
-#endif	
 
 	for (i = 0; i < MAX_RESPONSE_LISTS; i++) {
 		CAVIUM_INIT_LIST_HEAD(&oct->response_list[i].head);
@@ -29,17 +25,6 @@ int octeon_setup_response_list(octeon_device_t * oct)
 		noresp_buf_free_fn[oct->octeon_id][i] = NULL;
 	}
 
-#ifdef OCT_NIC_IQ_USE_NAPI
-#else
-	cavium_memset(&poll_ops, 0, sizeof(octeon_poll_ops_t));
-
-	poll_ops.fn = oct_poll_req_completion;
-	poll_ops.fn_arg = 0UL;
-	poll_ops.ticks = 1;
-	poll_ops.rsvd = 0xff;
-	ret = octeon_register_poll_fn(oct->octeon_id, &poll_ops);
-#endif
-
 /*	poll_ops.fn     = oct_poll_check_unordered_list;
 	poll_ops.ticks  = CAVIUM_TICKS_PER_SEC/10;
 	ret = octeon_register_poll_fn(oct->octeon_id, &poll_ops);*/
@@ -49,11 +34,6 @@ int octeon_setup_response_list(octeon_device_t * oct)
 
 void octeon_delete_response_list(octeon_device_t * oct)
 {
-#ifdef OCT_NIC_IQ_USE_NAPI
-#else
-	octeon_unregister_poll_fn(oct->octeon_id, oct_poll_req_completion, 0);
-//      octeon_unregister_poll_fn(oct->octeon_id, oct_poll_check_unordered_list, 0);
-#endif
 }
 
 /*
@@ -614,20 +594,6 @@ oct_poll_check_unordered_list(void *octptr, unsigned long arg UNUSED)
 
 	return OCT_POLL_FN_CONTINUE;
 }
-
-#ifdef OCT_NIC_IQ_USE_NAPI
-#else
-oct_poll_fn_status_t
-oct_poll_req_completion(void *octptr, unsigned long arg UNUSED)
-{
-	octeon_device_t *oct = (octeon_device_t *) octptr;
-
-	process_ordered_list(oct, 0);
-
-	check_unordered_blocking_list(oct);
-	return OCT_POLL_FN_CONTINUE;
-}
-#endif
 
 int
 octeon_register_noresp_buf_free_fn(int oct_id, int buftype, void (*fn) (void *))

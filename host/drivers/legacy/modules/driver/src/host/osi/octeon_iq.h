@@ -309,15 +309,9 @@ octeon_send_noresponse_command(octeon_device_t * oct,
   * @param iq  - pointer to the octeon device input queue that will be flushed
   * @param pending_thresh - flush instruction queue iq when iq->instr_pending >= pending_thresh
   */
-#ifdef OCT_NIC_IQ_USE_NAPI
 int
 octeon_flush_iq(octeon_device_t * oct, octeon_instr_queue_t * iq,
 		uint32_t pending_thresh);
-#else
-void
-octeon_flush_iq(octeon_device_t * oct, octeon_instr_queue_t * iq,
-		uint32_t pending_thresh);
-#endif
 
 void octeon_perf_flush_iq(octeon_device_t * oct, octeon_instr_queue_t * iq);
 

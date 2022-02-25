@@ -118,7 +118,6 @@ endif
 ifeq ($(findstring ETHERPCI,$(COMPILEFOR)), ETHERPCI)
 # For Ethernet over PCI
 EXTRA_CFLAGS += -DETHERPCI
-EXTRA_CFLAGS := $(filter-out -DOCT_NIC_USE_NAPI, $(EXTRA_CFLAGS)) 
 EXTRA_CFLAGS := $(filter-out -DOCT_REUSE_RX_BUFS, $(EXTRA_CFLAGS)) 
 endif
 
