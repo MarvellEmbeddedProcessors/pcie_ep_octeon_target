@@ -18,10 +18,6 @@ uint32_t octeon_droq_refill(octeon_device_t * octeon_dev, octeon_droq_t * droq);
 
 oct_poll_fn_status_t check_droq_refill(void *octptr, unsigned long q_no);
 
-#ifdef  USE_DROQ_THREADS
-static int oct_droq_thread(void *arg);
-#endif
-
 struct niclist {
 	cavium_list_t list;
 	void *ptr;
@@ -230,23 +226,6 @@ int octeon_delete_droq(octeon_device_t * oct, uint32_t q_no)
 	cavium_print(PRINT_FLOW, "\n\n---#  octeon_delete_droq[%d]  #---\n",
 		     q_no);
 
-#ifdef  USE_DROQ_THREADS
-
-	if (CVM_KTHREAD_EXISTS(&droq->thread)) {
-		cavium_print_msg("Killing DROQ[%d] thread\n", q_no);
-
-		droq->pkts_pending += 1;
-		droq->stop_thread = 1;
-		cavium_flush_write();
-
-		cavium_kthread_destroy(&droq->thread);
-
-		/* Wait till the droq thread has come out of its loop. */
-		while (cavium_atomic_read(&droq->thread_active))
-			cavium_sleep_timeout(1);
-	}
-#endif
-
 	octeon_droq_destroy_ring_buffers(oct, droq);
 
 	if (droq->recv_buf_list)
@@ -293,9 +272,6 @@ int octeon_init_droq(octeon_device_t * oct, uint32_t q_no, void *app_ctx)
 	uint32_t desc_ring_size = 0;
 	uint32_t c_num_descs = 0, c_buf_size = 0, c_pkts_per_intr =
 	    0, c_refill_threshold = 0;
-#ifdef  USE_DROQ_THREADS
-	int cpu_num;
-#endif
 
 	cavium_print(PRINT_FLOW, "\n\n----# octeon_init_droq #----\n");
 	cavium_print(PRINT_DEBUG, "q_no: %d\n", q_no);
@@ -429,28 +405,6 @@ int octeon_init_droq(octeon_device_t * oct, uint32_t q_no, void *app_ctx)
 
 	oct->io_qmask.oq |= (1ULL << q_no);
 
-#ifdef  USE_DROQ_THREADS
-	cavium_init_wait_channel(&droq->wc);
-	cavium_kthread_setup(&droq->thread, oct_droq_thread, droq,
-			     "Oct DROQ Thread", 0);
-	if (cavium_kthread_create(&droq->thread))
-		goto init_droq_fail;
-
-	/* Enable these if 2 PFs exist. */
-#if 0
-	/* mapping different Host cores to different CN73xx PFs */
-	if (oct->chip_id == OCTEON_CN73XX_PF)
-		cpu_num =
-		    (oct->pf_num + droq->q_no * 2) % cavium_get_cpu_count();
-	else
-		cpu_num = droq->q_no % cavium_get_cpu_count();
-#endif
-	cpu_num = droq->q_no % cavium_get_cpu_count();
-
-	cavium_kthread_set_cpu_affinity(&droq->thread, cpu_num);
-	cavium_kthread_run(&droq->thread);
-#endif
-
 	return 0;
 
 init_droq_fail:
@@ -572,55 +526,6 @@ restart_oq_done:
 		cavium_free_dma(respbuf);
 	return retval;
 
-}
-
-int wait_for_output_queue_pkts(octeon_device_t * oct, int q_no)
-{
-	int retry = 100, pkt_cnt = 0, pending_pkts = 0;
-
-	do {
-		pending_pkts = 0;
-
-#if defined(USE_DROQ_THREADS)
-
-		pkt_cnt = octeon_droq_check_hw_for_pkts(oct, oct->droq[q_no]);
-		if (pkt_cnt > 0) {
-			pending_pkts += pkt_cnt;
-			cavium_wakeup(&oct->droq[q_no]->wc);
-		}
-#endif
-		cavium_sleep_timeout(1);
-
-	} while (retry-- && pending_pkts);
-
-	return pkt_cnt;
-}
-
-int wait_for_oq_pkts(octeon_device_t * oct)
-{
-	int retry = 100, pkt_cnt = 0, pending_pkts = 0;
-
-	do {
-#if defined(USE_DROQ_THREADS)
-		int i = 0;
-#endif
-		pending_pkts = 0;
-
-#if defined(USE_DROQ_THREADS)
-		for (i = 0; i < oct->num_oqs; i++) {
-			pkt_cnt =
-			    octeon_droq_check_hw_for_pkts(oct, oct->droq[i]);
-			if (pkt_cnt > 0) {
-				pending_pkts += pkt_cnt;
-				cavium_wakeup(&oct->droq[i]->wc);
-			}
-		}
-#endif
-		cavium_sleep_timeout(1);
-
-	} while (retry-- && pending_pkts);
-
-	return pkt_cnt;
 }
 
 int
@@ -1640,35 +1545,6 @@ int octeon_droq_poll_packets(octeon_device_t * oct, octeon_droq_t * droq)
 #endif
 #endif
 
-#ifdef  USE_DROQ_THREADS
-
-static int oct_droq_thread(void *arg)
-{
-	char name[] = "Octeon DROQ Thread";
-	octeon_droq_t *droq = (octeon_droq_t *) arg;
-
-	cavium_atomic_set(&droq->thread_active, 1);
-
-	cavium_print_msg
-	    ("OCTEON[%d]: %s %d starting execution now on CPU %d!\n",
-	     droq->oct_dev->octeon_id, name, droq->q_no, smp_processor_id());
-
-	while (!droq->stop_thread && !cavium_kthread_signalled()) {
-
-		while (droq->pkts_pending)
-			octeon_droq_process_packets(droq->oct_dev, droq);
-
-		cavium_sleep_cond(&droq->wc, &droq->pkts_pending);
-	}
-
-	cavium_print_msg("OCTEON[%d]: DROQ thread quitting now\n",
-			 droq->oct_dev->octeon_id);
-	cavium_atomic_set(&droq->thread_active, 0);
-
-	return 0;
-}
-#endif
-
 int octeon_droq_process_poll_pkts(octeon_droq_t *droq, uint32_t budget)
 {
 	uint32_t pkts_available = 0, pkts_processed = 0, total_pkts_processed =
@@ -1788,15 +1664,6 @@ int octeon_register_droq_ops(int oct_id, uint32_t q_no, octeon_droq_ops_t * ops)
 			     __CVM_FUNCTION__, q_no, (oct->num_oqs - 1));
 		return -EINVAL;
 	}
-
-#ifdef  USE_DROQ_THREADS
-	if (ops->poll_mode) {
-		cavium_error
-		    (" %s: Cannot Support Polling when BASE Driver uses DROQ Threads. \n",
-		     __CVM_FUNCTION__);
-		return -EINVAL;
-	}
-#endif
 
 	droq = oct->droq[q_no];
 

@@ -292,8 +292,6 @@ EXPORT_SYMBOL(octeon_clear_irq_affinity);
 EXPORT_SYMBOL(wait_for_instr_fetch);
 EXPORT_SYMBOL(wait_for_iq_instr_fetch);
 EXPORT_SYMBOL(wait_for_pending_requests);
-EXPORT_SYMBOL(wait_for_oq_pkts);
-EXPORT_SYMBOL(wait_for_output_queue_pkts);
 
 EXPORT_SYMBOL(octeon_droq_set_netdev);
 EXPORT_SYMBOL(octeon_droq_process_poll_pkts);

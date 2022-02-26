@@ -11,24 +11,6 @@
 
 #include "octeon_main.h"
 
-#ifdef APP_DROQ_POLL
-/* Application will poll DROQ for Rx processing */
-#undef USE_DROQ_THREADS
-#else /* !APP_DROQ_POLL */
-/** DROQ Implementation.
- *  "USE_DROQ_THREADS" and "USE_DROQ_TASKLETS" are mutually exclusive features.
- *  Either of these can be used for multi Rx processing.
- **/
-
-#if !defined(USE_DROQ_THREADS) && !defined(USE_DROQ_TASKLETS)
-//#define USE_DROQ_TASKLETS
-#endif
-
-#if defined(USE_DROQ_THREADS) && defined(USE_DROQ_TASKLETS)
-#error "Please enable only one of USE_DROQ_THREADS or USE_DROQ_TASKLETS"
-#endif
-#endif
-
 /** Octeon descriptor format.
     The descriptor ring is made of descriptors which have 2 64-bit values:
     -# Physical (bus) address of the data buffer.
@@ -180,19 +162,6 @@ typedef struct {
 
 	octeon_droq_ops_t ops;
 
-
-#ifdef  USE_DROQ_THREADS
-
-	cvm_kthread_t thread;
-
-	cavium_wait_channel wc;
-
-	int stop_thread;
-
-	cavium_atomic_t thread_active;
-
-#endif
-
   /** The 8B aligned descriptor ring starts at this address. */
 	octeon_droq_desc_t *desc_ring;
 
@@ -253,10 +222,6 @@ int octeon_init_droq(octeon_device_t * oct_dev, uint32_t q_no, void *app_ctx);
 int octeon_delete_droq(octeon_device_t * oct_dev, uint32_t q_no);
 
 uint32_t octeon_droq_refill(octeon_device_t * octeon_dev, octeon_droq_t * droq);
-
-int wait_for_oq_pkts(octeon_device_t * oct);
-
-int wait_for_output_queue_pkts(octeon_device_t * oct, int q_no);
 
 void octeon_droq_bh(unsigned long);
 

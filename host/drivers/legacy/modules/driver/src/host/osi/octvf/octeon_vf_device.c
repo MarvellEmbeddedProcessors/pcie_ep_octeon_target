@@ -854,13 +854,6 @@ int octeon_hot_reset(octeon_device_t * oct)
 	    ("OCTEON[%d]: In Reset: Waiting to finish packet processing on Output Queues\n",
 	     oct->octeon_id);
 
-	if (wait_for_oq_pkts(oct)) {
-		cavium_error
-		    ("OCTEON[%d]: Output Queues not empty; Hot Reset Aborted\n",
-		     oct->octeon_id);
-		goto hot_reset_failed;
-	}
-
 	cavium_print_msg
 	    ("OCTEON[%d]: In Reset. No more packets pending in Output Queues\n",
 	     oct->octeon_id);
@@ -1870,11 +1863,6 @@ int oct_stop_base_module(int octeon_id, void *octeon_dev)
 		   arrive from Octeon, but we should wait for all packet processing
 		   to finish. */
 		oct_dev->fn_list.disable_io_queues(oct_dev);
-
-		if (wait_for_oq_pkts(oct_dev)) {
-			cavium_error("OCTEON[%d]: OQ had pending packets\n",
-				     oct_dev->octeon_id);
-		}
 
 		if (oct_dev->msix_on) {
 			octeon_clear_irq_affinity(oct_dev);

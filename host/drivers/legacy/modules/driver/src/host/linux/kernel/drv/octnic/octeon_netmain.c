@@ -21,10 +21,6 @@ struct octdev_props_t *octprops[MAX_OCTEON_DEVICES];
 
 octeon_config_t *octeon_dev_conf(octeon_device_t * oct);
 
-#if defined(USE_DROQ_THREADS)
-#error "Enable either USE_DROQ_THREADS or OCT_NIC_USE_NAPI"
-#endif
-
 #define LINK_STATUS_REQUESTED    1
 #define LINK_STATUS_FETCHED      2
 
@@ -1454,35 +1450,6 @@ int octnet_wait_for_instr_fetch(octeon_device_t * octeon_dev,
 	return ret_val;
 }
 
-/* This routine checks for the pending req in OQs which are used by NIC interfaces. */
-int octnet_wait_for_oq_pkts(octeon_device_t * octeon_dev,
-			    oct_link_status_resp_t * ls)
-{
-	uint32_t ifidx = 0, num_intf = 0, num_ioqs = 0, baseq = 0;
-	uint32_t index = 0;
-	int ret_val = 0;
-
-	num_intf = octnet_get_num_intf(octeon_dev);
-	num_ioqs = octnet_get_num_ioqs(octeon_dev);
-
-	for (ifidx = 0; ifidx < num_intf; ifidx++) {
-		baseq = octnet_get_intf_baseq(octeon_dev, ifidx);
-
-		/* Ckeck for pending req in OQs. */
-		for (index = 0; index < num_ioqs; index++) {
-			if (wait_for_output_queue_pkts
-			    (octeon_dev, (baseq + index))) {
-				cavium_error
-				    ("OCTEON[%d]: Pending pkts in OQ:%d\n",
-				     octeon_dev->octeon_id, (baseq + index));
-				ret_val = 1;
-			}
-		}
-	}
-
-	return ret_val;
-}
-
 /* This routine is registered by the NIC module with the BASE driver. The BASE
    driver calls this routine before stopping each Octeon device that runs
    the NIC core application. */
@@ -1591,11 +1558,6 @@ int octnet_stop_nic_module(int octeon_id, void *oct)
 			     octeon_dev->octeon_id);
 	}
 
-	cavium_print(PRINT_DEBUG, "wait for oq pkts\n");
-	if (octnet_wait_for_oq_pkts(octeon_dev, ls_resp)) {
-		cavium_error("OCTEON[%d]: OQ had pending packets\n",
-			     octeon_dev->octeon_id);
-	}
 #endif
 	cavium_print(PRINT_DEBUG, "waited for all ioqs. disabling the ioq queues\n");
 	/* disable NIC IOQs */

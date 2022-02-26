@@ -1438,12 +1438,6 @@ int oct_stop_base_module(int octeon_id, void *octeon_dev)
 		   to finish. */
 		oct_dev->fn_list.disable_io_queues(oct_dev);
 
-        cavium_print_msg("Disabled the ioqs\n");
-		if (wait_for_oq_pkts(oct_dev)) {
-			cavium_error("OCTEON[%d]: OQ had pending packets\n",
-				     oct_dev->octeon_id);
-		}
-
         cavium_print_msg("wait for oq pkts completed\n");
 		if (oct_dev->msix_on) {
 			octeon_clear_irq_affinity(oct_dev);
