@@ -528,7 +528,12 @@ static void cn93xx_setup_vf_oq_regs(octeon_device_t * oct, int oq_no)
 		cavium_sleep_timeout(1);
 	}
 #endif
-
+	if (OCT_TX2_DROQ_ISM)
+	{
+		droq->out_cnts_ism = (uint8_t *) oct->mmio[0].hw_addr +
+		    CN93XX_SDP_R_OUT_CNTS_ISM(oq_no);
+		octeon_write_csr64(oct, CN93XX_SDP_R_OUT_CNTS_ISM(oq_no), (droq->ism.pkt_cnt_dma) | 0x1ULL);
+	}
 }
 
 static void cn93xx_setup_vf_mbox_regs(octeon_device_t * oct, int q_no)

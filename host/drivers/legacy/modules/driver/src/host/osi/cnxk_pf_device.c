@@ -478,9 +478,6 @@ static void cnxk_setup_oq_regs(octeon_device_t * oct, int oq_no)
 
 	octeon_write_csr64(oct, CNXK_SDP_R_OUT_INT_LEVELS(oq_no), reg_val);
 
-#ifdef OCT_TX2_ISM_INT	
-	octeon_write_csr64(oct, CNXK_SDP_R_OUT_CNTS_ISM(oq_no), (droq->ism.pkt_cnt_dma)|0x1ULL);
-#endif
 }
 
 /* Mail Box Commminucation is to be verified */ 

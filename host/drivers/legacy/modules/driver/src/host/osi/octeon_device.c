@@ -2714,6 +2714,12 @@ void octeon_iq_intr_tune(struct work_struct *work)
 void octeon_enable_irq(octeon_droq_t *droq, octeon_instr_queue_t *iq)
 {
 	uint32_t pkts_pend = droq->pkts_pending;
+	/*
+	 * Local variable to save update values to IN and OUT CNTS registers.
+	 * We need to update internal driver state before writing the *_CNTS
+	 * register, as this write will enable new IQ/OQ interrupts.
+	 */
+	uint32_t oq_update = droq->last_pkt_count - pkts_pend;
 
 	if (iq->pkts_processed) {
 		OCTEON_WRITE32(iq->inst_cnt_reg, iq->pkts_processed);
@@ -2726,13 +2732,41 @@ void octeon_enable_irq(octeon_droq_t *droq, octeon_instr_queue_t *iq)
 	 * this will trigger an interrupt if there are still unprocessed
 	 * packets pending
 	 */
-	if (droq->last_pkt_count - pkts_pend) {
-		OCTEON_WRITE32(droq->pkts_sent_reg, droq->last_pkt_count - pkts_pend);
+	if (oq_update) {
+		if (droq->ism.pkt_cnt_addr) {
+			/*
+			 * Update the ISM DMA address before the OUT_CNTS
+			 * register is updated, which could trigger a new
+			 * interrupt and ISM message.
+			 */
+			droq->ism.index = !droq->ism.index;  /* swap ISM index */
+			/* Update ISM value at new index*/
+			droq->ism.pkt_cnt_addr[droq->ism.index] = pkts_pend;
+			/* Update DMA target to new ISM address */
+			OCTEON_WRITE64(droq->out_cnts_ism,
+				   (droq->ism.pkt_cnt_dma + sizeof(uint32_t)*droq->ism.index)|0x1ULL);
+		}
+		/*
+		 * A write of a non-zero value to pkts_sent_reg will re-enable
+		 * OQ interrupts to be generated.  Leaving pending packets
+		 * in ptks_sent_reg, as this will cause another interrupt
+		 * if required.
+		 * Use local variable to delay write to HW until internal driver
+		 * structures updated, as HW write could result in an immediate
+		 * interrupt.
+		 */
 		droq->last_pkt_count = pkts_pend;
 	}
 #if !defined(NO_HAS_MMIOWB) && LINUX_VERSION_CODE < KERNEL_VERSION(5,4,0)
 	mmiowb();
 #endif
+	/*
+	 * Update hardware _CNTS registers after internal driver state has
+	 * been updated, as these writes enable new interrupts immediately.
+	 */
+	if (oq_update)
+		OCTEON_WRITE32(droq->pkts_sent_reg, oq_update);
+	/* Request resends of IRQs, also resends ISM if ISM enabled */
 	OCTEON_WRITE64(droq->pkts_sent_reg, 1UL << 59);
 	OCTEON_WRITE64(iq->inst_cnt_reg, 1UL << 59);
 }

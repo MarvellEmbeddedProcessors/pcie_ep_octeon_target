@@ -189,6 +189,15 @@
 #define   CNXK_VF_CFG_IO_QUEUES	8
 #define   OCTEON_MAX_CNXK_VF_BASE_IOQ	1
 
+/*
+ * ISM defines enable the use of ISM (Interrupt Status Messages) for input
+ * and output queue management if supported.  When enabled, chips that support
+ * ISM will use it, others will use normal CSR accesses.  When disabled, all
+ * chips will use CSR accesses.
+ * Currently ISM support is only implemented for CN9XXX chips.
+ */
+#define   OCT_TX2_DROQ_ISM		1
+
 /* ----------------- Host Firmware Handshake Details ----------------- */
 /* ----------------- Host Firmware Handshake Details ----------------- */
 

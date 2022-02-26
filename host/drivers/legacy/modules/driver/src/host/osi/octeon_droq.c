@@ -51,6 +51,27 @@ int octeon_droq_check_hw_for_pkts(octeon_device_t * oct, octeon_droq_t * droq)
 		droq->pkts_pending += new_pkts;
 	return new_pkts;
 }
+int octeon_droq_check_hw_for_pkts_ism(octeon_device_t * oct, octeon_droq_t * droq)
+{
+	uint32_t new_pkts;
+	uint32_t pkt_count;
+
+	pkt_count = droq->ism.pkt_cnt_addr[droq->ism.index];
+	new_pkts = pkt_count - droq->last_pkt_count;
+	droq->last_pkt_count = pkt_count;
+	if (new_pkts) {
+		/*
+		 * Request an ISM write, so next poll in NAPI mode will have
+		 * an updated count.
+		 * If we don't have new packets, we will exit the NAPI poll loop,
+		 * and a new IRQ/ISM will be requested on that NAPI complete
+		 * path.
+		 */
+		OCTEON_WRITE64(droq->pkts_sent_reg, 1ULL << 63);
+		droq->pkts_pending += new_pkts;
+	}
+	return new_pkts;
+}
 
 void oct_dump_droq_state(octeon_droq_t * oq)
 {
@@ -244,14 +265,10 @@ int octeon_delete_droq(octeon_device_t * oct, uint32_t q_no)
 				       droq->info_alloc_size, droq->app_ctx);
 #endif
 
-#ifdef OCT_TX2_ISM_INT
-	if (OCTEON_CN9PLUS_PF(oct->chip_id)) {
-		if (droq->ism.pkt_cnt_addr)
-			octeon_pci_free_consistent(oct->pci_dev, 8,
-						   droq->ism.pkt_cnt_addr, droq->ism.pkt_cnt_dma,
-						   droq->app_ctx);
-	}
-#endif
+	if (droq->ism.pkt_cnt_addr)
+		octeon_pci_free_consistent(oct->pci_dev, OCTEON_ISM_OQ_MEM_SIZE,
+					   droq->ism.pkt_cnt_addr, droq->ism.pkt_cnt_dma,
+					   droq->app_ctx);
 
 	if (droq->desc_ring)
 		octeon_pci_free_consistent(oct->pci_dev,
@@ -338,22 +355,30 @@ int octeon_init_droq(octeon_device_t * oct, uint32_t q_no, void *app_ctx)
 	cavium_print(PRINT_REGS, "droq[%d]: num_desc: %d",
 		     q_no, droq->max_count);
 
-#ifdef OCT_TX2_ISM_INT	
-	if (OCTEON_CN9PLUS_PF(oct->chip_id)) {
-		droq->ism.pkt_cnt_addr =
-		    octeon_pci_alloc_consistent(oct->pci_dev, 8,
-						&droq->ism.pkt_cnt_dma, droq->app_ctx);
+	droq->check_hw_for_pkts = octeon_droq_check_hw_for_pkts;
+	if (OCT_TX2_DROQ_ISM) {
+		if (OCTEON_CN9XXX_PF(oct->chip_id)) {
+			droq->ism.pkt_cnt_addr =
+			    octeon_pci_alloc_consistent(oct->pci_dev, OCTEON_ISM_OQ_MEM_SIZE,
+							&droq->ism.pkt_cnt_dma, droq->app_ctx);
 
-		if (cavium_unlikely(!droq->ism.pkt_cnt_addr)) {
-			cavium_error("OCTEON: Output queue %d ism memory alloc failed\n",
-				     q_no);
-			return 1;
+			if (cavium_unlikely(!droq->ism.pkt_cnt_addr)) {
+				cavium_error("OCTEON: Output queue %d ism memory alloc failed\n",
+					     q_no);
+				return 1;
+			}
+
+			cavium_print(PRINT_REGS, "droq[%d]: ism addr: virt: 0x%p, dma: %lx",
+				     q_no, droq->ism.pkt_cnt_addr, droq->ism.pkt_cnt_dma);
+			droq->ism.pkt_cnt_addr[droq->ism.index] = 0;
+			droq->check_hw_for_pkts = octeon_droq_check_hw_for_pkts_ism;
+			printk_once("OCTEON[%d]: using ISM for output queue management\n",
+					 oct->octeon_id);
+		} else {
+			printk_once("OCTEON[%d]: using CSR reads for output queue management\n",
+					 oct->octeon_id);
 		}
-	
-		cavium_print(PRINT_REGS, "droq[%d]: ism addr: virt: 0x%p, dma: %lx",
-			     q_no, droq->ism.pkt_cnt_addr, droq->ism.pkt_cnt_dma);
 	}
-#endif		
 
 #ifndef BUFPTR_ONLY_MODE
 	droq->info_list =
@@ -1350,7 +1375,7 @@ int octeon_droq_process_poll_pkts(octeon_droq_t *droq, uint32_t budget)
 	while (total_pkts_processed < budget) {
 		/* update pending count only when current one exhausted */
 		if(droq->pkts_pending == 0)
-			octeon_droq_check_hw_for_pkts(oct, droq);
+			droq->check_hw_for_pkts(oct, droq);
 
 		pkts_available = CVM_MIN((budget - total_pkts_processed),
 					 droq->pkts_pending);

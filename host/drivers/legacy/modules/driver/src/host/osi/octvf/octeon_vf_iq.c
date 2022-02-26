@@ -76,7 +76,7 @@ int octeon_init_instr_queue(octeon_device_t * oct, int iq_no)
 		return 1;
 	}
 
-#ifdef OCT_TX2_ISM_INT
+#ifdef OCT_TX2_IQ_ISM_INT
 	if (OCTEON_CN9XXX_VF(oct->chip_id)) {
 		iq->ism.pkt_cnt_addr =
 		    octeon_pci_alloc_consistent(oct->pci_dev, 8,
@@ -167,7 +167,7 @@ int octeon_delete_instr_queue(octeon_device_t * oct, int iq_no)
 		desc_size =
 		    CFG_GET_IQ_INSTR_TYPE(CHIP_FIELD(oct, cnxk_vf, conf));
 
-#ifdef OCT_TX2_ISM_INT
+#ifdef OCT_TX2_IQ_ISM_INT
 	if (OCTEON_CN9XXX_VF(oct->chip_id)) {
 		if (iq->ism.pkt_cnt_addr)
 			octeon_pci_free_consistent(oct->pci_dev, 8,

@@ -85,8 +85,18 @@ typedef struct {
 #endif
 } octeon_recv_buffer_t;
 	
+#define OCTEON_ISM_OQ_MEM_SIZE	8	/* size in bytes of ISM DMA allocs */
 typedef struct octeon_droq_ism {
-	void *pkt_cnt_addr;
+	/*
+	 * The DMA (pkt_cnt_dma) and virtual (pkt_cnt_addr) are both base
+	 * addresses for 2 double buffered values.  The index alternates
+	 * between 0 and 1, and is updated whenever the SDPX_RX_OUT_CNTS[cnt]
+	 * field is adjusted.  This is required to ensure that only ISM writes
+	 * after that adjustment takes effect are used by software after the
+	 * adjustment has been initiated by a CSR write.
+	 */
+	int index;
+	uint32_t *pkt_cnt_addr;
 	unsigned long pkt_cnt_dma;
 } octeon_droq_ism_t;
 
@@ -96,11 +106,16 @@ typedef struct octeon_droq_ism {
     This structure has all the information required to implement a 
     Octeon DROQ.
 */
-typedef struct {
+typedef struct octeon_droq_struct {
 	uint32_t q_no;
 
 	struct napi_struct napi;
 	struct net_device *pndev;
+
+  /** Function pointer for HW queue checking function.  This
+      call is on the fast path, and we want to have ISM and
+      non-ISM version selected at runtime. */
+	int (*check_hw_for_pkts) (struct _OCTEON_DEVICE *, struct octeon_droq_struct *droq);
 
   /** The receive buffer list. This list has the virtual addresses of the
       buffers.  */
@@ -114,6 +129,11 @@ typedef struct {
       Octeon writes the number of packets DMA'ed to host memory
       in this register. */
 	void *pkts_sent_reg;
+
+  /** Pointer to the ISM configuration regiser.
+      This is used for controlling the ISM writes to hos
+      memory */
+	void *out_cnts_ism;
 
   /** Fix for DMA incompletion during pkt reads.
       This variable is used to initiate a sent_reg_read
@@ -197,7 +217,7 @@ typedef struct {
 
 	octeon_droq_ism_t ism;
 
-} ____cacheline_aligned_in_smp  octeon_droq_t;
+} ____cacheline_aligned_in_smp octeon_droq_t;
 
 #define OCT_DROQ_SIZE   (sizeof(octeon_droq_t))
 
