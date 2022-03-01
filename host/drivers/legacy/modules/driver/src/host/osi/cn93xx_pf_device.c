@@ -446,6 +446,12 @@ static void cn93xx_setup_iq_regs(octeon_device_t * oct, int iq_no)
 	reg_val = (CFG_GET_IQ_INTR_THRESHOLD(cn93xx->conf) & 0xffffffff)
 		  | (10UL << 32);
 	octeon_write_csr64(oct, CN93XX_SDP_R_IN_INT_LEVELS(iq_no), reg_val);
+
+	if(OCT_TX2_IQ_ISM) {
+		octeon_write_csr64(oct, CN93XX_SDP_R_IN_CNTS_ISM(iq_no), (iq->ism.pkt_cnt_dma)|0x1ULL);
+		iq->in_cnts_ism = (uint8_t *) oct->mmio[0].hw_addr
+		    + CN93XX_SDP_R_IN_CNTS_ISM(iq_no);
+	}
 }
 
 static void cn93xx_setup_oq_regs(octeon_device_t * oct, int oq_no)
@@ -898,6 +904,27 @@ static uint32_t cn93xx_bar1_idx_read(octeon_device_t * oct, int idx)
 							     idx));
 }
 
+#if OCT_TX2_IQ_ISM
+static uint32_t cn93xx_update_read_index(octeon_instr_queue_t * iq)
+{
+	u32 new_idx;
+	u32 last_done;
+	u32 pkt_in_done = iq->ism.pkt_cnt_addr[iq->ism.index];
+
+	/* Request new ISM write */
+	OCTEON_WRITE64(iq->inst_cnt_reg, 1UL << 63);
+
+	last_done = pkt_in_done - iq->pkt_in_done;
+	iq->pkt_in_done = pkt_in_done;
+
+#define OCTEON_PKT_IN_DONE_CNT_MASK (0x00000000FFFFFFFFULL)
+	new_idx = (iq->octeon_read_index +
+		   (u32)(last_done & OCTEON_PKT_IN_DONE_CNT_MASK)) %
+		  iq->max_count;
+
+	return new_idx;
+}
+#else
 static uint32_t cn93xx_update_read_index(octeon_instr_queue_t * iq)
 {
 	u32 new_idx;
@@ -914,6 +941,7 @@ static uint32_t cn93xx_update_read_index(octeon_instr_queue_t * iq)
 
 	return new_idx;
 }
+#endif
 
 static void cn93xx_enable_pf_interrupt(void *chip, uint8_t intr_flag)
 {

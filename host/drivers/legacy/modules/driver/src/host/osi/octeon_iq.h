@@ -54,8 +54,18 @@ struct oct_noresp_free_list {
 	cavium_atomic_t count;
 };
 
+#define OCTEON_ISM_IQ_MEM_SIZE	8	/* size in bytes of ISM DMA allocs */
 typedef struct octeon_in_cnt_ism {
-	void *pkt_cnt_addr;
+	/*
+	 * The DMA (pkt_cnt_dma) and virtual (pkt_cnt_addr) are both base
+	 * addresses for 2 double buffered values.  The index alternates
+	 * between 0 and 1, and is updated whenever the SDPX_RX_IN_CNTS_ISM[cnt]
+	 * field is adjusted.  This is required to ensure that only ISM writes
+	 * after that adjustment takes effect are used by software after the
+	 * adjustment has been initiated by a CSR write.
+	 */
+	int index;
+	uint32_t *pkt_cnt_addr;	/* ptr valid means ISM in use */
 	unsigned long pkt_cnt_dma;
 } octeon_in_cnt_ism_t;
 
@@ -95,6 +105,9 @@ typedef struct {
 
  /* interrupt level register for this ring */
 	void *intr_lvl_reg;
+
+ /* ISM control register for this ring */
+	void *in_cnts_ism;
 
   /** Maximum no. of instructions in this queue. */
 	uint32_t max_count;

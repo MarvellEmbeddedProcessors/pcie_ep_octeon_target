@@ -2158,11 +2158,24 @@ void octeon_enable_irq(octeon_droq_t *droq, octeon_instr_queue_t *iq)
 	 * We need to update internal driver state before writing the *_CNTS
 	 * register, as this write will enable new IQ/OQ interrupts.
 	 */
+	uint32_t iq_update = iq->pkts_processed;
 	uint32_t oq_update = droq->last_pkt_count - pkts_pend;
 
-	if (iq->pkts_processed) {
-		OCTEON_WRITE32(iq->inst_cnt_reg, iq->pkts_processed);
-		iq->pkt_in_done -= iq->pkts_processed;
+	if (iq_update) {
+		iq->pkt_in_done -= iq_update;
+		/* ISM is in use if pkt_cnt_addr is !0, (OCT_TX2_IQ_ISM) */
+		if (iq->ism.pkt_cnt_addr) {
+			/*
+			 * Update the ISM location and value based on packets
+			 * processed.  This needs to be done before the IN_CNTS
+			 * register is updated, which could trigger an immediate
+			 * interrrupt and corresponding ISM message.
+			 */
+			iq->ism.index = !iq->ism.index;  /* Swap ISM index */
+			/* Update ISM value at new index*/
+			iq->ism.pkt_cnt_addr[iq->ism.index] = iq->pkt_in_done;
+			OCTEON_WRITE64(iq->in_cnts_ism, (iq->ism.pkt_cnt_dma + ((sizeof(uint32_t)*iq->ism.index)|0x1ULL)));
+		}
 		iq->pkts_processed = 0;
 	}
 
@@ -2203,7 +2216,8 @@ void octeon_enable_irq(octeon_droq_t *droq, octeon_instr_queue_t *iq)
 	 * Update hardware _CNTS registers after internal driver state has
 	 * been updated, as these writes enable new interrupts immediately.
 	 */
-
+	if (iq_update)
+		OCTEON_WRITE32(iq->inst_cnt_reg, iq_update);
 	if (oq_update)
 		OCTEON_WRITE32(droq->pkts_sent_reg, oq_update);
 	/* Request resends of IRQs, also resends ISM if ISM enabled */

@@ -45,6 +45,8 @@
 
 #define    CN93XX_VF_SDP_R_IN_BYTE_CNT_START         0x10090
 
+#define    CN93XX_VF_SDP_R_IN_CNTS_ISM_START         0x10520
+
 #define    CN93XX_VF_SDP_R_IN_CONTROL(ring)          \
        (CN93XX_VF_SDP_R_IN_CONTROL_START + ((ring) * CN93XX_VF_RING_OFFSET))
 
@@ -76,6 +78,9 @@
 
 #define    CN93XX_VF_SDP_R_IN_BYTE_CNT(ring)          \
        (CN93XX_VF_SDP_R_IN_BYTE_CNT_START + ((ring) * CN93XX_VF_RING_OFFSET))
+
+#define    CN93XX_VF_SDP_R_IN_CNTS_ISM(ring)          \
+       (CN93XX_VF_SDP_R_IN_CNTS_ISM_START + ((ring) * CN93XX_VF_RING_OFFSET))
 
 /*------------------ R_IN Masks ----------------*/
 

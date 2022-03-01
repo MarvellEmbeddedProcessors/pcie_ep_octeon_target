@@ -197,6 +197,7 @@
  * Currently ISM support is only implemented for CN9XXX chips.
  */
 #define   OCT_TX2_DROQ_ISM		1
+#define   OCT_TX2_IQ_ISM		1
 
 /* ----------------- Host Firmware Handshake Details ----------------- */
 /* ----------------- Host Firmware Handshake Details ----------------- */

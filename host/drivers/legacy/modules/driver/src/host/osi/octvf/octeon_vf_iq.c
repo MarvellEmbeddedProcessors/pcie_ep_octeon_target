@@ -76,26 +76,33 @@ int octeon_init_instr_queue(octeon_device_t * oct, int iq_no)
 		return 1;
 	}
 
-#ifdef OCT_TX2_IQ_ISM_INT
-	if (OCTEON_CN9XXX_VF(oct->chip_id)) {
-		iq->ism.pkt_cnt_addr =
-		    octeon_pci_alloc_consistent(oct->pci_dev, 8,
-						&iq->ism.pkt_cnt_dma, iq->app_ctx);
+	iq->ism.pkt_cnt_addr = 0;
+	if (OCT_TX2_IQ_ISM) {
+		if (OCTEON_CN9XXX_VF(oct->chip_id)) {
+			iq->ism.pkt_cnt_addr =
+			    octeon_pci_alloc_consistent(oct->pci_dev, OCTEON_ISM_IQ_MEM_SIZE,
+							&iq->ism.pkt_cnt_dma, iq->app_ctx);
 
-		if (cavium_unlikely(!iq->ism.pkt_cnt_addr)) {
-			cavium_error("OCTEON: Output queue %d ism memory alloc failed\n",
-				     iq_no);
-			return 1;
+			if (cavium_unlikely(!iq->ism.pkt_cnt_addr)) {
+				cavium_error("OCTEON: Input queue %d ism memory alloc failed\n",
+					     iq_no);
+				return 1;
+			}
+
+			cavium_print(PRINT_REGS, "iq[%d]: ism addr: virt: 0x%p, dma: %lx",
+				     q_no, iq->ism.pkt_cnt_addr, iq->ism.pkt_cnt_dma);
+			printk_once("OCTEON[%d]: Using ISM input queue management\n",
+					 oct->octeon_id);
+		} else {
+			printk_once("OCTEON[%d]: Using CSR input queue management\n",
+					 oct->octeon_id);
 		}
-
-		cavium_print(PRINT_REGS, "iq[%d]: ism addr: virt: 0x%p, dma: %lx",
-			     q_no, iq->ism.pkt_cnt_addr, iq->ism.pkt_cnt_dma);
-	} else if (OCTEON_CNXK_VF(oct->chip_id)) {
-		cavium_error("OCTEON: IQ-%d ISM setup failed; CNXK not supported\n",
-			     iq_no);
-		return 1;
 	}
-#endif
+	else
+	{
+		printk_once("OCTEON[%d]: Using CSR input queue management\n",
+				 oct->octeon_id);
+	}
 
 	if (conf->num_descs & (conf->num_descs - 1)) {
 		cavium_error
@@ -167,18 +174,10 @@ int octeon_delete_instr_queue(octeon_device_t * oct, int iq_no)
 		desc_size =
 		    CFG_GET_IQ_INSTR_TYPE(CHIP_FIELD(oct, cnxk_vf, conf));
 
-#ifdef OCT_TX2_IQ_ISM_INT
-	if (OCTEON_CN9XXX_VF(oct->chip_id)) {
-		if (iq->ism.pkt_cnt_addr)
-			octeon_pci_free_consistent(oct->pci_dev, 8,
-						   iq->ism.pkt_cnt_addr, iq->ism.pkt_cnt_dma,
-						   iq->app_ctx);
-	} else if (OCTEON_CNXK_VF(oct->chip_id)) {
-		cavium_error("OCTEON: IQ-%d ISM free failed; CNXK not supported\n",
-			     iq_no);
-		return 1;
-	}
-#endif
+	if (iq->ism.pkt_cnt_addr)
+		octeon_pci_free_consistent(oct->pci_dev, OCTEON_ISM_IQ_MEM_SIZE,
+					   iq->ism.pkt_cnt_addr, iq->ism.pkt_cnt_dma,
+					   iq->app_ctx);
 
 	if (iq->plist)
 		octeon_delete_iq_pending_list(oct, iq->plist);
