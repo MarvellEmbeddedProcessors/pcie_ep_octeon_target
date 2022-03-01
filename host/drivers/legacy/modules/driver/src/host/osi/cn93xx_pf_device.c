@@ -910,13 +910,9 @@ static void cn93xx_enable_pf_interrupt(void *chip, uint8_t intr_flag)
 {
 	volatile uint64_t reg_val = 0ULL, pf_ring_ctl = 0ULL;
 	uint64_t intr_mask = 0ULL;
-	int srn = 0, trs = 0, i;
+	int trs = 0, i;
 	octeon_cn93xx_pf_t *cn93xx = (octeon_cn93xx_pf_t *) chip;
 	octeon_device_t *oct = (octeon_device_t *) cn93xx->oct;
-
-	reg_val = octeon_read_csr64(oct, CN93XX_SDP_EPF_RINFO);
-
-	srn = reg_val & CN93XX_SDP_EPF_RINFO_SRN;
 
 	/* Get RPPF from MACX_PF_RING_CTL */
 	pf_ring_ctl = octeon_read_csr64(oct,
@@ -934,7 +930,7 @@ static void cn93xx_enable_pf_interrupt(void *chip, uint8_t intr_flag)
 	}
 
 	for (i = 0; i < trs; i++)
-		intr_mask |= (0x1ULL << (srn + i));
+		intr_mask |= (0x1ULL << i);
 
 	octeon_write_csr64(oct,
 			   CN93XX_SDP_EPF_IRERR_RINT_ENA_W1S,
@@ -964,15 +960,11 @@ static void cn93xx_enable_pf_interrupt(void *chip, uint8_t intr_flag)
 
 static void cn93xx_disable_pf_interrupt(void *chip, uint8_t intr_flag)
 {
-	volatile uint64_t reg_val = 0ULL, pf_ring_ctl = 0ULL;
+	volatile uint64_t pf_ring_ctl = 0ULL;
 	uint64_t intr_mask = 0ULL;
-	int srn = 0, trs = 0, i;
+	int trs = 0, i;
 	octeon_cn93xx_pf_t *cn93xx = (octeon_cn93xx_pf_t *) chip;
 	octeon_device_t *oct = (octeon_device_t *) cn93xx->oct;
-
-	reg_val = octeon_read_csr64(oct, CN93XX_SDP_EPF_RINFO);
-
-	srn = reg_val & CN93XX_SDP_EPF_RINFO_SRN;
 
 	/* Get RPPF from MACX_PF_RING_CTL */
 	pf_ring_ctl = octeon_read_csr64(oct,
@@ -990,7 +982,7 @@ static void cn93xx_disable_pf_interrupt(void *chip, uint8_t intr_flag)
 	}
 
 	for (i = 0; i < trs; i++)
-		intr_mask |= (0x1ULL << (srn + i));
+		intr_mask |= (0x1ULL << i);
 
 	octeon_write_csr64(oct,
 			   CN93XX_SDP_EPF_IRERR_RINT_ENA_W1C, intr_mask);
