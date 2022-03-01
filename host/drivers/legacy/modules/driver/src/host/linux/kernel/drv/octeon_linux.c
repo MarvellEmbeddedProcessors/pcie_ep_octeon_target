@@ -272,7 +272,6 @@ EXPORT_SYMBOL(octeon_reset_ioq);
 EXPORT_SYMBOL(octeon_iq_post_command);
 EXPORT_SYMBOL(octeon_flush_iq);
 EXPORT_SYMBOL(print_octeon_state_errormsg);
-EXPORT_SYMBOL(octeon_perf_flush_iq);
 EXPORT_SYMBOL(octeon_get_conf);
 EXPORT_SYMBOL(octeon_setup_droq);
 EXPORT_SYMBOL(octeon_setup_iq);

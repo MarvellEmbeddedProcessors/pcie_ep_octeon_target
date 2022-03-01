@@ -309,76 +309,6 @@ __add_to_nrlist(octeon_instr_queue_t * iq, int idx, void *buf, int buftype)
 	iq->nrlist[idx].buftype = buftype;
 }
 
-static int
-__process_iq_noresponse_list(octeon_device_t * oct UNUSED,
-			     octeon_instr_queue_t * iq)
-{
-	uint32_t old = iq->flush_index;
-	uint32_t inst_count = 0, put_idx;
-
-	put_idx = iq->nr_free.put_idx;
-
-	while (old != iq->octeon_read_index) {
-		if (iq->nrlist[old].buftype == NORESP_BUFTYPE_NONE) {
-			BUG_ON(1);
-			goto skip_this;
-		}
-
-		cavium_print(PRINT_DEBUG,
-			     "Adding instr @ %p type %d to freelist @ idx %d\n",
-			     iq->nrlist[old].buf, iq->nrlist[old].buftype,
-			     put_idx);
-
-		iq->nr_free.q[put_idx].buf = iq->nrlist[old].buf;
-		iq->nr_free.q[put_idx].buftype = iq->nrlist[old].buftype;
-		iq->nrlist[old].buf = 0;
-		iq->nrlist[old].buftype = 0;
-		INCR_INDEX_BY1(put_idx, iq->max_count);
-
-skip_this:
-		inst_count++;
-		INCR_INDEX_BY1(old, iq->max_count);
-	}
-
-	iq->nr_free.put_idx = put_idx;
-
-	iq->flush_index = old;
-
-	return inst_count;
-}
-
-static inline void
-update_iq_indices(octeon_device_t * oct, octeon_instr_queue_t * iq)
-{
-	uint32_t inst_processed = 0;
-
-	/* Calculate how many commands Octeon has read and move the read index
-	   accordingly. */
-	iq->octeon_read_index = oct->fn_list.update_iq_read_idx(iq);
-
-	/* Move the NORESPONSE requests to the per-device completion list. */
-	if (iq->flush_index != iq->octeon_read_index) {
-		inst_processed = __process_iq_noresponse_list(oct, iq);
-	}
-
-	if (inst_processed) {
-		cavium_atomic_sub(inst_processed, &iq->instr_pending);
-		iq->stats.instr_processed += inst_processed;
-	}
-}
-
-/** Check for commands that were fetched by Octeon. If they were NORESPONSE
-  * requests, move the requests from the per-queue pending list to the
-  * per-device noresponse completion list.
-  */
-static inline void
-flush_instr_queue(octeon_device_t * oct, octeon_instr_queue_t * iq)
-{
-	update_iq_indices(oct, iq);
-
-	process_noresponse_list(oct, iq);
-}
-
 /* Process instruction queue after timeout.
  *  * This routine gets called from a workqueue or when removing the module.
  *   */
@@ -1652,29 +1582,4 @@ octeon_flush_iq(octeon_device_t *oct, octeon_instr_queue_t *iq,
 	//printk("%s: DONE; Q-%d budget=%u; tot_inst_processed=%u read_idx=%u flush=%u\n", __func__, iq->iq_no, napi_budget, tot_inst_processed, iq->octeon_read_index, iq->flush_index);
 	return tx_done;
 }
-
-void octeon_perf_flush_iq(octeon_device_t * oct, octeon_instr_queue_t * iq)
-{
-	uint32_t inst_processed = 0;
-
-	iq->octeon_read_index = oct->fn_list.update_iq_read_idx(iq);
-
-	if (iq->flush_index != iq->octeon_read_index) {
-		uint32_t old = iq->flush_index;
-
-		inst_processed = 0;
-		while (old != iq->octeon_read_index) {
-			inst_processed++;
-			INCR_INDEX_BY1(old, iq->max_count);
-		}
-		iq->flush_index = old;
-	}
-
-	if (inst_processed) {
-		cavium_atomic_sub(inst_processed, &iq->instr_pending);
-		iq->stats.instr_processed += inst_processed;
-	}
-	return;
-}
-
 /* $Id: request_manager.c 170607 2018-03-20 15:52:25Z vvelumuri $ */
