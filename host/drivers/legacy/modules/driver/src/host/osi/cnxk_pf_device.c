@@ -975,7 +975,7 @@ static void cnxk_disable_pf_interrupt(void *chip, uint8_t intr_flag)
 			   intr_mask);
 }
 
-static void cnxk_get_pcie_qlmport(octeon_device_t * oct)
+static int cnxk_get_pcie_qlmport(octeon_device_t * oct)
 {
 	uint64_t sdp_mac;
 
@@ -985,6 +985,9 @@ static void cnxk_get_pcie_qlmport(octeon_device_t * oct)
 	cavium_print_msg("OCTEON[%d]: CNXK uses PCIE Port %d and PEM %d\n",
 			 oct->octeon_id, oct->pcie_port,
 			 (uint8_t)((sdp_mac >> 16) & 0xff));
+
+	/* If port is 0xff, PCIe read failed, return error */
+	return (oct->pcie_port == 0xff);
 }
 
 static void cnxk_setup_reg_address(octeon_device_t * oct)
@@ -1205,7 +1208,9 @@ int setup_cnxk_octeon_pf_device(octeon_device_t * oct)
 	cnxk_setup_reg_address(oct);
 
 	/* Update pcie port number in the device structure */
-	cnxk_get_pcie_qlmport(oct);
+	ret = cnxk_get_pcie_qlmport(oct);
+	if (ret != 0)
+		goto free_barx;
 	ret = octeon_get_fw_info(oct);
 	if (ret != 0)
 		goto free_barx;

@@ -994,7 +994,7 @@ static void cn83xx_disable_pf_interrupt(void *chip, uint8_t intr_flag)
 			   intr_mask);
 }
 
-static void cn83xx_get_pcie_qlmport(octeon_device_t * oct)
+static int cn83xx_get_pcie_qlmport(octeon_device_t * oct)
 {
 	/* there are 4 MAC_NUMBER registers. which one to read to get the pcie_port?
 	 * The value should come from LMAC_CONST[pcie_port].epf
@@ -1006,9 +1006,12 @@ static void cn83xx_get_pcie_qlmport(octeon_device_t * oct)
 
 	cavium_print_msg("OCTEON[%d]: CN83xx uses PCIE Port %d\n",
 			 oct->octeon_id, oct->pcie_port);
+
+	/* If port is 0xff, PCIe read failed, return error */
+	return (oct->pcie_port == 0xff);
 }
 
-static void cn83xx_setup_reg_address(octeon_device_t * oct)
+static int cn83xx_setup_reg_address(octeon_device_t * oct)
 {
 	uint8_t cavium_iomem *bar0_pciaddr = oct->mmio[0].hw_addr;
 	int epf_num = 0;
@@ -1053,7 +1056,7 @@ static void cn83xx_setup_reg_address(octeon_device_t * oct)
 	    (uint64_t cavium_iomem *) (bar0_pciaddr +
 				       CN83XX_SLI_WIN_RD_DATA64(epf_num));
 
-	cn83xx_get_pcie_qlmport(oct);
+	return cn83xx_get_pcie_qlmport(oct);
 }
 
 static inline int lowerpow2roundup(int x)
@@ -1136,7 +1139,8 @@ setup_cn83xx_octeon_pf_device(octeon_device_t * oct)
 
 	oct->fn_list.dump_registers = cn83xx_dump_pf_initialized_regs;
 
-	cn83xx_setup_reg_address(oct);
+	if (cn83xx_setup_reg_address(oct))
+		goto free_barx;
 
 	/* Get the TRS and SRN from RINFO */
 	epf_rinfo = octeon_read_csr64(oct, CN83XX_SDP_EPF_RINFO(oct->epf_num));

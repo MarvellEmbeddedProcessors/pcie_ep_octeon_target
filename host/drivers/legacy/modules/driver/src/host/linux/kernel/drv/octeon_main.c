@@ -636,7 +636,8 @@ static void octeon_device_init_work(struct work_struct *work)
 	}
 
 	if (octeon_device_init(oct_dev)) {
-		octeon_remove(oct_dev->pci_dev);
+		cavium_print_msg("OCTEON[%d]: ERROR: Octeon driver failed to load.\n",
+				 oct_dev->octeon_id);
 		return;
 	}
 
