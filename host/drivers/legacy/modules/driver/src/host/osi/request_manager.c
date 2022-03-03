@@ -88,29 +88,32 @@ int octeon_setup_iq(octeon_device_t * oct, int iq_no, void *app_ctx)
 
 int wait_for_iq_instr_fetch(octeon_device_t * oct, int q_no)
 {
-	int retry = 1000, pending;
+	int retry = HZ, pending = 0;
+	int pending_prev;
 	octeon_instr_queue_t *instr_queue = oct->instr_queue[q_no];
 
 	do {
+		pending_prev = pending;
 		pending = cavium_atomic_read(&instr_queue->instr_pending);
 		if (pending)
 			__check_db_timeout(oct, q_no);
 		else
 			break;
 
-		cavium_sleep_timeout(1);
+		cavium_sleep_timeout(HZ/100);
 
-	} while (retry-- && pending);
+	} while (retry-- && pending != pending_prev && pending);
 
 	return pending;
 }
 
 int wait_for_instr_fetch(octeon_device_t * oct)
 {
-	int i, retry = 1000, pending, instr_cnt = 0;
+	int i, retry = HZ, pending, instr_cnt = 0;
+	int instr_cnt_prev;
 
 	do {
-
+		instr_cnt_prev = instr_cnt;
 		instr_cnt = 0;
 
 		for (i = 0; i < oct->num_iqs; i++) {
@@ -122,12 +125,13 @@ int wait_for_instr_fetch(octeon_device_t * oct)
 			instr_cnt += pending;
 		}
 
+
 		if (instr_cnt == 0)
 			break;
 
-		cavium_sleep_timeout(1);
+		cavium_sleep_timeout(HZ/100);
 
-	} while (retry-- && instr_cnt);
+	} while (retry-- && instr_cnt && instr_cnt_prev != instr_cnt);
 
 	return instr_cnt;
 }
