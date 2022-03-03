@@ -9,6 +9,8 @@
 #include "octeon-pci.h"
 #include <linux/log2.h>
 
+#define FW_STATUS_RUNNING	2ULL
+
 extern int g_app_mode[];
 extern int octeon_device_init(octeon_device_t *, int);
 extern void mv_facility_irq_handler(octeon_device_t *oct, uint64_t event_word);
@@ -99,12 +101,16 @@ static int cn93xx_pf_soft_reset(octeon_device_t * oct)
 	cavium_print_msg
 	    ("OCTEON[%d]: BIST enabled for CN93XX soft reset\n",
 	     oct->octeon_id);
-	/* firmware ready status bit is supposed to be cleared by
+	/* Firmware status CSR is supposed to be cleared by
 	 * core domain reset, but due to a hw bug, it is not.
-	 * so clear it manually here
+	 * Set it to RUNNING right before reset so that it is not
+	 * left in READY (1) state after a reset.  This is required
+	 * in addition to the early setting to handle the case where
+	 * the OcteonTX is unexpectedly reset, reboots, and then
+	 * the module is removed.
 	 */
 	OCTEON_PCI_WIN_WRITE(oct, CN93XX_PEMX_CFG_WR((u64)oct->pcie_port),
-			     0x84d0ull);
+			     0x84d0ull | (FW_STATUS_RUNNING << 32));
 
 	/* Set core domain reset bit */
 	OCTEON_PCI_WIN_WRITE(oct, CN93XX_RST_CORE_DOMAIN_W1S, 1);
@@ -1251,6 +1257,14 @@ int setup_cn98xx_octeon_pf_device(octeon_device_t * oct)
 		goto free_barx;
 	}
 
+	/* Firmware status CSR is supposed to be cleared by
+	 * core domain reset, but due to a hw bug, it is not.
+	 * Set it to RUNNING early in boot, so that unexpected resets
+	 * leave it in a state that is not READY (1).
+	 * TODO: support 2nd PEM on CN98XX
+	 */
+	OCTEON_PCI_WIN_WRITE(oct, CN93XX_PEMX_CFG_WR((u64)oct->pcie_port),
+			     0x84d0ull | (FW_STATUS_RUNNING << 32));
 
 	ret = octeon_get_fw_info(oct);
 	if (ret != 0)
@@ -1344,6 +1358,14 @@ int setup_cn93xx_octeon_pf_device(octeon_device_t * oct)
 		ret = -1;
 		goto free_barx;
 	}
+
+	/* Firmware status CSR is supposed to be cleared by
+	 * core domain reset, but due to a hw bug, it is not.
+	 * Set it to RUNNING early in boot, so that unexpected resets
+	 * leave it in a state that is not READY (1).
+	 */
+	OCTEON_PCI_WIN_WRITE(oct, CN93XX_PEMX_CFG_WR((u64)oct->pcie_port),
+			     0x84d0ull | (FW_STATUS_RUNNING << 32));
 
 	ret = octeon_get_fw_info(oct);
 	if (ret != 0)
