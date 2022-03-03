@@ -481,6 +481,7 @@ int octnet_setup_glist(octnet_priv_t * priv)
 	return 1;
 }
 
+#if !defined(ETHERPCI) && defined(OCTNIC_CTRL)
 void octnet_send_rx_ctrl_cmd(octnet_priv_t * priv, int start_stop)
 {
 	octnic_ctrl_pkt_t nctrl;
@@ -494,15 +495,14 @@ void octnet_send_rx_ctrl_cmd(octnet_priv_t * priv, int start_stop)
 	nctrl.netpndev = (unsigned long)priv->pndev;
 
 	nparams.resp_order = OCTEON_RESP_NORESPONSE;
-#if !defined(ETHERPCI) && defined(OCTNIC_CTRL)
 	if (octnet_send_nic_ctrl_pkt(priv->oct_dev, &nctrl, nparams) < 0) {
 		cavium_error("OCTNIC: Failed to send RX Control message\n");
 	}
-#endif
 
 	return;
 }
 
+#endif
 /* Cleanup associated with each interface for an Octeon device  when NIC
    module is being unloaded or if initialization fails during load. */
 void octnet_destroy_nic_device(int octeon_id, int ifidx)
@@ -517,8 +517,9 @@ void octnet_destroy_nic_device(int octeon_id, int ifidx)
 
 	priv = GET_NETDEV_PRIV(pndev);
 
+#if !defined(ETHERPCI) && defined(OCTNIC_CTRL)
 	octnet_send_rx_ctrl_cmd(priv, 0);
-
+#endif
 	if (cavium_atomic_read(&priv->ifstate) & OCT_NIC_IFSTATE_RUNNING)
 		octnet_txqueues_stop(pndev);
 
