@@ -518,7 +518,8 @@ void octnet_destroy_nic_device(int octeon_id, int ifidx)
 	priv = GET_NETDEV_PRIV(pndev);
 
 #if !defined(ETHERPCI) && defined(OCTNIC_CTRL)
-	octnet_send_rx_ctrl_cmd(priv, 0);
+	if (octeon_bar_access_valid(priv->oct_dev))
+		octnet_send_rx_ctrl_cmd(priv, 0);
 #endif
 	if (cavium_atomic_read(&priv->ifstate) & OCT_NIC_IFSTATE_RUNNING)
 		octnet_txqueues_stop(pndev);

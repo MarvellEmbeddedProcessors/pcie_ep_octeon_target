@@ -295,4 +295,5 @@ EXPORT_SYMBOL(wait_for_pending_requests);
 EXPORT_SYMBOL(octeon_droq_set_netdev);
 EXPORT_SYMBOL(octeon_droq_process_poll_pkts);
 EXPORT_SYMBOL(octeon_enable_irq);
+EXPORT_SYMBOL(octeon_bar_access_valid);
 

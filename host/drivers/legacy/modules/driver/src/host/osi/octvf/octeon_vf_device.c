@@ -2706,3 +2706,43 @@ octeon_hostfw_handshake(void *octptr, unsigned long arg UNUSED)
 
 	return OCT_POLL_FN_CONTINUE;
 }
+
+/**
+ * Versions in octeon_device.c and octeon_vf_device.c should
+ * match.
+ *
+ * Checks to see if BAR accesses are returning valid data.  This
+ * is used during module removal to determine if the device is
+ * safe to access.  If the OcteonTX has crashed or reset, BAR
+ * accesses may not be valid, and in those cases we need to skip
+ * BAR accesses (at least reads) on the module removal path.
+ * Note that this doesn't guarantee that future BAR accesses
+ * will be valid.
+ *
+ * @param   oct   Pointer to Octeon Device structure
+ * @return  int		1: BAR access is working
+ *      		0: BAR accesses return invalid data, ie
+ *      		0xFFFFFFFFFFFFFFFF
+ */
+int octeon_bar_access_valid(octeon_device_t * oct)
+{
+	uint64_t val = 0ULL;
+
+	if (!oct)
+		return 0;
+
+	if (OCTEON_CN83XX_PF(oct->chip_id)
+	    || OCTEON_CN83XX_VF(oct->chip_id)) {
+		val = octeon_read_csr64(oct, CN83XX_SLI_MAC_NUMBER(0));
+	} else if (OCTEON_CN9XXX_PF(oct->chip_id)
+		   || OCTEON_CN9XXX_VF(oct->chip_id)) {
+		val = octeon_read_csr64(oct, CN93XX_SDP_MAC_NUMBER);
+	} else if (OCTEON_CNXK_PF(oct->chip_id)
+		   || OCTEON_CNXK_PF(oct->chip_id)) {
+		val = octeon_read_csr64(oct, CNXK_SDP_MAC_NUMBER);
+	} else {
+		printk("ERROR: unsupported Octeon in octeon_bar_access_valid()\n");
+		return 0;
+	}
+	return (val != ~0ULL);
+}

@@ -787,6 +787,8 @@ void print_octeon_state_errormsg(octeon_device_t * oct);
 octeon_config_t *octeon_get_conf(octeon_device_t * oct);
 
 extern int oct_stop_base_module(int oct_id, void *oct_dev);
+
+int octeon_bar_access_valid(octeon_device_t * oct);
 #endif
 
 /* $Id: octeon_device.h 170599 2018-03-20 13:42:25Z vvelumuri $ */
