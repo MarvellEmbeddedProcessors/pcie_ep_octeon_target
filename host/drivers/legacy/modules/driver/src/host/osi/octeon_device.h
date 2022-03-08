@@ -473,9 +473,9 @@ typedef struct cvm_ioq_vector {
 } octeon_ioq_vector_t;
 
 #define OCTEON_NON_SRIOV_MODE                 (1 << 0)
-#define OCTEON_SRIOV_MODE                     (1 << 1)
+#define OCTEON_SRIOV_MODE                     (1ULL << 1)
 #define OCTEON_MSIX_CAPABLE                   (1 << 2)
-#define OCTEON_MBOX_CAPABLE	                  (1 << 3)
+#define OCTEON_MBOX_CAPABLE	                  (1ULL << 3)
 #define OCTEON_MSIX_AFFINITY_CAPABLE          (1 << 4)
 
 struct iq_intr_wq {

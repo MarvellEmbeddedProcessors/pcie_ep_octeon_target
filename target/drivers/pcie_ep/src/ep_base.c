@@ -67,7 +67,7 @@ union sdp_epf_oei_trig {
 #define PEM_DIS_PORT_OFFSET	0x50ull
 
 #define SDP_SCRATCH_OFFSET(x) ({			\
-	u64 offset;					\
+	u64 offset = 0;					\
 							\
 	if (pcie_ep_dev->plat_model == OTX_CN83XX)	\
 		offset = 0x20180ull | (x << 23);	\
@@ -78,7 +78,7 @@ union sdp_epf_oei_trig {
 	offset; })					\
 
 #define PEM_BAR_INDEX_OFFSET(x) ({				\
-	u64 offset;					\
+	u64 offset = 0;					\
 	if (pcie_ep_dev->plat_model == OTX_CN83XX)	\
 		offset = 0x100ull | (x << 3);	\
 	else if (pcie_ep_dev->plat_model == OTX2_CN9XXX)\
@@ -389,7 +389,7 @@ static int npu_base_probe(struct platform_device *pdev)
 {
 	struct otx_pcie_ep *pcie_ep_dev;
 	struct device *dev = &pdev->dev;
-	int i, irq, first_irq, irq_count, ret;
+	int i, irq, first_irq, irq_count, ret = 0;
 	struct device *smmu_dev;
 	struct iommu_domain *host_domain;
 	int instance = 0;

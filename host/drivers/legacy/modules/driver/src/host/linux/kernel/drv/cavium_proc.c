@@ -334,7 +334,7 @@ void run_perf_test_83(octeon_device_t * oct)
 	unsigned long start_jiffies, end_jiffies, total_pkts = 0, total_bytes =
 	    0;
 	octeon_instr3_64B_t o3_cmd;
-	octeon_instr_irh_t irh;
+	octeon_instr_irh_t irh = {0};
 	octeon_instr_pki_ih3_t pki_ih3;
     octeon_instr_ihx_t ihx;
 

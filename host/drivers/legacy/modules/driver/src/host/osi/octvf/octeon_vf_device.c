@@ -1921,6 +1921,8 @@ int octeon_core_cfg_callback(void *octeon_dev, unsigned long arg)
 	char app_name[16];
 
 	default_oct_conf = octeon_get_conf(oct);
+	if (default_oct_conf == NULL)
+		return 0;
 	oct->app_mode = CFG_GET_APP_MODE(default_oct_conf);
 	oct->pkind = CFG_GET_DPI_PKIND(default_oct_conf);
 
@@ -2016,6 +2018,8 @@ octeon_pfvf_handshake(void *octptr, unsigned long arg UNUSED)
 	char app_name[16];
 
 	default_oct_conf = octeon_get_conf(oct);
+	if (default_oct_conf == NULL)
+		return OCT_POLL_FN_ERROR ;
 
 	switch (cavium_atomic_read(&oct->pfvf_hs_state)) {
 	case PFVF_HS_INIT:
@@ -2477,6 +2481,8 @@ octeon_hostfw_handshake(void *octptr, unsigned long arg UNUSED)
 			}
 #endif
 			default_oct_conf = octeon_get_conf(oct);
+			if (default_oct_conf == NULL)
+				return OCT_POLL_FN_ERROR;
 
 			if ((value >> 32) == HOSTFW_HS_SUPPORT_INDICATION) {
 				/* Send ack to core */

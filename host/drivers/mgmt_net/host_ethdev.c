@@ -362,7 +362,7 @@ static void mdev_clean_tx_rings(struct otxmn_dev *mdev)
 {
 	int i;
 
-	for (i = 0; i < mdev->num_txq; i++)
+	for (i = 0; i < mdev->num_txq && i < OTXMN_MAXQ; i++)
 		mdev_clean_tx_ring(mdev, i);
 }
 
@@ -429,7 +429,7 @@ static int mdev_setup_tx_rings(struct otxmn_dev *mdev)
 {
 	int i, j, ret;
 
-	for  (i = 0; i < mdev->num_txq; i++) {
+	for  (i = 0; i < mdev->num_txq && i < OTXMN_MAXQ; i++) {
 		ret = mdev_setup_tx_ring(mdev, i);
 		if (ret)
 			goto error;
@@ -488,7 +488,7 @@ static void mdev_clean_rx_rings(struct otxmn_dev *mdev)
 {
 	int i;
 
-	for (i = 0; i < mdev->num_rxq; i++)
+	for (i = 0; i < mdev->num_rxq && i < OTXMN_MAXQ; i++)
 		mdev_clean_rx_ring(mdev, i);
 }
 
@@ -621,7 +621,7 @@ static int mdev_setup_rx_rings(struct otxmn_dev *mdev)
 {
 	int i, j, ret;
 
-	for  (i = 0; i < mdev->num_rxq; i++) {
+	for  (i = 0; i < mdev->num_rxq && i < OTXMN_MAXQ; i++) {
 		ret = mdev_setup_rx_ring(mdev, i);
 		if (ret)
 			goto error;

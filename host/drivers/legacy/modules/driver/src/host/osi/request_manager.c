@@ -1430,6 +1430,7 @@ octeon_send_short_command(octeon_device_t * oct,
 
 	if ((cavium_atomic_read(&oct->status) != OCT_DEV_RUNNING) &&
 	    (cavium_atomic_read(&oct->status) != OCT_DEV_IN_RESET)) {
+		delete_soft_instr(oct, instr);
 		return 1;
 	}
 

@@ -1002,6 +1002,9 @@ int octeon_setup_droq(int oct_id, int q_no, void *app_ctx)
 	    (octeon_device_t *) get_octeon_device(oct_id);
 	int ret_val = 0;
 
+	if (octeon_dev == NULL)
+		return -1;
+
 	cavium_print(PRINT_DEBUG, "OCTEON[%d]: Creating Droq: %d\n",
 			 octeon_dev->octeon_id, q_no);
 	/* droq creation and local register settings. */

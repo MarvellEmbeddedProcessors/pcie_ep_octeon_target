@@ -31,6 +31,7 @@ cavium_parse_cvs_string(const char *cvs_name, char *ver_string, int len)
 				"Development Build %s", __DATE__);
 		version[sizeof(version) - 1] = 0;
 		cavium_strncpy(ver_string, len - 1, version, len - 1);
+                ver_string[len - 1] = 0;
 	} else {
 		/* Make a static copy of the CVS Name string so we can modify it */
 		cavium_strncpy(version, sizeof(version), cvs_name_str,
@@ -52,7 +53,7 @@ cavium_parse_cvs_string(const char *cvs_name, char *ver_string, int len)
 		}
 
 		/* Skip over the dollar Name: at the front */
-		cavium_strncpy(ver_string, len - 1, version, len - 1);
+		cavium_strncpy(ver_string, len - 1, version, strlen(version));
 	}
 
 }

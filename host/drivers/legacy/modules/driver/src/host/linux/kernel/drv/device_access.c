@@ -104,12 +104,12 @@ int mv_pci_get_dma_dev(int handle, int index, struct device **dev)
 	inst = FACILITY_INSTANCE(handle);
 	type = FACILITY_TYPE(handle);
 
-	conf = &octeon_device[inst]->facility_conf[type];
-
-	if (type == MV_FACILITY_RPC)
+	if (type == MV_FACILITY_RPC) {
+		conf = &octeon_device[inst]->facility_conf[type];
 		*dev = conf->dma_dev.host_ep_dev;
-	else
+	} else {
 		return -ENOENT;
+	}
 
 	return 0;
 }
@@ -123,9 +123,8 @@ int mv_get_num_dbell(int handle, enum mv_target target, uint32_t *num_dbells)
 	inst = FACILITY_INSTANCE(handle);
 	type = FACILITY_TYPE(handle);
 
-	conf = &octeon_device[inst]->facility_conf[type];
-
 	if (type == MV_FACILITY_RPC && target == MV_TARGET_EP) {
+		conf = &octeon_device[inst]->facility_conf[type];
 		*num_dbells = conf->num_h2t_dbells;
 	} else {
 		return -ENOENT;

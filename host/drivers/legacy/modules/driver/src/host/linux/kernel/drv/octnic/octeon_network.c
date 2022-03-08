@@ -905,6 +905,7 @@ int octnet_napi_poll_fn(struct napi_struct *napi, int budget)
 	} else {
 		dev_err(&droq->oct_dev->pci_dev->dev, "%s:  iq (%d) num invalid\n",
 				__func__, iq_no);
+		return 0;
 	}
 #define MAX_REG_CNT 2000000U
 	/* force enable interrupt if reg cnts are high to avoid wraparound */
@@ -1078,7 +1079,7 @@ u32 oct_get_link(octnet_os_devptr_t * dev)
 	ret = netif_carrier_ok(dev) ? 1 : 0;
 	return ret;
 }
-
+#define ETHTOOL_VERSION_LEN 32
 static void
 oct_get_drvinfo(struct net_device *netdev, struct ethtool_drvinfo *drvinfo)
 {
@@ -1093,7 +1094,8 @@ oct_get_drvinfo(struct net_device *netdev, struct ethtool_drvinfo *drvinfo)
 
 	memset(drvinfo, 0, sizeof(struct ethtool_drvinfo));
 	strcpy(drvinfo->driver, "OCTNIC");
-	strcpy(drvinfo->version, nic_version);
+	strncpy(drvinfo->version, nic_version, ETHTOOL_VERSION_LEN - 1);
+	drvinfo->version[ETHTOOL_VERSION_LEN - 1] = 0;
 	strcpy(drvinfo->fw_version, "no information");
 	strncpy(drvinfo->bus_info, pci_name(oct->pci_dev), 32);
 }

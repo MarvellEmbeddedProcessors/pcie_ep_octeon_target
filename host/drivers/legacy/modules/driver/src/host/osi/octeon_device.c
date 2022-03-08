@@ -1981,6 +1981,8 @@ octeon_hostfw_handshake(void *octptr, unsigned long arg UNUSED)
 			}
 #endif
 			default_oct_conf = octeon_get_conf(oct);
+			if (default_oct_conf == NULL)
+				return OCT_POLL_FN_ERROR;
 
 			if ((value >> 32) == HOSTFW_HS_SUPPORT_INDICATION) {
 				/* Send ack to core */

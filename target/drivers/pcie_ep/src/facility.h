@@ -213,6 +213,6 @@ int mv_send_facility_event(int type);
 
 static inline int is_facility_valid(int type)
 {
-	return (type <= MV_FACILITY_COUNT);
+	return (type < MV_FACILITY_COUNT);
 }
 #endif /* _FACILITY_H_ */

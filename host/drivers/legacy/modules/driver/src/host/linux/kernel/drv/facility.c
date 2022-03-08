@@ -164,6 +164,11 @@ int mv_send_facility_dbell(int handle, int dbell)
 	inst = FACILITY_INSTANCE(handle);
 	type = FACILITY_TYPE(handle);
 
+	if (!is_facility_valid(type)) {
+		printk("%s: Invalid facility type %d\n", __func__, type);
+		return -EINVAL;
+	}
+
 	facility_map = &octeon_device[inst]->npu_memmap_info.facility_map[type];
 
 	irq = dbell + facility_map->h2t_dbell_start;

@@ -170,6 +170,7 @@ octeon_copy_input_dma_buffers(octeon_device_t * octeon_dev UNUSED,
 		soft_req->inbuf.size[0] = total_size;
 		SOFT_REQ_INBUF(soft_req, 0) = mem;
 	}
+	cavium_free_buffer(octeon_dev, mem);
 	return 0;
 }
 
@@ -312,9 +313,11 @@ int octeon_ioctl_send_request(unsigned int cmd, void *arg)
 	}
 
 	if (soft_req->inbuf.cnt > MAX_BUFCNT
-	    || soft_req->outbuf.cnt > MAX_BUFCNT) {
+	    || soft_req->outbuf.cnt > MAX_BUFCNT
+	    || soft_req->exhdr_info.exhdr_count > 4) {
 		cavium_error
-		    ("IOCTL_OCTEON_SEND_REQUEST: Max buffers allowed is %d\n",
+		    ("IOCTL_OCTEON_SEND_REQUEST: Max buffers allowed is %d "
+		     "max extra headers allowed is 4\n",
 		     MAX_BUFCNT);
 		retval = -EINVAL;
 		goto free_soft_req;
@@ -380,7 +383,7 @@ int octeon_ioctl_send_request(unsigned int cmd, void *arg)
 	}
 
 	/* Coalesce all input buffers here to make user requests more efficient */
-	if (soft_req->inbuf.cnt) {
+	if (soft_req->inbuf.cnt && (soft_req->inbuf.cnt < MAX_BUFCNT)) {
 		if ((dma_mode == OCTEON_DMA_DIRECT)
 		    || (dma_mode == OCTEON_DMA_SCATTER))
 			retval =
@@ -806,7 +809,7 @@ int octeon_ioctl_read_core_mem(unsigned int cmd UNUSED, void *arg)
 {
 	octeon_core_mem_rw_t core_mem;
 	octeon_device_t *octeon_dev;
-	void *data;
+	void *data = NULL;
 
 	if (cavium_copy_in(&core_mem, arg, OCTEON_CORE_MEM_RW_SIZE))
 		return -EFAULT;
@@ -816,7 +819,8 @@ int octeon_ioctl_read_core_mem(unsigned int cmd UNUSED, void *arg)
 			     __CVM_FILE__, __CVM_LINE__, core_mem.oct_id);
 		return -EINVAL;
 	}
-	data = cavium_alloc_virt(core_mem.size);
+	if (core_mem.size < 0xffffff)
+		data = cavium_alloc_virt(core_mem.size);
 	if (!data) {
 		cavium_error
 		    ("%s:%d Data alloc failed in core mem write ioctl\n",
@@ -876,8 +880,10 @@ int octeon_ioctl_stats(unsigned int cmd UNUSED, void *arg)
 	if (stats == NULL)
 		return -ENOMEM;
 
-	if (cavium_copy_in(stats, arg, OCT_STATS_SIZE))
+	if (cavium_copy_in(stats, arg, OCT_STATS_SIZE)) {
+		cavium_free_virt(stats);
 		return -EFAULT;
+	}
 
 	oct = get_octeon_device(stats->oct_id);
 	if (!oct) {

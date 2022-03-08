@@ -288,6 +288,9 @@ static int octeon_mbox_process_cmd(octeon_device_t * oct, uint32_t qno)
 			octeon_config_t *oct_conf = octeon_get_conf(oct);
 			octeon_mbox_data_t *mbox_data = &mbox->mbox_data;
 
+			if (oct_conf == NULL)
+				return 0;
+
 			cavium_memcpy(&core_cfg, &oct_conf->core_cfg,
 				      sizeof(octeon_core_config_t));
 

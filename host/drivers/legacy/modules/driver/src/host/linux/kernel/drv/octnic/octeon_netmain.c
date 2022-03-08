@@ -311,7 +311,6 @@ octnet_get_runtime_link_status(void            *oct,
 	struct octdev_props_t       *props;
 	oct_link_status_resp_t      *ls, *tmp_status;
 
-
 	props = (struct octdev_props_t  *)props_ptr;
 	ls    = props->ls;
 
@@ -325,6 +324,11 @@ octnet_get_runtime_link_status(void            *oct,
 	 * If there is a change in the status take the recent status */
 	ls->status = COMPLETION_WORD_INIT;
 	tmp_status = cavium_alloc_virt(sizeof(oct_link_status_resp_t));
+        if (tmp_status == NULL) {
+		cavium_error("%s: Unable to allocate memory \n", __FUNCTION__);
+		return OCT_POLL_FN_CONTINUE;
+	}
+
 	cavium_memcpy(tmp_status, ls, sizeof(oct_link_status_resp_t));
 	if(ls->status == COMPLETION_WORD_INIT)
    		cavium_memcpy(ls, tmp_status, sizeof(oct_link_status_resp_t));
@@ -335,6 +339,7 @@ octnet_get_runtime_link_status(void            *oct,
 	if(ls->link_count > MAX_OCTEON_LINKS) {
 		cavium_error("%s: Link count (%llu) exceeds max (%d)\n", __FUNCTION__,
 		             ls->link_count, MAX_OCTEON_LINKS);
+		cavium_free_virt(tmp_status);
 		return OCT_POLL_FN_CONTINUE;
 	}
 
@@ -845,7 +850,10 @@ static inline uint32_t octnet_get_num_intf(octeon_device_t * octeon_dev)
 
 #ifndef ETHERPCI
 	octeon_config_t *conf = octeon_dev_conf(octeon_dev);
-	return (CFG_GET_NUM_INTF(conf));
+	if (conf == NULL)
+		return 0;
+	else
+		return (CFG_GET_NUM_INTF(conf));
 #else
 	return MAX_OCTEON_LINKS;
 #endif
@@ -858,6 +866,8 @@ static inline uint32_t octnet_get_num_ioqs(octeon_device_t * octeon_dev)
 #ifndef ETHERPCI
 	uint32_t num_ioqs = 0, vf_rings = 0;
 	octeon_config_t *conf = octeon_dev_conf(octeon_dev);
+	if (conf == NULL)
+		return 0;
 
 	if (OCTEON_CN8PLUS_PF(octeon_dev->chip_id)) {
 		num_ioqs = octeon_dev->sriov_info.rings_per_pf;
@@ -895,6 +905,8 @@ static inline
 #ifndef ETHERPCI
 	uint32_t srn = 0, num_ioqs = 0;
 	octeon_config_t *conf = octeon_dev_conf(octeon_dev);
+	if (conf == NULL)
+		return 0;
 
 	srn = CFG_GET_PORTS_SRN(conf);
 	num_ioqs = octnet_get_num_ioqs(octeon_dev);
@@ -1267,9 +1279,14 @@ int octnet_init_nic_module(int octeon_id, void *octeon_dev)
 		    octnet_setup_nic_device(octeon_id, &ls->link_info[ifidx],
 					    ifidx);
 		if (retval) {
-			/* Fix error handling */
-			while (ifidx--) {
-				octnet_destroy_nic_device(octeon_id, ifidx);
+			/* Fix error handling 
+			   ifidx should point at the nic device that has failed
+			   to setup therfore the first nic to destory is the 
+			   one before it, thus we predecrement (--ifidx).  At 
+			   the end, we enter the loop as (1), but we 
+			   destory (0) */
+			while (ifidx) {
+				octnet_destroy_nic_device(octeon_id, --ifidx);
 				goto octnet_init_failure;
 			}
 		}
@@ -1476,6 +1493,11 @@ int octnet_stop_nic_module(int octeon_id, void *oct)
 		return 1;
 	}
 	ls_resp = cavium_alloc_virt(sizeof(oct_link_status_resp_t));
+	if (ls_resp == NULL) {
+		cavium_error("OCTNIC: Unable to allocate memory, Octeon device %d\n",
+			     octeon_id);
+		return 1;
+	}
 #if !defined(ETHERPCI)
 	octeon_unregister_poll_fn(octeon_id, octnet_get_runtime_link_status,
 				  (unsigned long)octprops[octeon_id]);

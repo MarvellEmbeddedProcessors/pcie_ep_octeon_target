@@ -484,7 +484,7 @@ static void cn93xx_setup_oq_regs(octeon_device_t * oct, int oq_no)
 	    octeon_read_csr64(oct,
 			      CN93XX_SDP_R_OUT_CONTROL(oq_no));
 	oq_ctl &= ~0x7fffffULL;	//clear the ISIZE and BSIZE (22-0)
-	oq_ctl |= (droq->buffer_size & 0xffff);	//populate the BSIZE (15-0)
+	oq_ctl |= (droq->buffer_size & 0xffffULL);	//populate the BSIZE (15-0)
 #ifndef BUFPTR_ONLY_MODE
 	oq_ctl |= ((OCT_RESP_HDR_SIZE << 16) & 0x7fffff);//populate ISIZE(22-16)
 #endif
@@ -1126,8 +1126,8 @@ octeon_get_fw_info(octeon_device_t *oct)
 				CN93XX_SDP_EPVF_RING(pf_srn + i), regval);
 		regval = 0;
 		if (oct->pcie_port == 2)
-			regval |= (8 << CN93XX_SDP_FUNC_SEL_EPF_BIT_POS);
-		regval |= (0 << CN93XX_SDP_FUNC_SEL_FUNC_BIT_POS);
+			regval |= (8ULL << CN93XX_SDP_FUNC_SEL_EPF_BIT_POS);
+		regval |= (0ULL << CN93XX_SDP_FUNC_SEL_FUNC_BIT_POS);
 
 		octeon_write_csr64(oct, CN93XX_SDP_EPVF_RING(pf_srn + i), regval);
 
@@ -1148,8 +1148,8 @@ octeon_get_fw_info(octeon_device_t *oct)
 					CN93XX_SDP_EPVF_RING(srn + i), regval);
 			regval = 0;
 			if (oct->pcie_port == 2)
-				regval |= (8 << CN93XX_SDP_FUNC_SEL_EPF_BIT_POS);
-			regval |= ((j+1) << CN93XX_SDP_FUNC_SEL_FUNC_BIT_POS);
+				regval |= (8ULL << CN93XX_SDP_FUNC_SEL_EPF_BIT_POS);
+			regval |= (uint64_t)((j+1) << CN93XX_SDP_FUNC_SEL_FUNC_BIT_POS);
 
 			octeon_write_csr64(oct, CN93XX_SDP_EPVF_RING(srn + i), regval);
 

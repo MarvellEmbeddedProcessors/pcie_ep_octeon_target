@@ -326,9 +326,9 @@ void run_perf_test(octeon_device_t * oct)
 	unsigned long start_jiffies, end_jiffies, total_pkts = 0, total_bytes =
 	    0;
 	octeon_instr3_64B_t o3_cmd;
-	octeon_instr_ih3_t ih3;
-	octeon_instr_irh_t irh;
-	octeon_instr_pki_ih3_t pki_ih3;
+	octeon_instr_ih3_t ih3 = {0};
+	octeon_instr_irh_t irh = {0};
+	octeon_instr_pki_ih3_t pki_ih3 = {0};
 
 	if (cavium_atomic_read(&oct->status) != OCT_DEV_RUNNING) {
 		printk("%s: OCTEON device not in running state\n",
@@ -375,7 +375,7 @@ void run_perf_test(octeon_device_t * oct)
 	printk("%s: data buf @ %p (bus addr: 0x%016llx)\n", __FUNCTION__, data,
 	       o3_cmd.dptr);
 
-	while ((iq_no < 64) && (iq_mask & (1ULL << iq_no))) {
+	while ((iq_no < MAX_TEST_IQS) && (iq_mask & (1ULL << iq_no))) {
 		iq = oct->instr_queue[iq_no];
 
 		/* If a queue doesn't exist, turn off the mask bit for it. No more testing on that queue. */
@@ -426,7 +426,7 @@ void run_perf_test(octeon_device_t * oct)
 			continue;
 		}
 
-		if (iq_no >= 64) {
+		if (iq_no >= MAX_TEST_IQS) {
 			//printk(">>>>Error iqno is %u\n", iq_no);
 			iq_no = 0;
 			continue;

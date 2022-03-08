@@ -1832,6 +1832,7 @@ int32_t octeon_droq_set_netdev(octeon_device_t *oct, int q_no, int q_cnt,
 		if (droq == NULL) {
 			printk(KERN_ERR "OCTNIC: DROQ-%d not created yet\n", i);
 			WARN_ON(1);
+			return -1;
 		}
 		droq->pndev = pndev;
 	}

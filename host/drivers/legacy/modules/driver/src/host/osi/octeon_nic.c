@@ -39,6 +39,9 @@ octnet_prepare_ls_soft_instr(octeon_device_t * oct,
 {
 
 	octeon_config_t *oct_cfg = octeon_get_conf(oct);
+	if (oct_cfg == NULL)
+		return;
+
 	cavium_memset(si, 0, OCT_SOFT_INSTR_SIZE);
 
 	si->ih.fsz = 16;
@@ -74,6 +77,9 @@ static inline octeon_soft_instruction_t
 	uint8_t *data;
 	uint32_t uddsize = 0, datasize = 0;
 	octeon_config_t *oct_cfg = octeon_get_conf(oct);
+
+	if (oct_cfg == NULL)
+		return NULL;
 
 	uddsize = (nctrl->ncmd.s.more * 8);
 
