@@ -1062,10 +1062,10 @@ octeon_get_fw_info(octeon_device_t *oct)
 			CNXK_SDP_MAC_PF_RING_CTL(oct->pcie_port));
 	cavium_print_msg("SDP_MAC_PF_RING_CTL[%d]:0x%llx\n", oct->pcie_port,
 				regval);
-	pf_srn = (regval & CNXK_SDP_MAC_PF_RING_CTL_SRN) >>
-		CNXK_SDP_MAC_PF_RING_CTL_SRN_BIT_POS;
-	rppf = (regval & CNXK_SDP_MAC_PF_RING_CTL_RPPF) >>
-		CNXK_SDP_MAC_PF_RING_CTL_RPPF_BIT_POS;
+	pf_srn = (regval >> CNXK_SDP_MAC_PF_RING_CTL_SRN_BIT_POS) &
+		CNXK_SDP_MAC_PF_RING_CTL_SRN;
+	rppf = (regval >> CNXK_SDP_MAC_PF_RING_CTL_RPPF_BIT_POS) &
+		CNXK_SDP_MAC_PF_RING_CTL_RPPF;
 	if (rppf == 0) {
 		cavium_print_msg("PF ring control not initilaized\n");
 		return -1;

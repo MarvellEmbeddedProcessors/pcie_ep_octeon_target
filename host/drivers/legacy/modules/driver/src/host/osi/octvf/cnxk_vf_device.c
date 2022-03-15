@@ -225,6 +225,7 @@ static void cnxk_vf_setup_global_iq_reg(octeon_device_t * oct, int q_no)
 
 	reg_val |= CNXK_R_IN_CTL_RDSIZE;
 	reg_val |= CNXK_R_IN_CTL_IS_64B;
+	reg_val |= CNXK_R_IN_CTL_ESR;
 
 #ifdef IOQ_PERF_MODE_O3
 	reg_val &= ~(CNXK_R_IN_CTL_IS_64B);
@@ -257,6 +258,7 @@ static void cnxk_vf_setup_global_oq_reg(octeon_device_t * oct, int q_no)
 	reg_val |= (CNXK_R_OUT_CTL_IMODE);
 #endif
 	reg_val &= ~(CNXK_R_OUT_CTL_ROR_P);
+	reg_val &= ~(CNXK_R_OUT_CTL_ES_I | CNXK_R_OUT_CTL_ES_D);
 	reg_val &= ~(CNXK_R_OUT_CTL_NSR_P);
 	reg_val &= ~(CNXK_R_OUT_CTL_ROR_I);
 	reg_val &= ~(CNXK_R_OUT_CTL_NSR_I);
@@ -268,6 +270,9 @@ static void cnxk_vf_setup_global_oq_reg(octeon_device_t * oct, int q_no)
 	reg_val |= (CNXK_R_OUT_CTL_NSR_I);
 	reg_val |= (CNXK_R_OUT_CTL_NSR_D);
 #endif
+
+	/* INFO/DATA ptr swap is required on cn10k  */
+	reg_val |= (CNXK_R_OUT_CTL_ES_P);
 
 	octeon_write_csr64(oct,
 			   CNXK_VF_SDP_R_OUT_CONTROL(q_no), reg_val);
