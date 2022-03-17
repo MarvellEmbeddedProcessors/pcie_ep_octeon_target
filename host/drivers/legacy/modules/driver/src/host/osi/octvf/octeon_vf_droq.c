@@ -209,6 +209,14 @@ octeon_droq_setup_ring_buffers(octeon_device_t * oct UNUSED,
 						    droq->buffer_size,
 						    CAVIUM_PCI_DMA_FROMDEVICE,
 						    droq->app_ctx);
+		if (octeon_pci_mapping_error(oct->pci_dev,
+					     desc_ring[i].buffer_ptr)) {
+			cavium_error("pci dma mapping error\n");
+			free_recv_buffer(droq->recv_buf_list[i].buffer);
+			droq->recv_buf_list[i].buffer = NULL;
+			droq->recv_buf_list[i].data = NULL;
+			return -ENOMEM;
+		}
 #endif
 	}
 
@@ -874,6 +882,14 @@ octeon_droq_refill(octeon_device_t * octeon_dev UNUSED, octeon_droq_t * droq)
 							    droq->buffer_size,
 							    CAVIUM_PCI_DMA_FROMDEVICE,
 							    droq->app_ctx);
+			if (octeon_pci_mapping_error(octeon_dev->pci_dev,
+						     desc_ring[droq->host_refill_index].buffer_ptr)) {
+				cavium_error("pci dma mapping error\n");
+				free_recv_buffer(droq->recv_buf_list[droq->host_refill_index].buffer);
+				droq->recv_buf_list[droq->host_refill_index].buffer = NULL;
+				droq->recv_buf_list[droq->host_refill_index].data = NULL;
+				break;
+			}
 		}
 #endif
 
