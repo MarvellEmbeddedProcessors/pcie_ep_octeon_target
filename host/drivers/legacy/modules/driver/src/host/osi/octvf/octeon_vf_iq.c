@@ -9,8 +9,6 @@
 
 extern int octeon_init_nr_free_list(octeon_instr_queue_t * iq, int count);
 
-
-
 void octeon_init_iq_intr_moderation(octeon_device_t *oct)
 {
 	struct iq_intr_wq *iq_intr_wq;
@@ -149,6 +147,7 @@ int octeon_init_instr_queue(octeon_device_t * oct, int iq_no)
 	iq->iqcmd_64B = (conf->instr_type == 64);
 
 	oct->fn_list.setup_iq_regs(oct, iq_no);
+
 	return 0;
 }
 

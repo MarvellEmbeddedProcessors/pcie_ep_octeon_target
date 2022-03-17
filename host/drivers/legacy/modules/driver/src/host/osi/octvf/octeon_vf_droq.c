@@ -413,6 +413,7 @@ int octeon_init_droq(octeon_device_t * oct, uint32_t q_no, void *app_ctx)
 
 	oct->io_qmask.oq |= (1ULL << q_no);
 
+
 	return 0;
 
 init_droq_fail:
@@ -471,6 +472,7 @@ int octeon_shutdown_output_queue(octeon_device_t * oct, int q_no)
 		goto shutdown_oq_done;
 	}
 
+	/* Disable the output queues */
 	oct->fn_list.disable_output_queue(oct, q_no);
 
 	/* Reset the credit count register after enabling the queues. */
@@ -646,8 +648,8 @@ static inline octeon_recv_info_t *octeon_create_recv_info(octeon_device_t *
       octeon_pci_unmap_single(octeon_dev->pci_dev, (unsigned long)droq->desc_ring[idx].buffer_ptr, droq->buffer_size, CAVIUM_PCI_DMA_FROMDEVICE);
 #endif
 // *INDENT-ON*
-	/* In BUF ptr mode, First buffer contains resp headr and len. 
-	 * when data spans multiple buffers data present 
+	/* In BUF ptr mode, First buffer contains resp headr and len.
+	 * when data spans multiple buffers data present
 	 * in first buffer is less than the actual buffer size*/
 #ifdef BUFPTR_ONLY_MODE
 		if(!i) {
@@ -656,7 +658,7 @@ static inline octeon_recv_info_t *octeon_create_recv_info(octeon_device_t *
 				 droq->buffer_size)) ?
 				(droq->buffer_size -
 				 sizeof(octeon_droq_info_t)) : bytes_left;
-          
+
 			bytes_left -= (droq->buffer_size -
 				       sizeof(octeon_droq_info_t));
 		}
@@ -666,7 +668,7 @@ static inline octeon_recv_info_t *octeon_create_recv_info(octeon_device_t *
 			recv_pkt->buffer_size[i] =
 				(bytes_left >= droq->buffer_size) ?
 				droq->buffer_size : bytes_left;
-				bytes_left -= droq->buffer_size;
+			bytes_left -= droq->buffer_size;
 		}
 
 		recv_pkt->buffer_ptr[i] = droq->recv_buf_list[idx].buffer;
@@ -1086,6 +1088,7 @@ octeon_droq_fast_process_packets(octeon_device_t * oct,
 			data_offset = sizeof(octeon_droq_info_t);
 		} else
 			data_offset = sizeof(octeon_droq_info_t) - OCT_RESP_HDR_SIZE;
+
 		total_len    += info->length;
 
 		if(info->length <= (droq->max_single_buffer_size)) {
@@ -1300,9 +1303,9 @@ octeon_droq_fast_process_packets_reuse_bufs(octeon_device_t * oct,
 						droq->recv_buf_list[droq->host_read_index].buffer + CAV_NET_SKB_PAD + sizeof(octeon_droq_info_t), copy_len);
 				}
 				else {
-#endif       
+#endif
 					copy_len = ((pkt_len + droq->buffer_size) > info->length)?(info->length - pkt_len):droq->buffer_size;
-    
+
 					cavium_memcpy(recv_buf_put(nicbuf, copy_len),
 						droq->recv_buf_list[droq->host_read_index].buffer + CAV_NET_SKB_PAD, copy_len);
 #ifdef BUFPTR_ONLY_MODE
@@ -1312,7 +1315,7 @@ octeon_droq_fast_process_packets_reuse_bufs(octeon_device_t * oct,
 				/* To indicate refill thread that buffer can be reused 
 				 * since we are not sending it to stack */
 				droq->recv_buf_list[droq->host_read_index].skbptr = NULL;
-				
+
 				pkt_len += copy_len;
 				INCR_INDEX_BY1(droq->host_read_index, droq->max_count);
 				bufs_used++;
@@ -1412,7 +1415,7 @@ int octeon_register_droq_ops(int oct_id, uint32_t q_no, octeon_droq_ops_t * ops)
 			     __CVM_FUNCTION__, q_no, (oct->num_oqs - 1));
 		return -EINVAL;
 	}
-#endif	
+#endif
 	if (cavium_unlikely(q_no >= oct->num_oqs)) {
 		cavium_error(" %s: droq id (%d) exceeds MAX (%d)\n",
 			     __CVM_FUNCTION__, q_no, (oct->num_oqs - 1));
