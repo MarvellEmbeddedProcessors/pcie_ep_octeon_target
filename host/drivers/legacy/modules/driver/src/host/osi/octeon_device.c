@@ -12,7 +12,7 @@
 extern int octeon_msix;
 extern int cn83xx_pf_setup_global_oq_reg(octeon_device_t *, int);
 extern int cn83xx_pf_setup_global_iq_reg(octeon_device_t *, int);
-int g_app_mode[2] = {CVM_DRV_APP_START, CVM_DRV_APP_START};
+int g_app_mode[MAX_OCTEON_DEVICES] = {CVM_DRV_APP_START};
 extern char sdp_packet_mode[];
 
 /* On 83xx this is called DPIx_SLI_PRTx_CFG but address is same */
