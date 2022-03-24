@@ -146,14 +146,14 @@ void send_oei_trigger(struct otx_pcie_ep *pcie_ep_dev, int type)
 	uint64_t *addr;
 
 	/* Don't send interrupts until OEI enabled by host */
-	addr = pcie_ep_dev->oei_rint_ena_remap_addr;
+	addr = (uint64_t*)pcie_ep_dev->oei_rint_ena_remap_addr;
 	if (!READ_ONCE(*addr))
 		return;
 
 	trig.u64 = 0;
 	trig.s.set = 1;
 	trig.s.bit_num = type;
-	addr = pcie_ep_dev->oei_trig_remap_addr;
+	addr = (uint64_t*)pcie_ep_dev->oei_trig_remap_addr;
 	WRITE_ONCE(*addr, trig.u64);
 }
 
@@ -305,8 +305,8 @@ static int npu_base_setup(struct otx_pcie_ep *pcie_ep_dev)
 	npu_csr_write(bar_idx_addr, bar_idx_val);
 
 	pcie_ep_dev->oei_trig_remap_addr =
-		ioremap(pcie_ep_dev->oei_trig_addr | (epf_num[instance] << 25), 8);
-	if (pcie_ep_dev->oei_trig_remap_addr == NULL) {
+		(uint64_t)ioremap(pcie_ep_dev->oei_trig_addr | (epf_num[instance] << 25), 8);
+	if (pcie_ep_dev->oei_trig_remap_addr == (uint64_t)NULL) {
 		printk("Failed to ioremap oei_trig space\n");
 		return -1;
 	}
@@ -314,8 +314,8 @@ static int npu_base_setup(struct otx_pcie_ep *pcie_ep_dev)
 #define SDPX_EPFX_OEI_RINT_ENA_W1S(A,B)	(0x86E080020390 | \
 					(((A)&1)<<36) | (((B)&0xF)<<25))
 	pcie_ep_dev->oei_rint_ena_remap_addr =
-		ioremap(SDPX_EPFX_OEI_RINT_ENA_W1S(sdp_num[instance], epf_num[instance]), 8);
-	if (pcie_ep_dev->oei_rint_ena_remap_addr == NULL) {
+		(uint64_t)ioremap(SDPX_EPFX_OEI_RINT_ENA_W1S(sdp_num[instance], epf_num[instance]), 8);
+	if (pcie_ep_dev->oei_rint_ena_remap_addr == (uint64_t)NULL) {
 		printk("Failed to ioremap oei_rint_ena space\n");
 		return -1;
 	}
