@@ -445,17 +445,13 @@ static void cn83xx_setup_iq_regs(octeon_device_t * oct, int iq_no)
 	OCTEON_WRITE32(iq->inst_cnt_reg, iq->reset_instr_cnt);
 	iq->reset_instr_cnt = OCTEON_READ32(iq->inst_cnt_reg);
 
-	/* IN INTR_THRESHOLD is set to max(FFFFFFFF) to diables the IN INTR to raise */
-	reg_val =
-	    octeon_read_csr64(oct,
-			      CN83XX_SDP_EPF_R_IN_INT_LEVELS(oct->epf_num,
-							     iq_no));
-	reg_val = CFG_GET_IQ_INTR_THRESHOLD(cn83xx->conf) & 0xffffffff;
-
+	/*
+	 * Set IQ interrupt threshold to packets based config.
+	 */
+	reg_val = (CFG_GET_IQ_INTR_THRESHOLD(cn83xx->conf) & 0xffffffff);
 	octeon_write_csr64(oct,
 			   CN83XX_SDP_EPF_R_IN_INT_LEVELS(oct->epf_num, iq_no),
 			   reg_val);
-
 }
 
 static void cn83xx_setup_oq_regs(octeon_device_t * oct, int oq_no)

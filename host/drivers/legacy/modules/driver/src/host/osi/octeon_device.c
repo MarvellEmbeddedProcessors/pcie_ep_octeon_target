@@ -307,8 +307,10 @@ int octeon_setup_io_queues(octeon_device_t * octeon_dev)
 			}
 		}
 	}
+#if 0
+	/* Disabled, conflicts with ISM, not needed with NAPI support */
 	octeon_init_iq_intr_moderation(octeon_dev);
-
+#endif
 	return 0;
 }
 
