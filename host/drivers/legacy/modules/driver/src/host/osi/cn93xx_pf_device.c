@@ -737,13 +737,15 @@ cvm_intr_return_t cn93xx_interrupt_handler(void *dev)
 	}
 	
 	/* Check for VFIRE INTR */
-	reg_val = octeon_read_csr64(oct,
-				    CN93XX_SDP_EPF_VFIRE_RINT(0)); //TODO
-	if (reg_val) {
-		cavium_print_msg("received VFIRE_RINT intr: 0x%016llx\n",
-				 reg_val);
-		octeon_write_csr64(oct, CN93XX_SDP_EPF_VFIRE_RINT(0), reg_val);   //TODO
-		goto irq_handled;
+	for (i = 0; i < 2;i++) {
+		reg_val = octeon_read_csr64(oct,
+					    CN93XX_SDP_EPF_VFIRE_RINT(i)); //TODO
+		if (reg_val) {
+			cavium_print_msg("received VFIRE_RINT[%d] intr: 0x%016llx\n",
+					 i, reg_val);
+			octeon_write_csr64(oct, CN93XX_SDP_EPF_VFIRE_RINT(i), reg_val);   //TODO
+			goto irq_handled;
+		}
 	}
 	
 	/* Check for VFORE INTR */
