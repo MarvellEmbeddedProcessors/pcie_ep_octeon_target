@@ -229,11 +229,7 @@ int cn83xx_pf_setup_global_oq_reg(octeon_device_t * oct, int q_no)
 	    octeon_read_csr64(oct,
 			    CN83XX_SDP_EPF_R_OUT_CONTROL(oct->epf_num, q_no));
 
-#if (defined(IOQ_PERF_MODE_O3) | defined(BUFPTR_ONLY_MODE))
 	reg_val &= ~(CN83XX_R_OUT_CTL_IMODE);
-#else
-	reg_val |= (CN83XX_R_OUT_CTL_IMODE);
-#endif
 
 	/* ROR: Relaxed ordering
 	 * NSR: No SNOOP
@@ -493,9 +489,6 @@ static void cn83xx_setup_oq_regs(octeon_device_t * oct, int oq_no)
 			    CN83XX_SDP_EPF_R_OUT_CONTROL(oct->epf_num, oq_no));
 	oq_ctl &= ~0x7fffffULL;	//clear the ISIZE and BSIZE (22-0)
 	oq_ctl |= (droq->buffer_size & 0xffff);	//populate the BSIZE (15-0)
-#ifndef BUFPTR_ONLY_MODE
-	oq_ctl |= ((OCT_RESP_HDR_SIZE << 16) & 0x7fffff);//populate ISIZE(22-16)
-#endif
 	octeon_write_csr64(oct, CN83XX_SDP_EPF_R_OUT_CONTROL(oct->epf_num, oq_no),
 			 oq_ctl);
 

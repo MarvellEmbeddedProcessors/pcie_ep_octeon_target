@@ -450,9 +450,6 @@ static void cnxk_setup_oq_regs(octeon_device_t * oct, int oq_no)
 			      CNXK_SDP_R_OUT_CONTROL(oq_no));
 	oq_ctl &= ~0x7fffffULL;	//clear the ISIZE and BSIZE (22-0)
 	oq_ctl |= (droq->buffer_size & 0xffff);	//populate the BSIZE (15-0)
-#ifndef BUFPTR_ONLY_MODE
-	oq_ctl |= ((OCT_RESP_HDR_SIZE << 16) & 0x7fffff);//populate ISIZE(22-16)
-#endif
 	octeon_write_csr64(oct, CNXK_SDP_R_OUT_CONTROL(oq_no), oq_ctl);
 
 	/* Get the mapped address of the pkt_sent and pkts_credit regs */

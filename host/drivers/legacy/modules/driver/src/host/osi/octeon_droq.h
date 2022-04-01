@@ -35,17 +35,6 @@ typedef struct {
     has posted a packet. Not all descriptors have valid information. Only
     the Info field of the first descriptor for a packet has information
     about the packet. */
-#ifndef BUFPTR_ONLY_MODE
-typedef struct {
-
-  /** The Output Response Header. */
-	octeon_resp_hdr_t resp_hdr;
-
-  /** The Length of the packet. */
-	uint64_t length;
-
-} octeon_droq_info_t;
-#else
 typedef struct {
 
   /** The Length of the packet. */
@@ -55,7 +44,6 @@ typedef struct {
 	octeon_resp_hdr_t resp_hdr;
 #endif
 } octeon_droq_info_t;
-#endif
 
 #define OCT_DROQ_INFO_SIZE   (sizeof(octeon_droq_info_t))
 
