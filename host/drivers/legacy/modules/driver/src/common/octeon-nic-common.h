@@ -13,15 +13,7 @@
 #include "octeon-common.h"
 #include "octeon_config.h"
 
-#ifdef ETHERPCI
-/* EtherPCI supports 4 virtual OCTEON Ethernet interfaces */
-#undef    MAX_OCTEON_LINKS
-#define   MAX_OCTEON_LINKS    4
-#define   ETHERPCI_QUEUES_PER_LINK   1
-#define   OCTNET_POW_GRP      15
-#else
 #define   OCTNET_POW_GRP      0
-#endif
 
 #define   OCTNET_MIN_FRM_SIZE        64
 #define   OCTNET_MAX_FRM_SIZE        16018

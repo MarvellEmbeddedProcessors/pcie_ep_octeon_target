@@ -39,10 +39,8 @@ typedef struct {
 
   /** The Length of the packet. */
 	uint64_t length;
-#ifndef ETHERPCI
   /** The Output Response Header. */
 	octeon_resp_hdr_t resp_hdr;
-#endif
 } octeon_droq_info_t;
 
 #define OCT_DROQ_INFO_SIZE   (sizeof(octeon_droq_info_t))

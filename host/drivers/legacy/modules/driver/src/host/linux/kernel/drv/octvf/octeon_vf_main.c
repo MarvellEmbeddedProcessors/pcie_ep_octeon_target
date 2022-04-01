@@ -803,9 +803,7 @@ int octeon_device_init(octeon_device_t * octeon_dev)
 	ret = octeon_chip_specific_setup(octeon_dev);
 	/* Identify the Octeon type and map the BAR address space. */
 	if (ret == -1) {
-#ifndef ETHERPCI
 		cavium_error("OCTEON_VF: Chip specific setup failed\n");
-#endif
 		return ret;
 	}
 
@@ -896,11 +894,7 @@ int octeon_device_init(octeon_device_t * octeon_dev)
 	cavium_atomic_set(&octeon_dev->status, OCT_DEV_HOST_OK);
 	cavium_atomic_set(&octeon_dev->status, OCT_DEV_CORE_OK);
 
-#if defined(ETHERPCI)
-	cavium_atomic_set(&octeon_dev->hostfw_hs_state, HOSTFW_HS_NUM_INTF);
-#else
 	cavium_atomic_set(&octeon_dev->hostfw_hs_state, HOSTFW_HS_INIT);
-#endif
 
 #ifdef BUILD_FOR_EMULATOR
 	if (OCTEON_CN93XX_PF(octeon_dev->chip_id)) {

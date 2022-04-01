@@ -878,13 +878,6 @@ int octeon_chip_specific_setup(octeon_device_t * oct)
 					 OCTEON_MINOR_REV(oct));
 
 			/* Enable it to stop loading the driver for PF1 */
-#ifdef ETHERPCI
-			if (oct->pf_num) {
-				cavium_print_msg
-				    ("EtherPCI is only supported on PF0, so discarding PF1 device. \n");
-				return -1;
-			}
-#endif
 			oct->sriov_info.num_vfs = num_vfs;
 			oct->chip_id = OCTEON_CN83XX_ID_PF;
 
@@ -903,13 +896,6 @@ int octeon_chip_specific_setup(octeon_device_t * oct)
 
 			oct->pf_num = oct->octeon_id;
 			/* Enable it to stop loading the driver for PF1 */
-#ifdef ETHERPCI
-			if (oct->pf_num) {
-				cavium_print_msg
-					("EtherPCI is only supported on PF0, so discarding PF1 device. \n");
-				return -1;
-			}
-#endif
 			oct->sriov_info.num_vfs = num_vfs;
 			oct->chip_id = OCTEON_CN93XX_ID_PF;
 			return setup_cn93xx_octeon_pf_device(oct);
@@ -922,13 +908,6 @@ int octeon_chip_specific_setup(octeon_device_t * oct)
 
 			oct->pf_num = oct->octeon_id;
 			/* Enable it to stop loading the driver for PF1 */
-#ifdef ETHERPCI
-			if (oct->pf_num) {
-				cavium_print_msg
-					("EtherPCI is only supported on PF0, so discarding PF1 device. \n");
-				return -1;
-			}
-#endif
 			oct->sriov_info.num_vfs = num_vfs;
 			oct->chip_id = OCTEON_CN98XX_ID_PF;
 			return setup_cn98xx_octeon_pf_device(oct); //use 93xx PF setup for now
@@ -1035,9 +1014,7 @@ int octeon_device_init(octeon_device_t * octeon_dev)
 	ret  = octeon_chip_specific_setup(octeon_dev);
 	/* Identify the Octeon type and map the BAR address space. */
 	if (ret == -1) {
-#ifndef ETHERPCI
 		cavium_error("OCTEON: Chip specific setup failed\n");
-#endif
 		return 1;
 	}
 
@@ -1118,11 +1095,7 @@ int octeon_device_init(octeon_device_t * octeon_dev)
 
 	cavium_atomic_set(&octeon_dev->status, OCT_DEV_HOST_OK);
 
-#if defined(ETHERPCI)
-	cavium_atomic_set(&octeon_dev->hostfw_hs_state, HOSTFW_HS_NUM_INTF);
-#else
 	cavium_atomic_set(&octeon_dev->hostfw_hs_state, HOSTFW_HS_INIT);
-#endif
 
 #ifdef BUILD_FOR_EMULATOR
 	if (OCTEON_CN93XX_PF(octeon_dev->chip_id)) {

@@ -274,7 +274,7 @@ void octnet_set_mcast_list(octnet_os_devptr_t * pndev)
 
 	nparams.resp_order = OCTEON_RESP_NORESPONSE;
 
-#if !defined(ETHERPCI) && defined(OCTNIC_CTRL)
+#if defined(OCTNIC_CTRL)
 	ret = octnet_send_nic_ctrl_pkt(priv->oct_dev, &nctrl, nparams);
 	if (ret < 0) {
 		cavium_error
@@ -290,7 +290,7 @@ void octnet_set_mcast_list(octnet_os_devptr_t * pndev)
 /* Net device set_mac_address */
 int octnet_set_mac(struct net_device *pndev, void *addr)
 {
-#if !defined(ETHERPCI) && defined(OCTNIC_CTRL)
+#if defined(OCTNIC_CTRL)
 	int ret = 0;
 #endif
 	octnet_priv_t *priv;
@@ -315,7 +315,7 @@ int octnet_set_mac(struct net_device *pndev, void *addr)
 		      ETH_ALEN);
 
 	nparams.resp_order = OCTEON_RESP_ORDERED;
-#if !defined(ETHERPCI) && defined(OCTNIC_CTRL)
+#if defined(OCTNIC_CTRL)
 	ret = octnet_send_nic_ctrl_pkt(priv->oct_dev, &nctrl, nparams);
 	if (ret < 0) {
 		cavium_error("OCTNIC: MAC Address change failed\n");
@@ -335,9 +335,7 @@ int octnet_change_mtu(struct net_device *pndev, int new_mtu)
 	octnic_ctrl_pkt_t nctrl;
 	octnic_ctrl_params_t nparams;
 	int max_frm_size = new_mtu + 18;
-#if  !defined(ETHERPCI)
 	int ret = 0;
-#endif
 
 	cavium_print(PRINT_FLOW, "OCTNIC: %s called\n", __CVM_FUNCTION__);
 	priv = GET_NETDEV_PRIV(pndev);
@@ -370,15 +368,11 @@ int octnet_change_mtu(struct net_device *pndev, int new_mtu)
 	nctrl.cb_fn = octnet_link_ctrl_cmd_completion;
 
 	nparams.resp_order = OCTEON_RESP_ORDERED;
-#if  !defined(ETHERPCI)
 	ret = 0;
 	if (ret < 0) {
 		cavium_error("OCTNIC: Failed to set MTU\n");
 		return -1;
 	}
-#else
-	octnet_link_ctrl_cmd_completion((void *)&nctrl);
-#endif
 	octnet_link_ctrl_cmd_completion((void *)&nctrl);
 
 	return 0;
@@ -652,12 +646,7 @@ int __octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 	if (skb_shinfo(skb)->nr_frags == 0) {
 
 		cmdsetup.s.u.datasize = skb->len;
-#if defined(ETHERPCI)
-		octnet_prepare_pci_cmd(priv->oct_dev, &(ndata.cmd), &cmdsetup,
-				       ndata.q_no);
-#else
 		octnet_prepare_pci_cmd(priv->oct_dev, &(ndata.cmd), &cmdsetup);
-#endif
 		/* Offload checksum calculation for TCP/UDP packets */
 		ndata.cmd.dptr =
 		    octeon_map_single_buffer(get_octeon_device_id
@@ -696,12 +685,7 @@ int __octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 		cmdsetup.s.gather = 1;
 		cmdsetup.s.u.gatherptrs = (skb_shinfo(skb)->nr_frags + 1);
         //printk("Gather: len:%d\n", skb->len);
-#if defined(ETHERPCI)
-		octnet_prepare_pci_cmd(priv->oct_dev, &(ndata.cmd), &cmdsetup,
-				       ndata.q_no);
-#else
 		octnet_prepare_pci_cmd(priv->oct_dev, &(ndata.cmd), &cmdsetup);
-#endif
 
 		memset(g->sg, 0, g->sg_size);
 
@@ -1249,7 +1233,7 @@ static int oct_set_link_ksettings(struct net_device *netdev,
 	oct_link_info_t *linfo;
 	octnic_ctrl_pkt_t nctrl;
 	octnic_ctrl_params_t nparams;
-#if !defined(ETHERPCI) && defined(OCTNIC_CTRL)
+#if defined(OCTNIC_CTRL)
 	int ret = 0;
 #endif
 	u32 val;
@@ -1304,7 +1288,7 @@ static int oct_set_link_ksettings(struct net_device *netdev,
 	}
 
 	nparams.resp_order = OCTEON_RESP_ORDERED;
-#if !defined(ETHERPCI) && defined(OCTNIC_CTRL)
+#if defined(OCTNIC_CTRL)
 	ret = octnet_send_nic_ctrl_pkt(priv->oct_dev, &nctrl, nparams);
 	if (ret < 0) {
 		cavium_error("OCTNIC: Failed to set settings\n");
@@ -1324,7 +1308,7 @@ static int oct_set_settings(struct net_device *netdev, struct ethtool_cmd *ecmd)
 	oct_link_info_t *linfo;
 	octnic_ctrl_pkt_t nctrl;
 	octnic_ctrl_params_t nparams;
-#if !defined(ETHERPCI) && defined(OCTNIC_CTRL)
+#if defined(OCTNIC_CTRL)
 	int ret = 0;
 #endif
 
@@ -1376,7 +1360,7 @@ static int oct_set_settings(struct net_device *netdev, struct ethtool_cmd *ecmd)
 	}
 
 	nparams.resp_order = OCTEON_RESP_ORDERED;
-#if !defined(ETHERPCI) && defined(OCTNIC_CTRL)
+#if defined(OCTNIC_CTRL)
 	ret = octnet_send_nic_ctrl_pkt(priv->oct_dev, &nctrl, nparams);
 	if (ret < 0) {
 		cavium_error("OCTNIC: Failed to set settings\n");

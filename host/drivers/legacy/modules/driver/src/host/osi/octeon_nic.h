@@ -105,17 +105,9 @@ static inline int octnet_iq_bp_on(octeon_device_t * oct, int q_no)
 	return IQ_CHECK_BP_ON((octeon_iq_t *) & oct->instr_queue[q_no]);
 }
 
-#if defined(ETHERPCI)
-static inline void
-octnet_prepare_pci_cmd(octeon_device_t * oct,
-		       octeon_instr_64B_t * cmd,
-		       octnic_cmd_setup_t * setup, int q_no)
-								 /* 66xx: q_no for ring backpressure */
-#else
 static inline void
 octnet_prepare_pci_cmd(octeon_device_t * oct,
 		       octeon_instr_64B_t * cmd, octnic_cmd_setup_t * setup)
-#endif
 {
 	volatile octeon_instr_irh_t *irh = NULL;
 
@@ -129,10 +121,6 @@ octnet_prepare_pci_cmd(octeon_device_t * oct,
 	/* VSR: TODO: double check CNXK_VF/PF is handled correclty */
     if (OCTEON_CN8PLUS_PF_OR_VF(oct->chip_id)) {
 		ihx.fsz = 16;
-#if defined(ETHERPCI)
-		ihx.pkind = oct->pkind + q_no;
-		ihx.fsz += 8;	/* extra: 8B for PKI_IH3 */
-#else
 		ihx.pkind = oct->pkind;	/* The SDK decided PKIND value */
 		if (OCTEON_CN83XX_PF_OR_VF(oct->chip_id))
 			ihx.fsz += 4;	/* extra: 4B for PKI_IH3 */
@@ -140,7 +128,6 @@ octnet_prepare_pci_cmd(octeon_device_t * oct,
 
 		if(oct->pkind == OTX2_LOOP_PCIE_EP_PKIND)
 			ihx.fsz = 0;  /* For LOOP mode, no header is used */
-#endif
 		if (!setup->s.gather) {
 			ihx.tlen = setup->s.u.datasize + ihx.fsz;
 		} else {

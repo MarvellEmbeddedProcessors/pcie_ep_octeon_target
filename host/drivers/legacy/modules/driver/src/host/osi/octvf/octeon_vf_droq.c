@@ -587,11 +587,7 @@ static inline octeon_recv_info_t *octeon_create_recv_info(octeon_device_t *
 
 	recv_pkt = recv_info->recv_pkt;
 
-#if  !defined(ETHERPCI)
-	/* This function is never called in EtherPCI. Also info_ptr does not have
-	   resp_hdr for ETHERPCI. Just don't wan't this code to compile. */
 	recv_pkt->resp_hdr = info->resp_hdr;
-#endif
 	recv_pkt->length = info->length;
 	recv_pkt->offset = sizeof(octeon_droq_info_t);
 	recv_pkt->buffer_count = (uint16_t) buf_cnt;

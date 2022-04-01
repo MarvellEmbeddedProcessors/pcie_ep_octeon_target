@@ -112,9 +112,6 @@ void get_base_compile_options(char *copts UNUSED)
 	strcat(copts, " BUFPOOL ");
 #endif
 
-#ifdef ETHERPCI
-	strcat(copts, " ETHERPCI");
-#endif
 
 #ifdef   CVM_SUPPORT_DEPRECATED_API
 	strcat(copts, " SUPPORT_DEPRECATED_API ");

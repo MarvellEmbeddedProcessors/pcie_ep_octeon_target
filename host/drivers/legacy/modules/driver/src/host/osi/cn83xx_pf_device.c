@@ -1066,9 +1066,7 @@ setup_cn83xx_octeon_pf_device(octeon_device_t * oct)
 	uint64_t epf_rinfo = 0;
 	int epf_trs = 0, epf_srn = 0;
 	octeon_cn83xx_pf_t *cn83xx = (octeon_cn83xx_pf_t *) oct->chip;
-#ifndef ETHERPCI
 	int vf_rings = 0;
-#endif
 
 	cn83xx->oct = oct;
 
@@ -1137,7 +1135,6 @@ setup_cn83xx_octeon_pf_device(octeon_device_t * oct)
 	epf_srn = epf_rinfo & 0x3f;
 	epf_trs = (epf_rinfo >> 16) & 0xff;
 
-#ifndef ETHERPCI
 	if (!oct->sriov_info.num_vfs) {
 		oct->drv_flags |= OCTEON_NON_SRIOV_MODE;
 
@@ -1200,20 +1197,6 @@ setup_cn83xx_octeon_pf_device(octeon_device_t * oct)
 	    oct->sriov_info.rings_per_pf;
 	CFG_GET_OQ_MAX_BASE_Q(CHIP_FIELD(oct, cn83xx_pf, conf)) =
 	    oct->sriov_info.rings_per_pf;
-#else
-	oct->drv_flags |= OCTEON_NON_SRIOV_MODE;
-	oct->sriov_info.rings_per_vf = 0;
-	//oct->sriov_info.rings_per_pf = MAX_OCTEON_LINKS;
-	/* Hardcoding for time being since macro is not visible from here. */
-	oct->sriov_info.rings_per_pf = 4;
-	oct->sriov_info.pf_srn = epf_srn;
-	CFG_GET_IQ_MAX_BASE_Q(CHIP_FIELD(oct, cn83xx_pf, conf)) =
-	    oct->sriov_info.rings_per_pf;
-	CFG_GET_OQ_MAX_BASE_Q(CHIP_FIELD(oct, cn83xx_pf, conf)) =
-	    oct->sriov_info.rings_per_pf;
-
-	cavium_print_msg(" EtherPCI Enabled, not enabling SRIOV.\n");
-#endif
 
 	cavium_print_msg(" OCTEON PF[%d] IOQ CONFIGURATION \n", oct->pf_num);
 	cavium_print_msg(" PF[%d] TOTAL NUMBER OF RINGS:%u \n", oct->pf_num,

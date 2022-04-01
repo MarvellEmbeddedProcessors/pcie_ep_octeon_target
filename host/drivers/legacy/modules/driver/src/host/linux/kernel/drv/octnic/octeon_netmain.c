@@ -355,49 +355,6 @@ octnet_get_runtime_link_status(void            *oct,
 }
 // *INDENT-ON*
 
-#ifdef ETHERPCI
-/* The link status information is not read from the Octeon core app when
-   EtherPCI is used since there is no control traffic sent across PCI in
-   EtherPCI mode. We use a fixed setting instead. */
-void
-octnet_prepare_etherpci_links(oct_link_status_resp_t * link_status, int count)
-{
-	int i, j;
-
-	link_status->link_count = count;
-
-	for (i = 0; i < count; i++) {
-		uint8_t *hw_addr;
-
-		link_status->link_info[i].link.u64 = 0;
-		link_status->link_info[i].link.s.speed = 1000;
-		link_status->link_info[i].link.s.duplex = 1;
-		link_status->link_info[i].link.s.status = 1;
-		link_status->link_info[i].link.s.mtu = 1500;
-		hw_addr = (uint8_t *) & link_status->link_info[i].hw_addr;
-		hw_addr[2] = 0x00;
-		hw_addr[3] = 0x01;
-		hw_addr[4] = 0x02;
-		hw_addr[5] = 0x03;
-		hw_addr[6] = 0x04;
-		hw_addr[7] = 0x05 + i;
-#if  __CAVIUM_BYTE_ORDER == __CAVIUM_LITTLE_ENDIAN
-		/* HW Addr is maintained in network-byte order; so swap the address if we are on
-		   a little endian host. */
-		link_status->link_info[i].hw_addr =
-		    ENDIAN_SWAP_8_BYTE(link_status->link_info[i].hw_addr);
-#endif
-		link_status->link_info[i].gmxport = 16 + i;
-		link_status->link_info[i].ifidx = i;
-		link_status->link_info[i].num_txpciq = 1;
-		link_status->link_info[i].num_rxpciq = 1;
-		for (j = 0; j < MAX_IOQS_PER_NICIF; j++) {
-			link_status->link_info[i].txpciq[j] = 0;
-			link_status->link_info[i].rxpciq[j] = 0;
-		}
-	}
-}
-#endif
 
 /* Register droq_ops for each interface. By default all interfaces for a
    Octeon device uses the same Octeon output queue, but this can be easily
@@ -415,14 +372,6 @@ int octnet_setup_net_queues(int octeon_id, octnet_priv_t * priv)
 		     priv->rxq, droq_ops.poll_mode, droq_ops.napi_fn,
 		     droq_ops.drop_on_max);
 
-#ifdef ETHERPCI
-	/* Register the droq ops structure so that we can start handling packets
-	 * received on the Octeon interfaces. */
-	if (octeon_register_droq_ops(octeon_id, priv->rxq, &droq_ops)) {
-		cavium_error("OCTNIC: Failed to register DROQ function\n");
-		return -ENODEV;
-	}
-#endif
 
 	return 0;
 }
@@ -486,7 +435,7 @@ int octnet_setup_glist(octnet_priv_t * priv)
 	return 1;
 }
 
-#if !defined(ETHERPCI) && defined(OCTNIC_CTRL)
+#if defined(OCTNIC_CTRL)
 void octnet_send_rx_ctrl_cmd(octnet_priv_t * priv, int start_stop)
 {
 	octnic_ctrl_pkt_t nctrl;
@@ -522,7 +471,7 @@ void octnet_destroy_nic_device(int octeon_id, int ifidx)
 
 	priv = GET_NETDEV_PRIV(pndev);
 
-#if !defined(ETHERPCI) && defined(OCTNIC_CTRL)
+#if defined(OCTNIC_CTRL)
 	if (octeon_bar_access_valid(priv->oct_dev))
 		octnet_send_rx_ctrl_cmd(priv, 0);
 #endif
@@ -552,7 +501,6 @@ static void octnet_setup_napi(octnet_priv_t * priv)
 }
 #endif
 
-#if !defined(ETHERPCI)
 
 /* mq support: queue selection support function for netdevice */
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
@@ -584,7 +532,6 @@ static u16 octnet_select_queue(struct net_device *dev, struct sk_buff *skb,
 #endif /* OCTEON_SELECT_FLOW */
 	return ((u16) (qindex % priv->linfo.num_txpciq));
 }
-#endif
 
 #if  LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,29)
 static struct net_device_ops octnetdevops = {
@@ -643,11 +590,9 @@ octnet_setup_nic_device(int octeon_id, oct_link_info_t * link_info, int ifidx)
 	octprops[octeon_id]->pndev[ifidx] = pndev;
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,18)
-#if !defined(ETHERPCI)
 	if (link_info->num_txpciq > 1) {
 		octnetdevops.ndo_select_queue = octnet_select_queue;	/* mq support: queue selection */
 	}
-#endif
 #endif
 
 	/* Associate the routines that will handle different netdev tasks. */
@@ -670,7 +615,6 @@ octnet_setup_nic_device(int octeon_id, oct_link_info_t * link_info, int ifidx)
 	/* Register ethtool support to OCTNIC */
 	oct_set_ethtool_ops(pndev);
 
-#if !defined(ETHERPCI)
 	pndev->hw_features = NETIF_F_SG;
 #if 0
 	/* Notify the n/w stack regarding TSO capability feature */
@@ -679,11 +623,6 @@ octnet_setup_nic_device(int octeon_id, oct_link_info_t * link_info, int ifidx)
 		pndev->features |= NETIF_F_GRO;
 		netif_set_gso_max_size(pndev, OCTNIC_GSO_MAX_SIZE);
 	}
-#endif
-#else
-	/* Increasing default mtu when EtherPCI is enabled */
-	if (OCTEON_CN83XX_PF(oct->chip_id))
-		pndev->mtu = 16000;
 #endif
 
 	priv = GET_NETDEV_PRIV(pndev);
@@ -783,18 +722,11 @@ octnet_setup_nic_device(int octeon_id, oct_link_info_t * link_info, int ifidx)
 	/* Register the fast path function pointers after the network device
 	   related activities are completed. We should be ready for Rx at this
 	   point. */
-#ifdef ETHERPCI
-	priv->txq = ifidx;
-	priv->rxq = ifidx;
-	if (octnet_setup_net_queues(octeon_id, priv))
-		goto setup_nic_dev_fail;
-#else
 	/* By default all interfaces on a single Octeon uses the same tx and rx
 	   queues */
 	priv->txq = priv->linfo.txpciq[0];
 	priv->rxq = priv->linfo.rxpciq[0];
 
-#endif
 
 	OCTNET_IFSTATE_SET(priv, OCT_NIC_IFSTATE_REGISTERED);
 
@@ -848,22 +780,17 @@ octeon_config_t *octeon_dev_conf(octeon_device_t * oct)
 static inline uint32_t octnet_get_num_intf(octeon_device_t * octeon_dev)
 {
 
-#ifndef ETHERPCI
 	octeon_config_t *conf = octeon_dev_conf(octeon_dev);
 	if (conf == NULL)
 		return 0;
 	else
 		return (CFG_GET_NUM_INTF(conf));
-#else
-	return MAX_OCTEON_LINKS;
-#endif
 }
 
 /* Returns the numbers of ioqs used by each interface */
 static inline uint32_t octnet_get_num_ioqs(octeon_device_t * octeon_dev)
 {
 
-#ifndef ETHERPCI
 	uint32_t num_ioqs = 0, vf_rings = 0;
 	octeon_config_t *conf = octeon_dev_conf(octeon_dev);
 	if (conf == NULL)
@@ -892,9 +819,6 @@ static inline uint32_t octnet_get_num_ioqs(octeon_device_t * octeon_dev)
 	}
 
 	return num_ioqs;
-#else
-	return ETHERPCI_QUEUES_PER_LINK;
-#endif
 }
 
 /* Returns the starting queue number used by the interface */
@@ -902,7 +826,6 @@ static inline
     uint32_t octnet_get_intf_baseq(octeon_device_t * octeon_dev, uint32_t ifidx)
 {
 
-#ifndef ETHERPCI
 	uint32_t srn = 0, num_ioqs = 0;
 	octeon_config_t *conf = octeon_dev_conf(octeon_dev);
 	if (conf == NULL)
@@ -912,9 +835,6 @@ static inline
 	num_ioqs = octnet_get_num_ioqs(octeon_dev);
 
 	return (srn + ifidx * num_ioqs);
-#else
-	return ifidx;
-#endif
 }
 
 int octnet_destroy_io_queues(octeon_device_t * octeon_dev,
@@ -1128,9 +1048,7 @@ int octnet_init_nic_module(int octeon_id, void *octeon_dev)
 	int prev_status;
 	octeon_device_t *oct = (octeon_device_t *) octeon_dev;
 	octeon_poll_ops_t poll_ops;
-#ifndef ETHERPCI
 	int i, j;
-#endif
 
 	octeon_droq_t *droq;
 	octeon_config_t *conf;
@@ -1185,12 +1103,7 @@ int octnet_init_nic_module(int octeon_id, void *octeon_dev)
 
 	octprops[octeon_id]->si_link_status = si;
 
-#ifdef  ETHERPCI
-	/* For ETHERPCI the link status uses fixed settings. */
-	octnet_prepare_etherpci_links(ls, MAX_OCTEON_LINKS);
-#else
 	octnet_prepare_ls_soft_instr(octeon_dev, si);
-#endif
 
 	/* set up the IOQs for each OCTEON link */
 	retval = octnet_setup_io_queues(octeon_dev, ls);
@@ -1199,11 +1112,6 @@ int octnet_init_nic_module(int octeon_id, void *octeon_dev)
 
     cavium_print_msg("IO queue creation success\n");
 	if (oct->drv_flags & OCTEON_MSIX_CAPABLE) {
-#ifdef  ETHERPCI
-		if (OCTEON_CN83XX_PF(oct->chip_id))
-			CFG_GET_OQ_MAX_BASE_Q(CHIP_FIELD(oct, cn83xx_pf, conf))
-			    = MAX_OCTEON_LINKS;
-#else
 		if (OCTEON_CN83XX_PF(oct->chip_id))
 			CFG_GET_OQ_MAX_BASE_Q(CHIP_FIELD(oct, cn83xx_pf, conf))
 			    = oct->sriov_info.rings_per_pf;
@@ -1213,7 +1121,6 @@ int octnet_init_nic_module(int octeon_id, void *octeon_dev)
 		else if (OCTEON_CNXK_PF(oct->chip_id))
 			CFG_GET_OQ_MAX_BASE_Q(CHIP_FIELD(oct, cnxk_pf, conf))
 			    = oct->sriov_info.rings_per_pf;
-#endif
 
 		if (octeon_allocate_ioq_vector(oct)) {
 			cavium_error("OCTEON: ioq vector allocation failed\n");
@@ -1235,7 +1142,6 @@ int octnet_init_nic_module(int octeon_id, void *octeon_dev)
 	}
 
 	cavium_atomic_set(&oct->status, OCT_DEV_RUNNING);
-#ifndef ETHERPCI
 
 	/* Send an instruction to get the link status information from core. */
 	retval =
@@ -1265,7 +1171,6 @@ int octnet_init_nic_module(int octeon_id, void *octeon_dev)
 
 	}
 #endif
-#endif /* EtherPCI */
 
 	octprops[octeon_id]->ifcount = ls->link_count;
 
@@ -1306,7 +1211,6 @@ int octnet_init_nic_module(int octeon_id, void *octeon_dev)
 					octprops[octeon_id]->pndev[ifidx]);
 	}
 
-#if !defined(ETHERPCI)
 	/* Loop through for the number of interfaces gets created */
 	for (i = 0; i < ls->link_count; i++) {	/* setup rxQs: TCP_RR/STREAM perf. */
 		octeon_droq_ops_t droq_ops;
@@ -1340,7 +1244,6 @@ int octnet_init_nic_module(int octeon_id, void *octeon_dev)
 		}
 
 	}
-#endif
 	/* Enable MSI-X interrupts only after droq_ops.napi_fun is set up. */
 	if (oct->drv_flags & OCTEON_MSIX_CAPABLE) {
 		if (octeon_enable_msix_interrupts(oct)) {
@@ -1353,7 +1256,7 @@ int octnet_init_nic_module(int octeon_id, void *octeon_dev)
 
 	cavium_atomic_set(&octprops[octeon_id]->ls_flag, LINK_STATUS_FETCHED);
 	octprops[octeon_id]->last_check = cavium_jiffies;
-#if !defined(ETHERPCI) && !defined(OCTEON_VF)
+#if !defined(OCTEON_VF)
 	/* Register a poll function to run every second to collect and update
 	   link status. */
 	{
@@ -1483,10 +1386,8 @@ int octnet_stop_nic_module(int octeon_id, void *oct)
 	int i, j;
 	oct_link_status_resp_t *ls_resp;
 	octeon_device_t *octeon_dev = (octeon_device_t *) oct;
-#if !defined(ETHERPCI)
 	octeon_config_t *conf;
 	uint32_t ifidx = 0, num_intf = 0, num_ioqs = 0, baseq = 0;
-#endif
 	octeon_droq_t *droq;
 
 	cavium_print_msg
@@ -1504,7 +1405,6 @@ int octnet_stop_nic_module(int octeon_id, void *oct)
 			     octeon_id);
 		return 1;
 	}
-#if !defined(ETHERPCI)
 	octeon_unregister_poll_fn(octeon_id, octnet_get_runtime_link_status,
 				  (unsigned long)octprops[octeon_id]);
 
@@ -1551,17 +1451,6 @@ int octnet_stop_nic_module(int octeon_id, void *oct)
 			octeon_unregister_droq_ops(octeon_id, (baseq + j));
 		}
 	}
-#else
-// *INDENT-OFF*
-	cavium_memcpy(ls_resp, octprops[octeon_id]->ls, OCT_LINK_STATUS_RESP_SIZE);
-    for(i = 0; i < ls_resp->link_count; i++)
-	{
-		for (j = 0; j < ls_resp->link_info[i].num_rxpciq; j++){
-			octeon_unregister_droq_ops(octeon_id, ls_resp->link_info[i].rxpciq[j]);
-		}
-	}
-// *INDENT-ON*
-#endif
 
 	octeon_unregister_poll_fn(octeon_id, octnet_check_alive,
 				  (unsigned long)octprops[octeon_id]);
@@ -1574,7 +1463,6 @@ int octnet_stop_nic_module(int octeon_id, void *oct)
 
 	cavium_atomic_set(&octeon_dev->status, OCT_DEV_CORE_OK);
 
-#if !defined(ETHERPCI)
 	cavium_print(PRINT_DEBUG, "wait for pending instructions\n");
 
 	if (octnet_wait_for_pending_requests(octeon_dev, ls_resp)) {
@@ -1588,7 +1476,6 @@ int octnet_stop_nic_module(int octeon_id, void *oct)
 			     octeon_dev->octeon_id);
 	}
 
-#endif
 	cavium_print(PRINT_DEBUG, "waited for all ioqs. disabling the ioq queues\n");
 	/* disable NIC IOQs */
 	octnet_disable_io_queues(octeon_dev, ls_resp);

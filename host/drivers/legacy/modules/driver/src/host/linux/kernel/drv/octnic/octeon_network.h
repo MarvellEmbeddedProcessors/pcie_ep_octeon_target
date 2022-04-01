@@ -325,11 +325,9 @@ void octnet_restart_txqueue(octnet_os_devptr_t * pndev);
 static inline octnet_os_devptr_t *octnet_alloc_netdev(int size, int nq)
 {
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,18)
-#if !defined(ETHERPCI)
 	if (nq > 1)
 		return cvm_alloc_netdev_mq(size, "oct%d", ether_setup, nq);
 	else
-#endif
 #endif
 		return cvm_alloc_netdev(size, "oct%d", ether_setup);
 }
@@ -338,13 +336,11 @@ static inline void octnet_txqueues_start(octnet_os_devptr_t * pndev)
 {
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,18)
-#if !defined(ETHERPCI)
 	if (netif_is_multiqueue(pndev)) {	/* mq support: sub-queues running for netdevice */
 		int i;
 		for (i = 0; i < pndev->num_tx_queues; i++)
 			netif_start_subqueue(pndev, i);	/* mq support: start each sub-queue */
 	} else
-#endif
 #endif
 	{
 		netif_start_queue(pndev);
@@ -354,13 +350,11 @@ static inline void octnet_txqueues_start(octnet_os_devptr_t * pndev)
 static inline void octnet_txqueues_wake(octnet_os_devptr_t * pndev)
 {
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,18)
-#if !defined(ETHERPCI)
 	if (netif_is_multiqueue(pndev)) {	/* mq support: sub-queues running for netdevice */
 		int i;
 		for (i = 0; i < pndev->num_tx_queues; i++)
 			netif_wake_subqueue(pndev, i);	/* mq support: wake each sub-queue */
 	} else
-#endif
 #endif
 	{
 		netif_wake_queue(pndev);
@@ -370,13 +364,11 @@ static inline void octnet_txqueues_wake(octnet_os_devptr_t * pndev)
 static inline void octnet_txqueues_stop(octnet_os_devptr_t * pndev)
 {
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,18)
-#if !defined(ETHERPCI)
 	if (netif_is_multiqueue(pndev)) {	/* mq support: sub-queues running for netdevice */
 		int i;
 		for (i = 0; i < pndev->num_tx_queues; i++)
 			netif_stop_subqueue(pndev, i);	/* mq support: stop each sub-queue */
 	} else
-#endif
 #endif
 	{
 		netif_stop_queue(pndev);
@@ -387,11 +379,9 @@ static inline void octnet_wake_queue(octnet_os_devptr_t * pndev, int q)
 {
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,18)
-#if !defined(ETHERPCI)
 	if (netif_is_multiqueue(pndev))
 		netif_wake_subqueue(pndev, q);
 	else
-#endif
 #endif
 		netif_wake_queue(pndev);
 }
@@ -400,11 +390,9 @@ static inline void octnet_stop_queue(octnet_os_devptr_t * pndev, int q)
 {
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,18)
-#if !defined(ETHERPCI)
 	if (netif_is_multiqueue(pndev))
 		netif_stop_subqueue(pndev, q);
 	else
-#endif
 #endif
 		netif_stop_queue(pndev);
 }
@@ -415,12 +403,10 @@ octnet_check_txq_state(octnet_priv_t *priv, u16 queue_mapping)
 
 	int q = 0, iq = 0;
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,18)
-#if !defined(ETHERPCI)
 	if (netif_is_multiqueue(priv->pndev)) {
 		q = queue_mapping;
 		iq = priv->txq + (q % priv->linfo.num_txpciq);
 	} else
-#endif
 #endif
 	{
 		iq = priv->txq;
@@ -442,7 +428,6 @@ static inline int octnet_check_txq_status(octnet_priv_t * priv)
 {
 
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,18)
-#if !defined(ETHERPCI)
 	if (netif_is_multiqueue(priv->pndev)) {
 		int numqs = priv->pndev->num_tx_queues;	/* mq support: number of sub-queues */
 		int q, iq = 0, ret_val = 1;
@@ -467,7 +452,6 @@ static inline int octnet_check_txq_status(octnet_priv_t * priv)
 
 		return ret_val;
 	} else
-#endif
 #endif
 	{
 		if (OCTNET_IFSTATE_CHECK(priv, OCT_NIC_IFSTATE_TXENABLED))

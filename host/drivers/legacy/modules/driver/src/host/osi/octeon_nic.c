@@ -32,7 +32,6 @@ void octnet_link_ctrl_callback(octeon_req_status_t status, void *sif_ptr)
 	cavium_free_dma(si);
 }
 
-#if !defined(ETHERPCI)
 void
 octnet_prepare_ls_soft_instr(octeon_device_t * oct,
 			     octeon_soft_instruction_t * si)
@@ -67,7 +66,6 @@ octnet_prepare_ls_soft_instr(octeon_device_t * oct,
 	si->ih.dlengsz = 0;
 }
 
-#endif
 
 static inline octeon_soft_instruction_t
     * octnic_alloc_ctrl_pkt_si(octeon_device_t * oct, octnic_ctrl_pkt_t * nctrl,

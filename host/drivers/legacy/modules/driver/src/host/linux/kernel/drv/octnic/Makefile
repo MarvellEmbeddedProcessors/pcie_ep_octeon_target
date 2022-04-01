@@ -10,7 +10,7 @@
 # Compilation Flags.
 # Select one or more attributes for the driver from the list below.
 #
-# COMPILEFOR = DEBUG ETHERPCI OCTEON_VF
+# COMPILEFOR = DEBUG OCTEON_VF
 # 
 # OCTEON_VF COMPILEFOR flag is introduced to BUILD and RUN VF drivers,
 # kernel modules, userspace utilities/applications on the same host OS
@@ -113,13 +113,6 @@ ifeq ($(findstring DEBUG,$(COMPILEFOR)), DEBUG)
 EXTRA_CFLAGS += -DCAVIUM_DEBUG=0
 endif
 
-
-
-ifeq ($(findstring ETHERPCI,$(COMPILEFOR)), ETHERPCI)
-# For Ethernet over PCI
-EXTRA_CFLAGS += -DETHERPCI
-EXTRA_CFLAGS := $(filter-out -DOCT_REUSE_RX_BUFS, $(EXTRA_CFLAGS)) 
-endif
 
 ifeq ($(findstring OCTEON_VF,$(COMPILEFOR)), OCTEON_VF)
 # For building VF kernel modules which runs on OCTEON VF BASE DRIVER (octeon_vf_drv.ko)

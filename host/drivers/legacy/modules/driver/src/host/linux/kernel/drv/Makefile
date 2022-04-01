@@ -10,7 +10,7 @@
 # Compilation Flags.
 # Select one or more attributes for the driver from the list below. 
 #
-#  COMPILEFOR = DEBUG ETHERPCI
+#  COMPILEFOR = DEBUG
 #
 COMPILEFOR= 
 
@@ -102,13 +102,6 @@ ifeq ($(findstring BUFPOOL,$(COMPILEFOR)), BUFPOOL)
 # allocation.
 EXTRA_CFLAGS += -DUSE_BUFFER_POOL
 OBJS += ../../../osi/buffer_pool.o
-endif
-
-
-ifeq ($(findstring ETHERPCI,$(COMPILEFOR)), ETHERPCI)
-# For Ethernet over PCI
-EXTRA_CFLAGS += -DETHERPCI
-EXTRA_CFLAGS := $(filter-out -DOCT_REUSE_RX_BUFS, $(EXTRA_CFLAGS)) 
 endif
 
 

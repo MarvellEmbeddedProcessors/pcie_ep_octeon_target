@@ -1519,10 +1519,6 @@ int octeon_register_module_handler(octeon_module_handler_t * handler)
 		if (oct_dev == NULL)
 			continue;
 
-#ifdef  ETHERPCI
-		oct_dev->app_mode = CVM_DRV_NIC_APP;	// Emulate NIC PCI Device
-		cavium_atomic_set(&oct_dev->status, OCT_DEV_RUNNING);
-#endif
 		if (oct_dev->app_mode & handler->app_type) {
 			cavium_print(PRINT_DEBUG,
 				     "OCTEON[%d]: Starting modules for app_type: %s\n",
@@ -2625,9 +2621,6 @@ octeon_hostfw_handshake(void *octptr, unsigned long arg UNUSED)
 
 	case HOSTFW_HS_NUM_INTF:
 		if (indication == HOSTFW_HS_NUM_INTF_INDICATION) {
-#ifdef ETHERPCI
-			value = (scratch_val & ~0xffffULL) >> 32;
-#endif
 			oct->pkind = (uint8_t) value & 0xff;
 			num_intf = (uint8_t) (value >> 8) & 0xff;
 			cavium_print_msg
@@ -2637,17 +2630,10 @@ octeon_hostfw_handshake(void *octptr, unsigned long arg UNUSED)
 			/* Send ack to core */
 			octeon_write_csr64(oct, scratch_reg_addr,
 					   HOSTFW_HS_ACK);
-#ifndef ETHERPCI
 			CFG_GET_DPI_PKIND(default_oct_conf) = oct->pkind;
 			CFG_GET_NUM_INTF(default_oct_conf) = num_intf;
 			cavium_atomic_set(&oct->hostfw_hs_state,
 					  HOSTFW_HS_CORE_ACTIVE);
-#else
-			cavium_atomic_set(&oct->hostfw_hs_state,
-					  HOSTFW_HS_DONE);
-			cavium_atomic_set(&oct->status, OCT_DEV_CORE_OK);
-			return OCT_POLL_FN_FINISHED;
-#endif
 
 		}
 
