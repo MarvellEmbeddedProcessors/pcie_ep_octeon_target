@@ -14,6 +14,8 @@ typedef struct {
 
 void __check_db_timeout(octeon_device_t *oct, u64 iq_no);
 void check_db_timeout(struct work_struct *work);
+int lio_process_iq_request_list(octeon_device_t *oct,
+	octeon_instr_queue_t *iq, u32 napi_budget);
 
 extern void cn83xx_dump_regs(octeon_device_t *, int iq_no);
 static inline int IQ_INSTR_MODE_64B(octeon_device_t * oct, int iq_no)
@@ -104,6 +106,24 @@ int wait_for_iq_instr_fetch(octeon_device_t * oct, int q_no)
 
 	} while (retry-- && pending != pending_prev && pending);
 
+	if ((pending = cavium_atomic_read(&instr_queue->instr_pending))) {
+		int processed;
+		/*
+		 * If we still have pending entries after waiting, free
+		 * the buffers even if the Octeon has not processed them.
+		 * We adjust octeon_read_index to indicated that these
+		 * intructions have completed, and then the normal
+		 * IQ buffer freeing code can process them.
+		 */
+		cavium_print_msg("OCTEON[%d]: IQ %d, freeing %d pending buffers\n",
+				 oct->octeon_id, q_no, pending);
+		INCR_INDEX(instr_queue->octeon_read_index, pending,
+			  instr_queue->max_count);
+
+		processed = lio_process_iq_request_list(oct,
+					   instr_queue, 0);
+		pending -= processed;
+	}
 	return pending;
 }
 

@@ -1443,7 +1443,10 @@ int octnet_wait_for_pending_requests(octeon_device_t * octeon_dev,
 	return ret_val;
 }
 
-/* This routine checks for the pending req in IQs which are used by NIC interfaces. */
+/*
+ * This routine checks for the pending req in IQs, and is only called when
+ * stopping the NIC module.
+ */
 int octnet_wait_for_instr_fetch(octeon_device_t * octeon_dev,
 				oct_link_status_resp_t * ls)
 {
