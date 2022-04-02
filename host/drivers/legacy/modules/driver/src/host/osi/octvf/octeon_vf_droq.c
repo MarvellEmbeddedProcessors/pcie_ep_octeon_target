@@ -571,9 +571,6 @@ static inline octeon_recv_info_t *octeon_create_recv_info(octeon_device_t *
 
 		/* Done for IOMMU: Don't unmap buffer from the device, since we are reusing it */
 // *INDENT-OFF*
-#ifndef DROQ_TEST_REUSE_BUFS
-      octeon_pci_unmap_single(octeon_dev->pci_dev, (unsigned long)droq->desc_ring[idx].buffer_ptr, droq->buffer_size, CAVIUM_PCI_DMA_FROMDEVICE);
-#endif
 // *INDENT-ON*
 	/* In BUF ptr mode, First buffer contains resp headr and len.
 	 * when data spans multiple buffers data present
@@ -599,9 +596,6 @@ static inline octeon_recv_info_t *octeon_create_recv_info(octeon_device_t *
 		recv_pkt->buffer_ptr[i] = droq->recv_buf_list[idx].buffer;
 
 		/* Done for IOMMU: To avoid refilling the buffer index */
-#ifndef DROQ_TEST_REUSE_BUFS
-		droq->recv_buf_list[idx].buffer = 0;
-#endif
 
 		INCR_INDEX_BY1(idx, droq->max_count);
 		i++;

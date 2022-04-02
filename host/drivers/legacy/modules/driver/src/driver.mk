@@ -79,9 +79,6 @@ if($(KERNEL_REVISION) >= $(3)) {print 1} else { print 0 } \
 }else {print 0}}else{print 0}}' \
 )
 
-#Enable this when IOMMU is ON in host machine, for DROQ functional tests.
-OCTDRVFLAGS  += -DDROQ_TEST_REUSE_BUFS
-
 #New flag for OCTEON-III models. Code specific to OCTEON-III will be kept under this.
 #Disable the other models, if OCTEON-III is enabled.
 #ifneq ($(or $(findstring OCTEON_CN73XX, $(OCTEON_MODEL)), \
