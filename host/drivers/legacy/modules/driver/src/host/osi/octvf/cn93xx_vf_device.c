@@ -251,10 +251,6 @@ static void cn93xx_vf_setup_global_iq_reg(octeon_device_t * oct, int q_no)
 	reg_val |= CN93XX_R_IN_CTL_IS_64B;
 	reg_val |= CN93XX_R_IN_CTL_ESR;
 
-#ifdef IOQ_PERF_MODE_O3
-	reg_val &= ~(CN93XX_R_IN_CTL_IS_64B);
-	reg_val |= CN93XX_R_IN_CTL_D_NSR;
-#endif
 
 	octeon_write_csr64(oct,
 			   CN93XX_VF_SDP_R_IN_CONTROL(q_no), reg_val);
@@ -289,11 +285,6 @@ static void cn93xx_vf_setup_global_oq_reg(octeon_device_t * oct, int q_no)
     /* INFO/DATA ptr swap is requires on 93xx ??? */
 	reg_val |= (CN93XX_R_OUT_CTL_ES_P);
 
-#ifdef IOQ_PERF_MODE_O3
-	/* Manoj: Force NoSnoop to be enabled */
-	reg_val |= (CN93XX_R_OUT_CTL_NSR_I);
-	reg_val |= (CN93XX_R_OUT_CTL_NSR_D);
-#endif
 
 	octeon_write_csr64(oct,
 			   CN93XX_VF_SDP_R_OUT_CONTROL(q_no), reg_val);
@@ -491,9 +482,6 @@ static void cn93xx_setup_vf_oq_regs(octeon_device_t * oct, int oq_no)
 						CFG_GET_OQ_INTR_TIME
 						(cn93xx->conf));
 	time_threshold = CFG_GET_OQ_INTR_TIME(cn93xx->conf);
-#ifdef IOQ_PERF_MODE_O3
-	time_threshold = 0x3fffff;
-#endif
 	printk("OQ Interrupt Thresholds: Timer:0x%X Counter:0x%X\n",
 			CFG_GET_OQ_INTR_TIME(cn93xx->conf), CFG_GET_OQ_INTR_PKT(cn93xx->conf));
 	/*TODO: commented to avoid compilation error. need to resolve */

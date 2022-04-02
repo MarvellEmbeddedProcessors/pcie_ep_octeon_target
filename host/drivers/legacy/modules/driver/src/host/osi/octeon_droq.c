@@ -8,12 +8,6 @@
 #include "octeon_hw.h"
 #include "octeon_network.h"
 
-//#define PERF_MODE
-
-#ifdef IOQ_PERF_MODE_O3
-#define PERF_MODE
-#endif
-
 uint32_t octeon_droq_refill(octeon_device_t * octeon_dev, octeon_droq_t * droq);
 
 oct_poll_fn_status_t check_droq_refill(void *octptr, unsigned long q_no);

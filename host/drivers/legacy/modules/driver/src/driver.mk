@@ -79,9 +79,6 @@ if($(KERNEL_REVISION) >= $(3)) {print 1} else { print 0 } \
 }else {print 0}}else{print 0}}' \
 )
 
-#This can be used for testing IQ/OQs base mode performance on CN73xx/CN78xxpass2
-#OCTDRVFLAGS  += -DIOQ_PERF_MODE_O3
-
 #Enable this when IOMMU is ON in host machine, for DROQ functional tests.
 OCTDRVFLAGS  += -DDROQ_TEST_REUSE_BUFS
 

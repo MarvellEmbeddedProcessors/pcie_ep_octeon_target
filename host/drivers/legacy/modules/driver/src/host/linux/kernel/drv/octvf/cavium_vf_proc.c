@@ -305,9 +305,6 @@ static int tidx = 0;
 static uint32_t test_size[MAX_TEST_SIZES] =
     { 2048, 64, 128, 256, 360, 512, 1024 };
 
-#ifdef IOQ_PERF_MODE_O3
-int droq_test_size = 64;
-#endif
 
 static inline uint32_t _get_next_data_size(void)
 {

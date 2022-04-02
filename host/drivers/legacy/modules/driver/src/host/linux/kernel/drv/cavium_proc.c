@@ -313,9 +313,6 @@ static int tidx = 0;
 //static uint32_t test_size[MAX_TEST_SIZES] = {2048, 64, 128, 256, 360, 512, 1024};
 static uint32_t test_size[MAX_TEST_SIZES] = { 64, 128, 256, 512, 1024, 2048 };
 
-#ifdef IOQ_PERF_MODE_O3
-int droq_test_size = 64;
-#endif
 
 static inline uint32_t _get_next_data_size(void)
 {
@@ -365,9 +362,6 @@ void run_perf_test_83(octeon_device_t * oct)
 	/* For bi-directional tests, the octeon application uses the size in
 	   scratch register to determine the size, same as IQ perf. Host interrupt
 	   handler does not look into pkt to determine size. We provide a hint here. */
-#ifdef IOQ_PERF_MODE_O3
-	droq_test_size = datasize;
-#endif
 
     memset(&ihx, 0, sizeof(octeon_instr_ihx_t));
     memset(&pki_ih3, 0, sizeof(octeon_instr_pki_ih3_t));

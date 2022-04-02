@@ -17,11 +17,7 @@ cn83xx_vf_config_t default_cn83xx_vf_conf = {
 	       .pending_list_size =
 	       (CN83XX_MAX_IQ_DESCRIPTORS * CN83XX_VF_CFG_IO_QUEUES),
 	       .num_descs = CN83XX_MAX_IQ_DESCRIPTORS,
-#ifndef IOQ_PERF_MODE_O3
 	       .instr_type = OCTEON_64BYTE_INSTR,
-#else
-	       .instr_type = OCTEON_32BYTE_INSTR,
-#endif
 	       .db_min = CN83XX_DB_MIN,
 	       .db_timeout = CN83XX_DB_TIMEOUT,
 	       .intr_threshold = CN83XX_INTR_THRESHOLD,

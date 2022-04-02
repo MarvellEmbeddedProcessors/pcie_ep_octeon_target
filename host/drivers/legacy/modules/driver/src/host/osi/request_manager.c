@@ -539,10 +539,8 @@ __do_instruction_processing(octeon_device_t * oct,
 		/* copy pki_ih3 */
 		o3_cmd.pki_ih3 = *((uint64_t *) & pki_ih3);
 	}
-#ifndef IOQ_PERF_MODE_O3
 	/* copy rptr */
 	o3_cmd.rptr = cmd->rptr;
-#endif
 	/* copy irh */
 	o3_cmd.irh = *irh;
 
@@ -555,9 +553,7 @@ __do_instruction_processing(octeon_device_t * oct,
         printk("word4 [irh]: 0x%016llx\n", *((uint64_t *)&o3_cmd.irh));
 #endif
         /* Swap the FSZ in here, to avoid swapping on Octeon side */
-#ifndef IOQ_PERF_MODE_O3
         octeon_swap_8B_data(&o3_cmd.rptr, 1);
-#endif
         octeon_swap_8B_data(&o3_cmd.irh, 1);
 		/* copy the 64B CN78xx cmd to actual 64B command */
 		memcpy(cmd, &o3_cmd, 64);

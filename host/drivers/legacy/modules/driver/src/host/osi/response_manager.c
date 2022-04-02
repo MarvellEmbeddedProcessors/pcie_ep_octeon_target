@@ -131,9 +131,7 @@ release_soft_instr(octeon_device_t * octeon_dev,
 
 	if (OCTEON_CN83XX_PF_OR_VF(octeon_dev->chip_id)) {
 		memcpy(&o3_cmd, &soft_instr->command, 64);
-#ifndef IOQ_PERF_MODE_O3
 		soft_instr->command.rptr = o3_cmd.rptr;
-#endif
 	}
 
 	if (soft_instr->dptr) {

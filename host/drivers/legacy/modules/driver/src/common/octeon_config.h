@@ -45,11 +45,7 @@
 /*-------------- Macros for OCTEON TX Models ----------------*/
 #define   CN83XX_MAX_INPUT_QUEUES	64
 
-#ifndef IOQ_PERF_MODE_O3
 #define   CN83XX_MAX_IQ_DESCRIPTORS     2048
-#else
-#define   CN83XX_MAX_IQ_DESCRIPTORS     512
-#endif
 
 #define   CN83XX_DB_MIN                 1
 #define   CN83XX_DB_TIMEOUT             1
@@ -101,11 +97,7 @@
 #define   CN93XX_MAX_INPUT_QUEUES	128
 #define   CN93XX_NUM_NON_IOQ_INTR	16
 
-#ifndef IOQ_PERF_MODE_O3
 #define   CN93XX_MAX_IQ_DESCRIPTORS	2048
-#else
-#define   CN93XX_MAX_IQ_DESCRIPTORS	512
-#endif
 
 #define   CN93XX_DB_MIN 		1
 #define   CN93XX_DB_TIMEOUT		1

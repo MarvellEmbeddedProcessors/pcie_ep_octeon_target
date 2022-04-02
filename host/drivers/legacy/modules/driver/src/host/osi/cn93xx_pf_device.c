@@ -265,10 +265,6 @@ int cn93xx_pf_setup_global_iq_reg(octeon_device_t * oct, int q_no)
 //    reg_val |= CN93XX_R_IN_CTL_D_ESR;
 	reg_val |= CN93XX_R_IN_CTL_ESR;
 
-#ifdef IOQ_PERF_MODE_O3
-	reg_val &= ~(CN93XX_R_IN_CTL_IS_64B);
-	reg_val |= CN93XX_R_IN_CTL_D_NSR;
-#endif
 
 	octeon_write_csr64(oct, CN93XX_SDP_R_IN_CONTROL(q_no), reg_val);
 	return 0;
@@ -302,11 +298,6 @@ int cn93xx_pf_setup_global_oq_reg(octeon_device_t * oct, int q_no)
     /* INFO/DATA ptr swap is required on 93xx  */
 	reg_val |= (CN93XX_R_OUT_CTL_ES_P);
 
-#ifdef IOQ_PERF_MODE_O3
-	/* Force NoSnoop to be enabled */
-	reg_val |= (CN93XX_R_OUT_CTL_NSR_I);
-	reg_val |= (CN93XX_R_OUT_CTL_NSR_D);
-#endif
 
 	/* write all the selected settings */
 	octeon_write_csr64(oct, CN93XX_SDP_R_OUT_CONTROL(q_no), reg_val);
@@ -500,9 +491,6 @@ static void cn93xx_setup_oq_regs(octeon_device_t * oct, int oq_no)
 					     CFG_GET_OQ_INTR_TIME
 					     (cn93xx->conf));
 	time_threshold = CFG_GET_OQ_INTR_TIME(cn93xx->conf);
-#ifdef IOQ_PERF_MODE_O3
-	time_threshold = 0x3fffff;
-#endif
 
     	reg_val =  ((uint64_t)time_threshold << 32 ) | CFG_GET_OQ_INTR_PKT(cn93xx->conf); 
 
@@ -1231,14 +1219,6 @@ int setup_cn98xx_octeon_pf_device(octeon_device_t * oct)
 		cavium_error("%s No Config found for CN98XX\n", __FUNCTION__);
 		goto free_barx;
 	}
-#ifdef IOQ_PERF_MODE_O3
-	/* NOTE: MAC credit register not accessible through Host. */
-#if 0
-#define CN93XX_SDP_MAC_CREDIT_CNT  0x23D70
-	octeon_write_csr64(oct, CN73XX_SDP_MAC_CREDIT_CNT, 0x802080802080ULL);
-	octeon_write_csr64(oct, CN73XX_SDP_MAC_CREDIT_CNT, 0x3F802080802080ULL);
-#endif
-#endif
 	oct->fn_list.setup_iq_regs = cn93xx_setup_iq_regs;
 	oct->fn_list.setup_oq_regs = cn93xx_setup_oq_regs;
 	oct->fn_list.setup_mbox_regs = cn93xx_setup_pf_mbox_regs;
@@ -1333,14 +1313,6 @@ int setup_cn93xx_octeon_pf_device(octeon_device_t * oct)
 		cavium_error("%s No Config found for CN93XX\n", __FUNCTION__);
 		goto free_barx;
 	}
-#ifdef IOQ_PERF_MODE_O3
-	/* NOTE: MAC credit register not accessible through Host. */
-#if 0
-#define CN93XX_SDP_MAC_CREDIT_CNT  0x23D70
-	octeon_write_csr64(oct, CN73XX_SDP_MAC_CREDIT_CNT, 0x802080802080ULL);
-	octeon_write_csr64(oct, CN73XX_SDP_MAC_CREDIT_CNT, 0x3F802080802080ULL);
-#endif
-#endif
 	oct->fn_list.setup_iq_regs = cn93xx_setup_iq_regs;
 	oct->fn_list.setup_oq_regs = cn93xx_setup_oq_regs;
 	oct->fn_list.setup_mbox_regs = cn93xx_setup_pf_mbox_regs;

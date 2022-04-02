@@ -228,11 +228,9 @@ typedef struct {
   /** PKI Optional Instruction Header. */
 	uint64_t pki_ih3;
 
-#ifndef IOQ_PERF_MODE_O3
   /** Pointer where the response for a RAW mode packet will be written
       by Octeon. */
 	uint64_t rptr;
-#endif
 
   /** Input Request Header. */
 	uint64_t irh;
@@ -250,11 +248,9 @@ typedef struct {
   /** DPI Instruction Header. */
 	uint64_t ih3;
 
-#ifndef IOQ_PERF_MODE_O3
   /** Pointer where the response for a RAW mode packet will be written
       by Octeon. */
 	uint64_t rptr;
-#endif
 
   /** Input Request Header. */
 	uint64_t irh;

@@ -90,15 +90,11 @@ typedef struct {
 
 	/* The instruction header. */
 //	cvm_pci_inst_hdr2_t ih;
-#ifndef IOQ_PERF_MODE_O3
 	/* The host physical address where a response (if any) is expected. */
 	uint64_t rptr;
-#endif
 	/* The input request header. */
 	cvmcs_pci_inst_irh_t irh;
-#ifndef IOQ_PERF_MODE_O3
 	uint64_t exhdr;
-#endif
 } cvmcs_raw_inst_front_t;
 
 #define CVM_RAW_FRONT_SIZE   (sizeof(cvmcs_raw_inst_front_t))

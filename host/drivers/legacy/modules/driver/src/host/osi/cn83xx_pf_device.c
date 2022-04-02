@@ -211,10 +211,6 @@ int cn83xx_pf_setup_global_iq_reg(octeon_device_t * oct, int q_no)
 //    reg_val |= CN83XX_R_IN_CTL_D_ESR;
 	reg_val |= CN83XX_R_IN_CTL_ESR;
 
-#ifdef IOQ_PERF_MODE_O3
-	reg_val &= ~(CN83XX_R_IN_CTL_IS_64B);
-	reg_val |= CN83XX_R_IN_CTL_D_NSR;
-#endif
 
 	octeon_write_csr64(oct, CN83XX_SDP_EPF_R_IN_CONTROL(oct->epf_num, q_no),
 			   reg_val);
@@ -251,11 +247,6 @@ int cn83xx_pf_setup_global_oq_reg(octeon_device_t * oct, int q_no)
     /* INFO/DATA ptr swap is required on 83xx  */
 	reg_val |= (CN83XX_R_OUT_CTL_ES_P);
 
-#ifdef IOQ_PERF_MODE_O3
-	/* Force NoSnoop to be enabled */
-	reg_val |= (CN83XX_R_OUT_CTL_NSR_I);
-	reg_val |= (CN83XX_R_OUT_CTL_NSR_D);
-#endif
 
 	printk("%s: epf-%u q-%d OUT_CONTROL=0x%llx\n", __func__, oct->epf_num, q_no, reg_val);
 	/* write all the selected settings */
@@ -507,9 +498,6 @@ static void cn83xx_setup_oq_regs(octeon_device_t * oct, int oq_no)
 					     CFG_GET_OQ_INTR_TIME
 					     (cn83xx->conf));
 
-#ifdef IOQ_PERF_MODE_O3
-	time_threshold = 0x3fffff;
-#endif
 
     reg_val =  ((uint64_t)time_threshold << 32 ) | CFG_GET_OQ_INTR_PKT(cn83xx->conf); 
 
@@ -1086,14 +1074,6 @@ setup_cn83xx_octeon_pf_device(octeon_device_t * oct)
 		octeon_unmap_pci_barx(oct, 1);
 		return -1;
 	}
-#ifdef IOQ_PERF_MODE_O3
-	/* NOTE: MAC credit register not accessible through Host. */
-#if 0
-#define CN83XX_SLI_MAC_CREDIT_CNT  0x23D70
-	octeon_write_csr64(oct, CN73XX_SLI_MAC_CREDIT_CNT, 0x802080802080ULL);
-	octeon_write_csr64(oct, CN73XX_SLI_MAC_CREDIT_CNT, 0x3F802080802080ULL);
-#endif
-#endif
 	oct->fn_list.setup_iq_regs = cn83xx_setup_iq_regs;
 	oct->fn_list.setup_oq_regs = cn83xx_setup_oq_regs;
 	oct->fn_list.setup_mbox_regs = cn83xx_setup_pf_mbox_regs;
