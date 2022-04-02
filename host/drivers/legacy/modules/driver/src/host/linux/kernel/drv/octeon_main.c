@@ -745,11 +745,6 @@ void octeon_destroy_resources(octeon_device_t * oct_dev)
 					 oct_dev->octeon_id);
 		}
 		__attribute__((__fallthrough__));
-#ifdef USE_BUFFER_POOL
-	case OCT_DEV_BUF_POOL_INIT_DONE:
-		octeon_delete_buffer_pool(oct_dev);
-		__attribute__((__fallthrough__));
-#endif
 
 	case OCT_DEV_DISPATCH_INIT_DONE:
 		octeon_delete_dispatch_list(oct_dev);
@@ -1046,25 +1041,6 @@ int octeon_device_init(octeon_device_t * octeon_dev)
 
 	/* If the use of buffer pool is enabled in the Makefile, allocate
 	   memory and initialize the pools. */
-#ifdef USE_BUFFER_POOL
-	{
-		octeon_bufpool_config_t bufpool_config;
-
-		bufpool_config.huge_buffer_max = HUGE_BUFFER_CHUNKS;
-		bufpool_config.large_buffer_max = LARGE_BUFFER_CHUNKS;
-		bufpool_config.medium_buffer_max = MEDIUM_BUFFER_CHUNKS;
-		bufpool_config.small_buffer_max = SMALL_BUFFER_CHUNKS;
-		bufpool_config.tiny_buffer_max = TINY_BUFFER_CHUNKS;
-		bufpool_config.ex_tiny_buffer_max = EX_TINY_BUFFER_CHUNKS;
-
-		if (octeon_init_buffer_pool(octeon_dev, &bufpool_config)) {
-			cavium_error("OCTEON: Buffer pool allocation failed\n");
-			return 1;
-		}
-		cavium_atomic_set(&octeon_dev->status,
-				  OCT_DEV_BUF_POOL_INIT_DONE);
-	}
-#endif
 
 	octeon_set_io_queues_off(octeon_dev);
 

@@ -25,22 +25,8 @@
  *  Macros that switch between using the buffer pool and the system-dependent
  *  routines based on compilation flags used.
  */
-#ifdef USE_BUFFER_POOL
-static __inline void *cavium_alloc_buffer(octeon_device_t * octeon_dev,
-					  uint32_t size)
-{
-	return get_buffer_from_pool(octeon_dev, size);
-}
-
-static __inline void cavium_free_buffer(octeon_device_t * octeon_dev, void *buf)
-{
-	put_buffer_in_pool(octeon_dev, (uint8_t *) buf);
-}
-
-#else /* USE_BUFFER_POOL */
 #define cavium_alloc_buffer(octeon_dev, size)   cavium_malloc_dma(size, __CAVIUM_MEM_ATOMIC)
 #define cavium_free_buffer(octeon_dev, buf)     cavium_free_dma(buf)
-#endif /* !USE_BUFFER_POOL */
 
 /** Allocates with page size granularity.
  *  @param size        - size of memory to allocate.

@@ -100,9 +100,6 @@ void get_base_compile_options(char *copts UNUSED)
 	strcat(copts, " DEBUG ");
 #endif
 
-#ifdef USE_BUFFER_POOL
-	strcat(copts, " BUFPOOL ");
-#endif
 
 
 #ifdef   CVM_SUPPORT_DEPRECATED_API
@@ -221,10 +218,6 @@ module_exit(octeon_base_exit_module);
 
 /* All symbols exported by the BASE driver are listed below. */
 
-#ifdef USE_BUFFER_POOL
-EXPORT_SYMBOL(put_buffer_in_pool);
-EXPORT_SYMBOL(get_buffer_from_pool);
-#endif
 EXPORT_SYMBOL(octeon_map_single_buffer);
 EXPORT_SYMBOL(octeon_unmap_single_buffer);
 EXPORT_SYMBOL(octeon_map_page);

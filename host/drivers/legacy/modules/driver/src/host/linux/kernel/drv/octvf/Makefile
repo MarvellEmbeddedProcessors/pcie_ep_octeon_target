@@ -105,14 +105,6 @@ OBJS += ../../../../osi/octeon_debug.o
 endif
 
 
-ifeq ($(findstring BUFPOOL,$(COMPILEFOR)), BUFPOOL)
-# Enable this flag to use preallocated buffer pools for dynamic memory
-# allocation.
-EXTRA_CFLAGS += -DUSE_BUFFER_POOL
-OBJS += ../../../osi/buffer_pool.o
-endif
-
-
 # The driver object file
 obj-m         :=  $(OBJNAME).o
 $(OBJNAME)-y  :=  $(OBJS)

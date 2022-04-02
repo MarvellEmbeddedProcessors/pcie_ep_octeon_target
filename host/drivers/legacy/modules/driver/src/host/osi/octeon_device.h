@@ -14,9 +14,6 @@
 
 typedef struct _OCTEON_DEVICE octeon_device_t;
 
-#ifdef USE_BUFFER_POOL
-#include "buffer_pool.h"
-#endif
 
 #include "octeon_stats.h"
 #include "octeon_iq.h"
@@ -208,9 +205,6 @@ enum octeon_pci_swap_mode {
 #define    OCT_DEV_BEGIN_STATE            0x1
 #define    OCT_DEV_PCI_MAP_DONE           0x2
 #define    OCT_DEV_DISPATCH_INIT_DONE     0x3
-#ifdef USE_BUFFER_POOL
-#define    OCT_DEV_BUF_POOL_INIT_DONE     0x4
-#endif
 #define    OCT_DEV_RESP_LIST_INIT_DONE    0x5
 #define    OCT_DEV_HOST_OK                0x6
 #define    OCT_DEV_CORE_OK                0x7
@@ -570,14 +564,6 @@ struct _OCTEON_DEVICE {
    /** List of dispatch functions */
 	octeon_dispatch_list_t dispatch;
 
-#ifdef USE_BUFFER_POOL
-   /** The buffer pool implementation */
-	cavium_buffer_t buf[BUF_POOLS];
-	cavium_frag_buf_t fragments[MAX_BUFFER_CHUNKS];
-	uint16_t fragment_free_list[MAX_BUFFER_CHUNKS];
-	uint16_t fragment_free_list_index;
-	cavium_spinlock_t fragment_lock;
-#endif
 
    /** The /proc file entries */
 	void *proc_root_dir;

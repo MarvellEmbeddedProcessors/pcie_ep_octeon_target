@@ -18,9 +18,6 @@
 #include "octeon-opcodes.h"
 #include "octeon-common.h"
 
-#ifdef USE_BUFFER_POOL
-#include "buffer_pool.h"
-#endif
 
 /** Driver's State.
  */

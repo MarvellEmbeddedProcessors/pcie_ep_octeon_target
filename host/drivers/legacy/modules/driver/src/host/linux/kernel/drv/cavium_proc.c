@@ -61,25 +61,6 @@ void print_stats(struct seq_file *s, octeon_device_t * oct_dev)
 
 	seq_printf(s, "jiffies: %lu\n", jiffies);
 
-#ifdef USE_BUFFER_POOL
-	seq_printf(s, "\n--Buffer Pool----   ");
-	for (i = 0; i < BUF_POOLS; i++)
-		seq_printf(s, " Pool %d ", i);
-	seq_printf(s, "\n  Max  buffers   :  ");
-	for (i = 0; i < BUF_POOLS; i++)
-		seq_printf(s, " %5d  ", buffer_stats[i]);
-	seq_printf(s, "\n  allocated bufs :  ");
-	for (i = 0; i < BUF_POOLS; i++)
-		seq_printf(s, " %5d  ", alloc_buffer_stats[i]);
-	seq_printf(s, "\n  fragmented bufs:  ");
-	for (i = 0; i < BUF_POOLS; i++)
-		seq_printf(s, " %5d  ", fragment_buf_stats[i]);
-	seq_printf(s, "\n  other pools    :  ");
-	for (i = 0; i < BUF_POOLS; i++)
-		seq_printf(s, " %5d  ", other_pools[i]);
-	seq_printf(s,
-		   "\n____________________________________________________________________\n");
-#endif
 
 	seq_printf(s, " IQ ");
 	seq_printf(s, "\t Instr processed   ");

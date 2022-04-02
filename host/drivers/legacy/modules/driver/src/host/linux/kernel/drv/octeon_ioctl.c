@@ -906,9 +906,6 @@ int octeon_ioctl_stats(unsigned int cmd UNUSED, void *arg)
 
 	strcpy(stats->dev_state, get_oct_state_string(&oct->status));
 
-#ifdef USE_BUFFER_POOL
-	oct_get_buffer_pool_stats(stats);
-#endif
 
 	for (i = 0; i < oct->num_iqs; i++) {
 		cavium_memcpy(&stats->iq[i], &oct->instr_queue[i]->stats,

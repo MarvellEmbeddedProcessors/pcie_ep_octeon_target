@@ -96,16 +96,6 @@ ifndef CNNIC_ROOT
 	@exit 2
 endif
 
-
-
-
-ifeq ($(findstring BUFPOOL,$(COMPILEFOR)), BUFPOOL)
-# Enable this flag to use preallocated buffer pools for dynamic memory
-# allocation.
-EXTRA_CFLAGS += -DUSE_BUFFER_POOL
-endif
-
-
 ifeq ($(findstring DEBUG,$(COMPILEFOR)), DEBUG)
 # Creates debug levels.
 # The default debug level is 0 when only critical messages are printed.
