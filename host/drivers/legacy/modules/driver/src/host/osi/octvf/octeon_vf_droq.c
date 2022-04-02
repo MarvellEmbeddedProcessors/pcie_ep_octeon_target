@@ -134,17 +134,9 @@ octeon_droq_destroy_ring_buffers(octeon_device_t  *oct UNUSED, octeon_droq_t  *d
 	for(i = 0; i < droq->max_count; i++)  {
 		if(droq->recv_buf_list[i].buffer) {
 			if(droq->desc_ring) {
-#ifdef OCT_REUSE_RX_BUFS
-				octeon_pci_unmap_single(oct->pci_dev, (unsigned long)droq->desc_ring[i].buffer_ptr, RCV_BUF_MAP_SIZE, CAVIUM_PCI_DMA_FROMDEVICE );
-#else
 				octeon_pci_unmap_single(oct->pci_dev, (unsigned long)droq->desc_ring[i].buffer_ptr, droq->buffer_size, CAVIUM_PCI_DMA_FROMDEVICE );
-#endif
 			}
-#ifdef OCT_REUSE_RX_BUFS
-			cav_net_kfree(droq->recv_buf_list[i].buffer);
-#else
 			free_recv_buffer(droq->recv_buf_list[i].buffer);
-#endif
 		}
 	}
 
@@ -163,11 +155,7 @@ octeon_droq_setup_ring_buffers(octeon_device_t * oct UNUSED,
 
 	for (i = 0; i < droq->max_count; i++) {
 
-#ifdef OCT_REUSE_RX_BUFS
-		buf = (void *)cav_net_kmalloc(RCV_BUF_SIZE, GFP_ATOMIC);
-#else
 		buf = cav_net_buff_rx_alloc(droq->buffer_size, droq->app_ctx);
-#endif
 		if (cavium_unlikely(!buf)) {
 			cavium_error("%s buffer alloc failed\n",
 				     __CVM_FUNCTION__);
@@ -175,24 +163,10 @@ octeon_droq_setup_ring_buffers(octeon_device_t * oct UNUSED,
 		}
 
 		droq->recv_buf_list[i].buffer = buf;
-#ifdef OCT_REUSE_RX_BUFS
-		/* SKB data pointer should point after skb header room */
-		droq->recv_buf_list[i].data = buf + CAV_NET_SKB_PAD;
-		droq->recv_buf_list[i].skbptr = NULL;
-#else
 		droq->recv_buf_list[i].data =
 		    get_recv_buffer_data(buf, droq->app_ctx);
-#endif
 
 
-#ifdef OCT_REUSE_RX_BUFS
-		desc_ring[i].buffer_ptr =
-		    (uint64_t) cnnic_pci_map_single(oct->pci_dev,
-						    droq->recv_buf_list[i].data,
-						    RCV_BUF_MAP_SIZE,
-						    CAVIUM_PCI_DMA_FROMDEVICE,
-						    droq->app_ctx);
-#else
 		desc_ring[i].buffer_ptr =
 		    (uint64_t) cnnic_pci_map_single(oct->pci_dev,
 						    droq->recv_buf_list[i].data,
@@ -207,7 +181,6 @@ octeon_droq_setup_ring_buffers(octeon_device_t * oct UNUSED,
 			droq->recv_buf_list[i].data = NULL;
 			return -ENOMEM;
 		}
-#endif
 	}
 
 	octeon_droq_reset_indices(droq);
@@ -692,14 +665,9 @@ uint32_t
 octeon_droq_refill(octeon_device_t * octeon_dev UNUSED, octeon_droq_t * droq)
 {
 	octeon_droq_desc_t *desc_ring;
-#ifndef OCT_REUSE_RX_BUFS
 	void *buf;
 	uint8_t *data;
 	uint32_t map = 1;
-#else
-	uint8_t users = 0, ref_count = 0;
-	void *skbptr;
-#endif
 	uint32_t desc_refilled = 0;
 
 	desc_ring = droq->desc_ring;
@@ -711,90 +679,6 @@ octeon_droq_refill(octeon_device_t * octeon_dev UNUSED, octeon_droq_t * droq)
 		     droq->host_read_index);
 
 	while (droq->refill_count && (desc_refilled < droq->max_count)) {
-#ifdef OCT_REUSE_RX_BUFS
-		/* Get SKB pointer corresponding to the index */
-		skbptr = droq->recv_buf_list[droq->host_refill_index].skbptr;
-
-		/* SKB is given to the stack and need to check users and 
-		 * data reference count before giving back to the device
-		 */
-// *INDENT-OFF*
-		if(skbptr) {
-			/* Get number of users for this SKB */
-			users = cav_net_get_skb_users(skbptr);
-
-			/* Get number of references to the data buffer in the SKB */
-			ref_count = cav_net_get_skb_data_ref_count(skbptr);
-
-			/* If users and data reference count equals to one, then
-			 * we are the only user for this SKB and data, we can 
-			 * send same buffer back to the device
-			 */
-			if (users == 1 && ref_count == 1 &&
-			    skb_is_linear(skb)) {
-				//printk("Users for skb: %d Data reference count:%d reusing DMA buffer\n",users, ref_count);
-				/* We have to make skb->head = NULL to free only SKB pointer
-				 * and not data pointer since we are giving back data pointer 
-				 * to the device
-				 */
-				cav_net_make_skb_head_null(skbptr);
-
-				/* This will free only SKB pointer and not data pointer 
-				 * since we are making skb->head = NULL
-				 */
-				cav_net_free_skb(skbptr);
-
-				/* Giving data buffer back to the device */
-				cnnic_pci_dma_sync_single_for_device(octeon_dev->pci_dev,
-					(unsigned long)droq->desc_ring[droq->host_refill_index].buffer_ptr,
-					RCV_BUF_MAP_SIZE, CAVIUM_PCI_DMA_FROMDEVICE);
-			}
-			else {
-				/* We are here because some other layer still has access to the 
-				 * SKB buffer or data buffer. Release the skb and allocate new buffer
-				 */
-				void *buf;
-
-				/* Decrement reference count and free skb if there are no users. */
-				cav_net_free_skb(skbptr);
-				//printk("users for skb:%d data: %d Unmapping buffer and freeing skb\n",users, ref_count);
-
-				/* Unmap buffer from the device */
-				octeon_pci_unmap_single(octeon_dev->pci_dev,
-					(unsigned long)droq->desc_ring[droq->host_refill_index].buffer_ptr,
-					RCV_BUF_MAP_SIZE, CAVIUM_PCI_DMA_FROMDEVICE);
-
-				/* Allocate new DMA buffer */
-				buf = (void *)cav_net_kmalloc(RCV_BUF_SIZE, GFP_ATOMIC);
-				if(!buf) {
-					cavium_error("%s buffer alloc failed\n", __CVM_FUNCTION__);
-					return -ENOMEM;
-				}
-
-				droq->recv_buf_list[droq->host_refill_index].buffer  = buf;
-				/* SKB data pointer should point after skb header room */
-				droq->recv_buf_list[droq->host_refill_index].data    = buf + CAV_NET_SKB_PAD;
-            
-				/* Map new buffer to the device */
-				desc_ring[droq->host_refill_index].buffer_ptr = (uint64_t)cnnic_pci_map_single(octeon_dev->pci_dev, 
-						droq->recv_buf_list[droq->host_refill_index].data, RCV_BUF_MAP_SIZE, 
-						CAVIUM_PCI_DMA_FROMDEVICE, droq->app_ctx);
-			}
-		}
-		else {
-			/* SKB is not forwareded to the stack, maybe data is copied 
-			 * in to another skb(happens in jumbo packet case)  
-			 * or some failure during skb creation. we can freely send 
-			 * same buffer to the device */
-			//printk("Jumbo packet buffer, Giving back to the device\n");
-			cnnic_pci_dma_sync_single_for_device(octeon_dev->pci_dev,
-				(unsigned long)droq->desc_ring[droq->host_refill_index].buffer_ptr,
-			     RCV_BUF_MAP_SIZE, CAVIUM_PCI_DMA_FROMDEVICE);
-
-		}
-		/* In either case we have to reset skb pointer to NULL */
-		droq->recv_buf_list[droq->host_refill_index].skbptr = NULL;
-#else
 		/* If a valid buffer exists (happens if there is no dispatch), reuse 
 		 * the buffer, else allocate. */
 		if(droq->recv_buf_list[droq->host_refill_index].buffer == 0)  {
@@ -831,7 +715,6 @@ octeon_droq_refill(octeon_device_t * octeon_dev UNUSED, octeon_droq_t * droq)
 				break;
 			}
 		}
-#endif
 
 		droq->host_refill_index = (droq->host_refill_index + 1) & droq->ring_size_mask;
 		desc_refilled++;
@@ -961,7 +844,6 @@ void octnet_push_packet(octeon_droq_t *droq,
 
 #define OCTEON_PKTPUSH_THRESHOLD	128	/* packet push threshold: TCP_RR/STREAM perf. */
 
-#ifndef OCT_REUSE_RX_BUFS
 uint32_t
 octeon_droq_fast_process_packets(octeon_device_t * oct,
 				 octeon_droq_t * droq, uint32_t pkts_to_process)
@@ -1111,160 +993,6 @@ octeon_droq_fast_process_packets(octeon_device_t * oct,
 
 	return pkt;
 }
-#else
-
-static uint32_t
-octeon_droq_fast_process_packets_reuse_bufs(octeon_device_t * oct,
-					    octeon_droq_t * droq,
-					    uint32_t pkts_to_process)
-{
-	octeon_droq_info_t *info;
-	octeon_resp_hdr_t *resp_hdr;
-	uint32_t pkt, total_len = 0, pkt_count, bufs_used = 0;
-
-	if (pkts_to_process > droq->pkts_per_intr)
-		pkt_count = droq->pkts_per_intr;
-	else
-		pkt_count = pkts_to_process;
-
-// *INDENT-OFF*
-	for(pkt = 0; pkt < pkt_count; pkt++) {
-		uint32_t         pkt_len = 0;
-		cavium_netbuf_t  *nicbuf = NULL;
-
-
-		info = (octeon_droq_info_t *)(droq->recv_buf_list[droq->host_read_index].data);
-
-		/* Swap length field on 83xx*/
-		if (OCTEON_CN8PLUS_VF(oct->chip_id))
-			octeon_swap_8B_data((uint64_t *) &(info->length), 1);
-		/* VSR: TODO: this swap not required for CNXK ? */
-
-		if(cavium_unlikely(!info->length))  {
-			cavium_error("OCTEON:DROQ[%d] idx: %d len:0, pkt_cnt: %d \n",
-			             droq->q_no, droq->host_read_index, pkt_count);
-			cavium_error_print_data((uint8_t *)info, OCT_DROQ_INFO_SIZE);
-			pkt++;
-
-			break;
-		}
-
-		/* Len of resp hdr in included in the received data len. */
-		info->length -= OCT_RESP_HDR_SIZE;
-		resp_hdr     =  &info->resp_hdr;
-		total_len    += info->length;
-
-        //printk("droq_buf_size:%d packet len:%d\n",(int)droq->buffer_size,(int)info->length);
-		if(info->length <= (droq->buffer_size - sizeof(octeon_droq_info_t))) {
-			void *buf;
-
-			/* Get DMA buffer from Device */
-			cnnic_pci_dma_sync_single_for_cpu(oct->pci_dev,
-				(unsigned long)droq->desc_ring[droq->host_read_index].buffer_ptr,
-			    RCV_BUF_MAP_SIZE, CAVIUM_PCI_DMA_FROMDEVICE);
-
-			pkt_len = info->length;
-			buf = droq->recv_buf_list[droq->host_read_index].buffer;
-
-			/* Build skb from the data buffer.
-			 * Passing 0 as second argument to notify that the data buffer
-			 * is allocated by using kmalloc and not by page allocator.
-			 * build_skb() allocates skb buffer and initializes it.
-			 * newly allocated skb data buffer points to the buffer 
-			 * provided as first argument */
-			nicbuf = cav_net_build_skb(buf, 0);
-			if(nicbuf != NULL) {
-				/* Allocate header room in the SKB */
-				cav_net_skb_reserve(nicbuf, CAV_NET_SKB_PAD);
-
-				nicbuf->data += sizeof(octeon_droq_info_t); 
-				nicbuf->tail += sizeof(octeon_droq_info_t); 
-				/* Set data length in SKB */
-				cav_net_skb_put(nicbuf, pkt_len);
-
-				//printk("Number of users before skb_get:%d\n",atomic_read(&nicbuf->users));
-				/* Increment SKB user count to avoid data buffer free */
-				cav_net_skb_get(nicbuf);
-				//printk("Number of users after skb_get:%d\n",atomic_read(&nicbuf->users));
-
-				/* Store skb buffer address to retrive it in refill thread */
-				droq->recv_buf_list[droq->host_read_index].skbptr = (void *)nicbuf;
-			}
-			/* To indicate refill thread that buffer can be reused 
-			 * since we are not sending it to stack */
-			else
-				droq->recv_buf_list[droq->host_read_index].skbptr = NULL;
-
-			/* Increment host_read index */
-			INCR_INDEX_BY1(droq->host_read_index, droq->max_count);
-			bufs_used++;
-
-		} else {
-			nicbuf  = cav_net_buff_rx_alloc(info->length, droq->app_ctx);
-			if(cavium_unlikely(!nicbuf)) {
-				printk("Failed to allocate skb buffer\n");
-				return pkt;
-			}
-			//printk("Received jumbo packet with size:%d. copying to the new skb\n",(int)info->length);
-			pkt_len = 0;
-			while(pkt_len < info->length) {
-				int copy_len;
-
-				/* Get DMA buffer from device */
-				cnnic_pci_dma_sync_single_for_cpu(oct->pci_dev,
-					(unsigned long)droq->desc_ring[droq->host_read_index].buffer_ptr,
-					RCV_BUF_MAP_SIZE, CAVIUM_PCI_DMA_FROMDEVICE);
-
-				if(!pkt_len) {
-					copy_len = ((pkt_len + droq->buffer_size - sizeof(octeon_droq_info_t)) > info->length)?(info->length - pkt_len):(droq->buffer_size - sizeof(octeon_droq_info_t));
-
-					cavium_memcpy(recv_buf_put(nicbuf, copy_len),
-						droq->recv_buf_list[droq->host_read_index].buffer + CAV_NET_SKB_PAD + sizeof(octeon_droq_info_t), copy_len);
-				}
-				else {
-					copy_len = ((pkt_len + droq->buffer_size) > info->length)?(info->length - pkt_len):droq->buffer_size;
-
-					cavium_memcpy(recv_buf_put(nicbuf, copy_len),
-						droq->recv_buf_list[droq->host_read_index].buffer + CAV_NET_SKB_PAD, copy_len);
-				}
-
-				/* To indicate refill thread that buffer can be reused 
-				 * since we are not sending it to stack */
-				droq->recv_buf_list[droq->host_read_index].skbptr = NULL;
-
-				pkt_len += copy_len;
-				INCR_INDEX_BY1(droq->host_read_index, droq->max_count);
-				bufs_used++;
-			}
-		}
-
-		if(cavium_likely(nicbuf)) {
-			if(cavium_likely(droq->ops.fptr)) {
-				droq->ops.fptr(oct->octeon_id, nicbuf, pkt_len, resp_hdr,
-					(pkt_count < OCTEON_PKTPUSH_THRESHOLD) && (pkt == (pkt_count - 1)), &droq->napi);
-			}
-			else
-				free_recv_buffer(nicbuf);
-		}
-
-	}  /* for ( each packet )... */
-// *INDENT-ON*
-
-	/* Increment refill_count by the number of buffers processed. */
-	droq->refill_count += bufs_used;
-
-	droq->stats.pkts_received += pkt;
-	droq->stats.bytes_received += total_len;
-
-	if ((droq->ops.drop_on_max) && (pkts_to_process - pkt)) {
-		octeon_droq_drop_packets(droq, (pkts_to_process - pkt));
-		droq->stats.dropped_toomany += (pkts_to_process - pkt);
-		return pkts_to_process;
-	}
-
-	return pkt;
-}
-#endif
 
 int octeon_droq_process_poll_pkts(octeon_droq_t *droq, uint32_t budget)
 {

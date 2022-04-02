@@ -63,12 +63,6 @@ typedef struct {
       on the OS for which the code is compiled. */
 	uint8_t *data;
 
-#ifdef OCT_REUSE_RX_BUFS
-  /** Pointer to the skb buffer when reusing DMA buffers.
-   *  This is needed to retrive skb users and reference count to
-   *  free or reuse DMA buffer */
-	void *skbptr;
-#endif
 } octeon_recv_buffer_t;
 	
 #define OCTEON_ISM_OQ_MEM_SIZE	8	/* size in bytes of ISM DMA allocs */

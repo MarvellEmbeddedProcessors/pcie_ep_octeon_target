@@ -1965,21 +1965,6 @@ octeon_hostfw_handshake(void *octptr, unsigned long arg UNUSED)
 
 			/* NAPI and RX reuse buffers should be disabled for Base mode */
 			/* TODO is base mode supported since NAPI is required???? */
-#if defined(OCT_REUSE_RX_BUFS)
-			if ((oct->app_mode == CVM_DRV_BASE_APP)
-			    || (oct->app_mode == CVM_DRV_ZLIB_APP)) {
-				cavium_print_msg
-				    ("\n\n\t\t########################################################\n");
-				cavium_print_msg
-				    ("WARNING: Macros OCT_NIC_USE_NAPI and OCT_REUSE_RX_BUFS");
-				cavium_print_msg
-				    ("\n\t\t\tshould be disabled for BASE mode operations");
-				cavium_print_msg
-				    ("\n\t\t########################################################\n\n");
-				/* this is an error: so exit the hand shake */
-				return OCT_POLL_FN_FINISHED;
-			}
-#endif
 			default_oct_conf = octeon_get_conf(oct);
 			if (default_oct_conf == NULL)
 				return OCT_POLL_FN_ERROR;

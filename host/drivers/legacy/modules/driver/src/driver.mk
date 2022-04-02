@@ -94,12 +94,6 @@ OCTDRVFLAGS += -DENABLE_OCTEON_III=1
 #OCTDRVFLAGS += -DOCT_NIC_LOOPBACK
 #OCTDRVFLAGS += -DOCT_TX2_ISM_INT
 
-#This feature is meant for kernel versions above 3.4.110
-ifeq ($(call kernel_compare, 3, 4, 110), 1)
-#Enable this flag to reuse Rx DMA buffers for only NIC mode operation.
-#OCTDRVFLAGS += -DOCT_REUSE_RX_BUFS
-endif
-
 #Enable this flag for using host driver with only one PF
 #OCTDRVFLAGS += -DUSE_SINGLE_PF
 
