@@ -745,6 +745,9 @@ cvm_intr_return_t cnxk_interrupt_handler(void *dev)
 	reg_val = octeon_read_csr64(oct, CNXK_SDP_EPF_OEI_RINT);
 	if (reg_val) {
 		octeon_write_csr64(oct, CNXK_SDP_EPF_OEI_RINT, reg_val);
+		/* used by octnic */
+		octeon_oei_irq_handler(oct, reg_val);
+
 		/* used by facility */
 		mv_facility_irq_handler(oct, reg_val);
 		goto irq_handled;
@@ -923,6 +926,10 @@ static void cnxk_enable_pf_interrupt(void *chip, uint8_t intr_flag)
 	octeon_write_csr64(oct, CNXK_SDP_EPF_VFORE_RINT_ENA_W1S,
 			   intr_mask);
 	octeon_write_csr64(oct, CNXK_SDP_EPF_OEI_RINT_ENA_W1S, -1ULL);
+	/* Clear any pending OEI interrupts from before loading driver */
+	reg_val = octeon_read_csr64(oct, CNXK_SDP_EPF_OEI_RINT);
+	octeon_write_csr64(oct, CNXK_SDP_EPF_OEI_RINT, reg_val);
+
 	octeon_write_csr64(oct, CNXK_SDP_EPF_MISC_RINT_ENA_W1S,
 			   intr_mask);
 	octeon_write_csr64(oct, CNXK_SDP_EPF_PP_VF_RINT_ENA_W1S,
