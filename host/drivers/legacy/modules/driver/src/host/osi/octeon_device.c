@@ -198,6 +198,8 @@ octeon_device_t *octeon_allocate_device_mem(int pci_id)
 	case OCTEON_CN93XX_ID_PF:
 	case OCTEON_CN3380_ID_PF:
 	case OCTEON_CN98XX_ID_PF:
+	case OCTEON_CN95O_ID_PF:
+	case OCTEON_CN95N_ID_PF:
 		configsize = sizeof(octeon_cn93xx_pf_t);
 		break;
 
