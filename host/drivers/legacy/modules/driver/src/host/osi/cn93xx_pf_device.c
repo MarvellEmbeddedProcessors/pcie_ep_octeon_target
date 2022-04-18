@@ -9,8 +9,6 @@
 #include "octeon-pci.h"
 #include <linux/log2.h>
 
-#define FW_STATUS_RUNNING	2ULL
-
 extern int g_app_mode[];
 extern int octeon_device_init(octeon_device_t *, int);
 extern void mv_facility_irq_handler(octeon_device_t *oct, uint64_t event_word);

@@ -430,6 +430,21 @@
 #define    CNXK_PEM_BAR4_INDEX_REG(port, idx)              \
            (CNXK_PEM_BAR4_INDEX_START + ((port * 1ULL) << CNXK_PEM_OFFSET) + \
 			((idx) << CNXK_BAR4_INDEX_OFFSET) )
+/*
+ * This register is only supported on CNXK.
+ * This register only supports 32 bit accesses.
+ * Address generation is not well documented, and this has been tested
+ * with 0x418, but is expected to work 4 byte aligned addresses as well.
+ */
+
+#define CNXK_PEMX_PFX_CSX_PFCFGX(pem,pf,offset)      ((0x8e0000008000 | (uint64_t)pem << 36 \
+						| pf << 18 \
+						| ((offset >> 16) & 1) << 16 \
+						| (offset >> 3) << 3) \
+						+ (((offset >> 2) & 1) << 2))
+
+/* Register defines for use with CNXK_PEMX_PFX_CSX_PFCFGX */
+#define CNXK_PCIEEP_VSECST_CTL	0x418
 
 /*---------------   PCI BAR4 index registers -------------*/
 

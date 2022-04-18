@@ -101,6 +101,16 @@ static int cnxk_pf_soft_reset(octeon_device_t * oct)
 	cavium_print_msg
 	    ("OCTEON[%d]: BIST enabled for CNXK soft reset\n",
 	     oct->octeon_id);
+	/* Firmware status CSR is supposed to be cleared by
+	 * core domain reset, but due to a hw bug, it is not.
+	 * Set it to RUNNING right before reset so that it is not
+	 * left in READY (1) state after a reset.  This is required
+	 * in addition to the early setting to handle the case where
+	 * the OcteonTX is unexpectedly reset, reboots, and then
+	 * the module is removed.
+	 */
+	OCTEON_PCI_WIN_WRITE(oct, CNXK_PEMX_PFX_CSX_PFCFGX(0, 0, CNXK_PCIEEP_VSECST_CTL),
+			   FW_STATUS_RUNNING);
 
 	/* Set core domain reset bit */
 	OCTEON_PCI_WIN_WRITE(oct, CNXK_RST_CORE_DOMAIN_W1S, 1);
@@ -1198,6 +1208,15 @@ int setup_cnxk_octeon_pf_device(octeon_device_t * oct)
 	oct->fn_list.dump_registers = cnxk_dump_pf_initialized_regs;
 
 	cnxk_setup_reg_address(oct);
+
+	/* Firmware status CSR is supposed to be cleared by
+	 * core domain reset, but due to IPBUPEM-38842, it is not.
+	 * Set it to RUNNING early in boot, so that unexpected resets
+	 * leave it in a state that is not READY (1).
+	 */
+	OCTEON_PCI_WIN_WRITE(oct, CNXK_PEMX_PFX_CSX_PFCFGX(0, 0, CNXK_PCIEEP_VSECST_CTL),
+			   FW_STATUS_RUNNING);
+
 
 	/* Update pcie port number in the device structure */
 	ret = cnxk_get_pcie_qlmport(oct);
