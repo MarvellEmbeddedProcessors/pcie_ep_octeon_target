@@ -227,7 +227,7 @@ static int __verify_octeon_config_info(octeon_device_t * oct, void *conf)
 	case OCTEON_CN93XX_ID_VF:
 	case OCTEON_CN98XX_ID_VF:
 		return validate_cn93xx_vf_config_info(conf);
-	case OCTEON_CNXK_ID_VF:
+	case OCTEON_CN10KA_ID_VF:
 		return validate_cnxk_vf_config_info(conf);
 	default:
 		cavium_error("Chip config verification failed. Invalid chipid:%d\n",
@@ -312,7 +312,10 @@ octeon_device_t *octeon_allocate_device_mem(int pci_id)
 		configsize = sizeof(octeon_cn93xx_vf_t);
 		break;
 
-	case OCTEON_CNXK_ID_VF:
+	case OCTEON_CN10KA_ID_VF:
+	case OCTEON_CN10KB_ID_VF:
+	case OCTEON_CNF10KA_ID_VF:
+	case OCTEON_CNF10KB_ID_VF:
 		configsize = sizeof(octeon_cnxk_vf_t);
 		break;
 
@@ -2488,7 +2491,7 @@ octeon_hostfw_handshake(void *octptr, unsigned long arg UNUSED)
 	case OCTEON_CN98XX_ID_VF:
 		scratch_reg_addr = CN93XX_SDP_EPF_SCRATCH;
 		break;
-	case OCTEON_CNXK_ID_VF:
+	case OCTEON_CN10KA_ID_VF:
 		scratch_reg_addr = CNXK_SDP_EPF_SCRATCH;
 		break;
 	}

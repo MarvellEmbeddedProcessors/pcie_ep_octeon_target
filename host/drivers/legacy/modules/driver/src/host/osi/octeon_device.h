@@ -61,9 +61,17 @@ typedef struct _OCTEON_DEVICE octeon_device_t;
 #define  OCTEON_CN95O_PCIID_PF       0xB600177d   //95o
 #define  OCTEON_CN95O_PCIID_VF       0xB603177d   //95o VF
 
-#define  OCTEON_CNXK_PCIID_PF      0xB900177d   //106XX PF
-#define  OCTEON_CNXK_PCIID_VF      0xB903177d   //106XX VF
+#define  OCTEON_CN10KA_PCIID_PF      0xB900177d   //106XX PF
+#define  OCTEON_CN10KA_PCIID_VF      0xB903177d   //106XX VF
 
+#define  OCTEON_CNF10KA_PCIID_PF      0xBA00177d
+#define  OCTEON_CNF10KA_PCIID_VF      0xBA03177d
+
+#define  OCTEON_CNF10KB_PCIID_PF      0xBC00177d
+#define  OCTEON_CNF10KB_PCIID_VF      0xBC03177d
+
+#define  OCTEON_CN10KB_PCIID_PF      0xBD00177d
+#define  OCTEON_CN10KB_PCIID_VF      0xBD03177d
 
 /** Driver identifies chips by these Ids, created by clubbing together
     DeviceId+RevisionId; Where Revision Id is not used to distinguish
@@ -90,8 +98,17 @@ typedef struct _OCTEON_DEVICE octeon_device_t;
 #define  OCTEON_CN95O_ID_PF             0xB600   //95O
 #define  OCTEON_CN95O_ID_VF             0xB603   //95O VF
 
-#define  OCTEON_CNXK_ID_PF            0xB900   //106XX
-#define  OCTEON_CNXK_ID_VF            0xB903
+#define  OCTEON_CN10KA_ID_PF            0xB900   //106XX
+#define  OCTEON_CN10KA_ID_VF            0xB903
+
+#define OCTEON_CNF10KA_ID_PF		0xBA00
+#define OCTEON_CNF10KA_ID_VF		0xBA03
+
+#define OCTEON_CNF10KB_ID_PF		0xBC00
+#define OCTEON_CNF10KB_ID_VF		0xBC03
+
+#define OCTEON_CN10KB_ID_PF		0xBD00
+#define OCTEON_CN10KB_ID_VF		0xBD03
 
 #define OCTEON_CN83XX_PF(chip_id) \
 	(chip_id == OCTEON_CN83XX_ID_PF)
@@ -103,7 +120,7 @@ typedef struct _OCTEON_DEVICE octeon_device_t;
 	(chip_id == OCTEON_CN98XX_ID_PF)
 
 #define OCTEON_CNXK_PF(chip_id) \
-	(chip_id == OCTEON_CNXK_ID_PF)
+	(chip_id == OCTEON_CN10KA_ID_PF)
 
 #define OCTEON_CN9XXX_PF(chip_id) \
 	 (OCTEON_CN93XX_PF(chip_id) || \
@@ -131,7 +148,7 @@ typedef struct _OCTEON_DEVICE octeon_device_t;
 	(chip_id == OCTEON_CN98XX_ID_VF)
 
 #define OCTEON_CNXK_VF(chip_id) \
-	(chip_id == OCTEON_CNXK_ID_VF)
+	(chip_id == OCTEON_CN10KA_ID_VF)
 
 #define OCTEON_CN9XXX_VF(chip_id) \
 	 (OCTEON_CN93XX_VF(chip_id) || \

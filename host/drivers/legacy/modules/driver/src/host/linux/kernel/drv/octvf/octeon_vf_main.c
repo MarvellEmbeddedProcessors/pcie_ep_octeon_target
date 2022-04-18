@@ -704,12 +704,15 @@ static int octeon_chip_specific_setup(octeon_device_t * oct)
 
 		oct->chip_id = OCTEON_CN98XX_ID_VF;
 		return setup_cn98xx_octeon_vf_device(oct);
-	case OCTEON_CNXK_PCIID_VF:
+	case OCTEON_CN10KA_PCIID_VF:
+	case OCTEON_CNF10KA_PCIID_VF:
+	case OCTEON_CN10KB_PCIID_VF:
+	case OCTEON_CNF10KB_PCIID_VF:
 		cavium_print_msg("OCTEON_VF[%d]: CNXK PASS%d.%d\n",
 				 oct->octeon_id, OCTEON_MAJOR_REV(oct),
 				 OCTEON_MINOR_REV(oct));
 
-		oct->chip_id = OCTEON_CNXK_ID_VF;
+		oct->chip_id = OCTEON_CN10KA_ID_VF;
 		return setup_cnxk_octeon_vf_device(oct);
 	default:
 		cavium_error("OCTEON_VF: Unknown device found (dev_id: %x)\n",

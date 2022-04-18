@@ -763,9 +763,9 @@ octeon_config_t *octeon_dev_conf(octeon_device_t * oct)
 	case OCTEON_CN98XX_ID_VF:
 		return ((octeon_cn93xx_vf_t *) (oct->chip))->conf;
 
-	case OCTEON_CNXK_ID_PF:
+	case OCTEON_CN10KA_ID_PF:
 		return ((octeon_cnxk_pf_t *) (oct->chip))->conf;
-	case OCTEON_CNXK_ID_VF:
+	case OCTEON_CN10KA_ID_VF:
 		return ((octeon_cnxk_vf_t *) (oct->chip))->conf;
 	/* VSR: TODO: add for CNXK VF too */
 	default:

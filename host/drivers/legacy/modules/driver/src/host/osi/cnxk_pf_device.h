@@ -17,7 +17,7 @@
  */
 typedef struct {
 
-	cnxk_pf_config_t *conf;
+	octeon_config_t *conf;
 
 	octeon_device_t *oct;
 

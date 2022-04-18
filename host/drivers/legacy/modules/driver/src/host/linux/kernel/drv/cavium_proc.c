@@ -514,7 +514,7 @@ static int csrreg_show(struct seq_file *s, void *v UNUSED)
 		return cn83xx_pf_read_csrreg_buf(s, oct);
 	case OCTEON_CN93XX_ID_PF:
 	case OCTEON_CN98XX_ID_PF:
-	case OCTEON_CNXK_ID_PF:
+	case OCTEON_CN10KA_ID_PF:
 		return cn93xx_pf_read_csrreg_buf(s, oct);
 	}
 

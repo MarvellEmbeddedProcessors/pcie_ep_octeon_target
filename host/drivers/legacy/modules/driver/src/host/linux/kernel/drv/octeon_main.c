@@ -907,7 +907,10 @@ int octeon_chip_specific_setup(octeon_device_t * oct)
 			oct->chip_id = OCTEON_CN98XX_ID_PF;
 			return setup_cn98xx_octeon_pf_device(oct); //use 93xx PF setup for now
 
-		case OCTEON_CNXK_PCIID_PF:
+		case OCTEON_CN10KA_PCIID_PF:
+		case OCTEON_CNF10KA_PCIID_PF:
+		case OCTEON_CN10KB_PCIID_PF:
+		case OCTEON_CNF10KB_PCIID_PF:
 			cavium_print_msg("OCTEON[%d]: CNXK PASS%d.%d on %02x:%02x:%x\n",
 					 oct->octeon_id, OCTEON_MAJOR_REV(oct),
 					 OCTEON_MINOR_REV(oct), oct->pci_dev->bus->number,
@@ -916,7 +919,7 @@ int octeon_chip_specific_setup(octeon_device_t * oct)
 
 			oct->pf_num = oct->octeon_id;
 			oct->sriov_info.num_vfs = num_vfs;
-			oct->chip_id = OCTEON_CNXK_ID_PF;
+			oct->chip_id = OCTEON_CN10KA_ID_PF;
 			return setup_cnxk_octeon_pf_device(oct);
 	default:
 		cavium_error("OCTEON: Unknown device found (dev_id: %x)\n",
