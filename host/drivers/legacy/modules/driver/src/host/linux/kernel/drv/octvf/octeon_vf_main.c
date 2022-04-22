@@ -414,6 +414,7 @@ int octeon_tx_enable_msix_interrupts(octeon_device_t * oct)
 	if(ret < 0) {
 		cavium_error("Unable to Allocate MSI-X interrupts. returned err: %d \n", ret);
 		cavium_free_virt(oct->msix_entries);
+		oct->msix_entries = NULL;
 		return 1;
 	}
 	cavium_print_msg

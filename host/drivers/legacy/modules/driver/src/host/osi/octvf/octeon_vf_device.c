@@ -496,10 +496,11 @@ int octeon_clear_irq_affinity(octeon_device_t * oct)
 	/* Disable Octeon device interrupts */
 	oct->fn_list.disable_interrupt(oct->chip, OCTEON_ALL_INTR);
 
-	for (i = 0; i < oct->num_oqs; i++) {
-		/* clearing the intr-cpu affinity */
-		irq_set_affinity_hint(oct->msix_entries[i].vector, NULL);
-
+	if (oct->msix_entries) {
+		for (i = 0; i < oct->num_oqs; i++) {
+			/* clearing the intr-cpu affinity */
+			irq_set_affinity_hint(oct->msix_entries[i].vector, NULL);
+		}
 	}
 	printk("Cleared %d IOQ vectors\n", oct->num_oqs);
 

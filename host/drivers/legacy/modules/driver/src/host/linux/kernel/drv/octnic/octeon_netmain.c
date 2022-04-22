@@ -1249,7 +1249,11 @@ int octnet_init_nic_module(int octeon_id, void *octeon_dev)
 		if (octeon_enable_msix_interrupts(oct)) {
 			octeon_delete_ioq_vector(oct);
 			cavium_error("OCTEON: setup msix interrupt failed\n");
-			goto octnet_msix_failure;
+			retval = -ENODEV;
+			for (i = 0; i < ls->link_count; i++) {
+				octnet_destroy_nic_device(octeon_id, i);
+			}
+			goto octnet_init_failure;
 		}
 		octeon_setup_irq_affinity(octeon_dev);
 	}
