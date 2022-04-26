@@ -77,8 +77,8 @@ int octeon_init_instr_queue(octeon_device_t * oct, int iq_no)
 	}
 
 	iq->ism.pkt_cnt_addr = 0;
-	if (OCT_TX2_IQ_ISM) {
-		if (OCTEON_CN9XXX_PF(oct->chip_id)) {
+	if (OCT_IQ_ISM) {
+		if (OCTEON_CN9XXX_PF(oct->chip_id) || OCTEON_CNXK_PF(oct->chip_id)) {
 			iq->ism.pkt_cnt_addr =
 			    octeon_pci_alloc_consistent(oct->pci_dev, OCTEON_ISM_IQ_MEM_SIZE,
 							&iq->ism.pkt_cnt_dma, iq->app_ctx);

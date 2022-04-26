@@ -2698,7 +2698,7 @@ void octeon_enable_irq(octeon_droq_t *droq, octeon_instr_queue_t *iq)
 
 	if (iq_update) {
 		iq->pkt_in_done -= iq_update;
-		/* ISM is in use if pkt_cnt_addr is !0, (OCT_TX2_IQ_ISM) */
+		/* ISM is in use if pkt_cnt_addr is !0, (OCT_IQ_ISM) */
 		if (iq->ism.pkt_cnt_addr) {
 			/*
 			 * Update the ISM location and value based on packets

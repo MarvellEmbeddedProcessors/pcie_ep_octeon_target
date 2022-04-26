@@ -431,7 +431,7 @@ static void cn93xx_setup_iq_regs(octeon_device_t * oct, int iq_no)
 		  | (10UL << 32);
 	octeon_write_csr64(oct, CN93XX_SDP_R_IN_INT_LEVELS(iq_no), reg_val);
 
-	if(OCT_TX2_IQ_ISM) {
+	if(OCT_IQ_ISM) {
 		octeon_write_csr64(oct, CN93XX_SDP_R_IN_CNTS_ISM(iq_no), (iq->ism.pkt_cnt_dma)|0x1ULL);
 		iq->in_cnts_ism = (uint8_t *) oct->mmio[0].hw_addr
 		    + CN93XX_SDP_R_IN_CNTS_ISM(iq_no);
@@ -494,7 +494,7 @@ static void cn93xx_setup_oq_regs(octeon_device_t * oct, int oq_no)
 
 	octeon_write_csr64(oct, CN93XX_SDP_R_OUT_INT_LEVELS(oq_no), reg_val);
 
-	if (OCT_TX2_DROQ_ISM)
+	if (OCT_DROQ_ISM)
 	{
 		droq->out_cnts_ism = (uint8_t *) oct->mmio[0].hw_addr +
 		    CN93XX_SDP_R_OUT_CNTS_ISM(oq_no);
@@ -882,7 +882,7 @@ static uint32_t cn93xx_bar1_idx_read(octeon_device_t * oct, int idx)
 							     idx));
 }
 
-#if OCT_TX2_IQ_ISM
+#if OCT_IQ_ISM
 static uint32_t cn93xx_update_read_index(octeon_instr_queue_t * iq)
 {
 	u32 new_idx;

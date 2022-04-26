@@ -293,8 +293,8 @@ int octeon_init_droq(octeon_device_t * oct, uint32_t q_no, void *app_ctx)
 		     q_no, droq->max_count);
 
 	droq->check_hw_for_pkts = octeon_droq_check_hw_for_pkts;
-	if (OCT_TX2_DROQ_ISM) {
-		if (OCTEON_CN9XXX_PF(oct->chip_id)) {
+	if (OCT_DROQ_ISM) {
+		if (OCTEON_CN9XXX_PF(oct->chip_id) || OCTEON_CNXK_PF(oct->chip_id)) {
 			droq->ism.pkt_cnt_addr =
 			    octeon_pci_alloc_consistent(oct->pci_dev, OCTEON_ISM_OQ_MEM_SIZE,
 							&droq->ism.pkt_cnt_dma, droq->app_ctx);

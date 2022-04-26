@@ -186,10 +186,10 @@
  * and output queue management if supported.  When enabled, chips that support
  * ISM will use it, others will use normal CSR accesses.  When disabled, all
  * chips will use CSR accesses.
- * Currently ISM support is only implemented for CN9XXX chips.
+ * CN9XXX and CNXK support ISM
  */
-#define   OCT_TX2_DROQ_ISM		1
-#define   OCT_TX2_IQ_ISM		1
+#define   OCT_DROQ_ISM		1
+#define   OCT_IQ_ISM		1
 
 /* ----------------- Host Firmware Handshake Details ----------------- */
 /* ----------------- Host Firmware Handshake Details ----------------- */
