@@ -1083,10 +1083,23 @@ oct_get_drvinfo(struct net_device *netdev, struct ethtool_drvinfo *drvinfo)
 	strcpy(drvinfo->fw_version, "no information");
 	strncpy(drvinfo->bus_info, pci_name(oct->pci_dev), 32);
 }
-
+/*
+ * OCTEON_HOST is set by the EP driver makefile when building for Octeon.
+ * A backport to the Octeon Linux kernel changed the ethtool interface,
+ * so we use this to detect we are doing an Octeon build and use the
+ * appropriate definition.
+ */
+#ifdef OCTEON_HOST
+static void
+oct_ethtool_get_ringparam(struct net_device *netdev,
+			  struct ethtool_ringparam *ering,
+			  struct kernel_ethtool_ringparam *kern_ering,
+			  struct netlink_ext_ack *ext_ack)
+#else
 static void
 oct_ethtool_get_ringparam(struct net_device *netdev,
 			  struct ethtool_ringparam *ering)
+#endif
 {
 	octnet_priv_t *priv;
 	priv = GET_NETDEV_PRIV(netdev);
