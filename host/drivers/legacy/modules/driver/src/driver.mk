@@ -19,28 +19,21 @@ KERNEL_VERSION ?= $(shell uname -r)
 #COMPILEFOR = OCTEON_VF
 
 ifeq ($(HOST_IS_OCTEON), 1)
-DEFAULT_CROSS_COMPILE = $(shell \
-        if grep -q ^CONFIG_CPU_LITTLE_ENDIAN $(OCTEON_ROOT)/linux/kernel/linux/.config && \
-        which mips64el-octeon-linux-gnu-gcc > /dev/null 2>&1 ; then \
-                echo -n mips64el-octeon-linux-gnu-; \
-        else \
-                echo -n mips64-octeon-linux-gnu-; fi)
 
-
-CROSS_COMPILE ?= $(strip $(DEFAULT_CROSS_COMPILE))
-
+CROSS_COMPILE := aarch64-marvell-linux-gnu-
 export CROSS_COMPILE
-ARCH = mips
+ARCH = arm64
 export ARCH
 
 OCTDRVFLAGS  += -DOCTEON_HOST
-
 # The compiler needs to be changed only for the host sources.
 # No changes are made if the core application includes this file.
 ifneq ($(findstring OCTEON_CORE_DRIVER,$(COMPILE)), OCTEON_CORE_DRIVER)
-kernel_source := $(OCTEON_ROOT)/linux/kernel/linux
-CC=mips64-octeon-linux-gnu-gcc
-AR=mips64-octeon-linux-gnu-ar
+# Update the 'kernel_source' to match the location of the ARM Linux
+# typically something like /path/to/xxx-pcie-ep-release-output/build/linux[-custom]
+kernel_source := /path/to/arm/linux/sources/or/headers
+CC=$(CROSS_COMPILE)gcc
+AR=$(CROSS_COMPILE)ar
 endif
 else
 kernel_source := /lib/modules/$(KERNEL_VERSION)/build
