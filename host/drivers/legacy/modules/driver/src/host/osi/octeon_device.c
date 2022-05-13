@@ -1747,7 +1747,6 @@ octeon_wait_for_npu_base(void *octptr, unsigned long arg UNUSED)
 		if (npu_map->version == 0xFFFFFFFF) {
 			printk("%s: FATAL error; CN9xxx bar map info corrupted !!!\n",
 			       __func__);
-			WARN_ON(1);
 			return OCT_POLL_FN_FINISHED;
 		}
 		npu_mem_and_intr_test(octeon_dev, 2, &octeon_dev->npu_memmap_info);
