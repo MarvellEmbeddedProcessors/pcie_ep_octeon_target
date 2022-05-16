@@ -765,7 +765,7 @@ int __octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 
 		ndata.buftype = NORESP_BUFTYPE_NET_SG;
 	}
-
+	skb_tx_timestamp(skb);
 #if defined(NO_HAS_XMIT_MORE) || LINUX_VERSION_CODE >= KERNEL_VERSION(5,4,0)
 	status = octnet_send_nic_data_pkt(priv->oct_dev, &ndata,
 					  !netdev_xmit_more());
@@ -1414,6 +1414,16 @@ static int oct_nway_reset(struct net_device *netdev)
 	return 0;
 }
 
+static int oct_get_ts_info(struct net_device *ndev,
+				struct ethtool_ts_info *info)
+{
+	info->so_timestamping =
+		SOF_TIMESTAMPING_TX_SOFTWARE |
+		SOF_TIMESTAMPING_RX_SOFTWARE |
+		SOF_TIMESTAMPING_SOFTWARE;
+	return 0;
+}
+
 #if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,18)
 static const struct ethtool_ops oct_ethtool_ops = {
 #else
@@ -1436,6 +1446,7 @@ static struct ethtool_ops oct_ethtool_ops = {
 #endif
 	.get_link_ksettings = oct_get_link_ksettings,
 	.set_link_ksettings = oct_set_link_ksettings,
+	.get_ts_info = oct_get_ts_info,
 };
 
 void oct_set_ethtool_ops(octnet_os_devptr_t * netdev)
