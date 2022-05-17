@@ -48,11 +48,15 @@ build:
 clean:
 	rm -f build/$(APP) build/$(APP)-static build/$(APP)-shared
 	test -d build && rmdir -p build || true
-
+	rm -f .dpi_test_21_11_not_built
 else
-$(error "Only meson based build is supported")
+all:
+	$(info "Only meson based build is supported")
+	touch .dpi_test_21_11_not_built
 endif
 else
-$(error "Please provide dpdk install directory for atleast dpdk-21.11.")
+all:
+	$(info "Please provide dpdk install directory for atleast dpdk-21.11.")
+	touch .dpi_test_21_11_not_built
 endif
 
