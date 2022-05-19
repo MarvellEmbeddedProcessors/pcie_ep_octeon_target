@@ -4,10 +4,12 @@
 
 OCTEONTX_HOST_ROOT = $(shell pwd)
 export OCTEONTX_HOST_ROOT
+export CONFIG_OCTEON_EP=m
 
 SUBDIRS=drivers/legacy/modules/driver/src
 SUBDIRS+=drivers/mgmt_net
 SUBDIRS+=drivers/phc
+SUBDIRS+=drivers/octeon_ep
 
 all: $(SUBDIRS)
 		for d in $(SUBDIRS); do \
