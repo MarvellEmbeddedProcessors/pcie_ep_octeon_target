@@ -349,10 +349,13 @@ octeon_device_t *octeon_allocate_device_mem(int pci_id)
 	return oct;
 }
 
+DEFINE_SPINLOCK(allocate_lock);
 octeon_device_t *octeon_allocate_device(int pci_id)
 {
 	int oct_idx = 0;
 	octeon_device_t *oct = NULL;
+
+	spin_lock(&allocate_lock);
 
 	for (oct_idx = 0; oct_idx < MAX_OCTEON_DEVICES; oct_idx++) {
 		if (octeon_device[oct_idx] == NULL)
@@ -363,13 +366,13 @@ octeon_device_t *octeon_allocate_device(int pci_id)
 		cavium_error
 		    ("OCTEON: Could not find empty slot for device pointer. octeon_device_count: %d MAX_OCTEON_DEVICES: %d\n",
 		     octeon_device_count, MAX_OCTEON_DEVICES);
-		return NULL;
+		goto out;
 	}
 
 	oct = octeon_allocate_device_mem(pci_id);
 	if (oct == NULL) {
 		cavium_error("OCTEON: Allocation failed for octeon device\n");
-		return NULL;
+		goto out;
 	}
 
 	octeon_device_count++;
@@ -378,6 +381,8 @@ octeon_device_t *octeon_allocate_device(int pci_id)
 	oct->octeon_id = oct_idx;
 	octeon_assign_vf_dev_name(oct);
 
+out:
+	spin_unlock(&allocate_lock);
 	return oct;
 }
 
