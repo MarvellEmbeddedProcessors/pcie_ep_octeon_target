@@ -386,50 +386,6 @@ out:
 	return oct;
 }
 
-int octeon_setup_io_queues(octeon_device_t * octeon_dev)
-{
-	int i, num_ioqs, retval = 0;
-
-	num_ioqs = octeon_dev->rings_per_vf;
-
-	/* set up DROQs. */
-	for (i = 1; i < num_ioqs; i++) {
-		if (octeon_dev->droq[i]) {
-			cavium_print_msg
-			    ("DROQ %d is already initialized. Skipping initialization.\n",
-			     i);
-		} else {
-			retval =
-			    octeon_setup_droq(octeon_dev->octeon_id, i, NULL);
-			if (retval) {
-				cavium_print_msg
-				    (" %s : Runtime DROQ(RxQ) creation failed.\n",
-				     __FUNCTION__);
-				return 1;
-			}
-		}
-	}
-
-	/* set up IQs. */
-	for (i = 1; i < num_ioqs; i++) {
-		if (octeon_dev->instr_queue[i]) {
-			cavium_print_msg
-			    ("IQ %d is already initialized. Skipping initialization.\n",
-			     i);
-		} else {
-			retval = octeon_setup_iq(octeon_dev, i, NULL);
-			if (retval) {
-				cavium_print_msg
-				    (" %s : Runtime IQ(TxQ) creation failed.\n",
-				     __FUNCTION__);
-				return 1;
-			}
-		}
-	}
-
-	return 0;
-}
-
 int octeon_allocate_ioq_vector(octeon_device_t * oct)
 {
 	int i;
@@ -634,32 +590,6 @@ int octeon_delete_mbox(octeon_device_t * oct)
 
 		oct->mbox[i] = NULL;
 	}
-	return 0;
-}
-
-int octeon_init_base_ioqs(octeon_device_t * oct)
-{
-	int j;
-
-	if (octeon_setup_io_queues(oct))
-		return 1;
-
-	if (octeon_setup_irq_affinity(oct))
-		return 1;
-
-	/* Enable Octeon device interrupts */
-	oct->fn_list.enable_interrupt(oct->chip, OCTEON_ALL_INTR);
-
-	/* Enable the input and output queues for this Octeon device */
-	oct->fn_list.enable_io_queues(oct);
-
-	/* Send Credit for Octeon Output queues. Credits are always sent after the
-	   output queue is enabled. */
-	for (j = 0; j < oct->num_oqs; j++) {
-		OCTEON_WRITE32(oct->droq[j]->pkts_credit_reg,
-			       oct->droq[j]->max_count);
-	}
-
 	return 0;
 }
 
