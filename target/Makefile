@@ -9,14 +9,14 @@ SUBDIRS=drivers/dpi_dma
 SUBDIRS+=drivers/pcie_ep/src
 SUBDIRS+=drivers/mgmt_net
 SUBIDRS+=apps/dpdk/l2fwd_pcie_ep
-SUBIDRS+=apps/dpdk/dpi_test
-SUBIDRS+=apps/dmadev/dpi_test
+SUBIDRS+=apps/dpdk/rawdev/dpi_test
+SUBIDRS+=apps/dpdk/dmadev/dpi_test
 
 .PHONY: apps
 apps:
 	$(MAKE) -C apps/dpdk/l2fwd_pcie_ep
-	$(MAKE) -C apps/dpdk/dpi_test
-	$(MAKE) -C apps/dmadev/dpi_test
+	$(MAKE) -C apps/dpdk/rawdev/dpi_test
+	$(MAKE) -C apps/dpdk/dmadev/dpi_test
 
 all: $(SUBDIRS)
 	for d in $(SUBDIRS); do \
