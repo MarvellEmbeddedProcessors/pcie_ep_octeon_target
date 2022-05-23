@@ -23,17 +23,6 @@
 #define NPU_BASE_DRV_NAME  "npu_base"
 #define NPU_BASE_DEVICE_ID "NPU base driver"
 
-static unsigned int  host_sid[2] = {0x030000, 0x050000};
-static int host_sid_arr_count = 0;
-module_param_array(host_sid, uint, &host_sid_arr_count, 0644);
-MODULE_PARM_DESC(host_sid, "host stream id (((0x3 + PEM_NUM) << 16) + Host_requester id");
-
-static unsigned int  host_sid_rdwr[2] = {0x030000, 0x050000};
-static int host_sid_rdwr_arr_count = 0;
-module_param_array(host_sid_rdwr, uint, &host_sid_rdwr_arr_count, 0644);
-MODULE_PARM_DESC(host_sid_rdwr, "host additional stream id for hosts that " \
-		"use different stream id for read/write tlps");
-
 static unsigned int  pem_num[2] = {0,2};
 static int pem_num_arr_cnt = 0;
 module_param_array(pem_num, uint, &pem_num_arr_cnt, 0644);
@@ -418,79 +407,6 @@ static int npu_base_probe(struct platform_device *pdev)
 	instance = pcie_ep_dev->instance;
 	plat = pcie_ep_dev->plat_model;
 
-	if (plat == OTX2_CN9XXX || plat == OTX3_CN10K) {
-		smmu_dev = bus_find_device_by_name(&platform_bus_type,
-						   NULL,
-						   "830000000000.smmu");
-		if (!smmu_dev) {
-			dev_err(dev, "Cannot locate smmu device\n");
-			goto exit;
-		}
-
-		smmu_ops = platform_bus_type.iommu_ops;
-		if (!smmu_ops) {
-			dev_err(dev, "Cannot locate smmu_ops\n");
-			goto exit;
-		}
-
-		host_domain = smmu_ops->domain_alloc(IOMMU_DOMAIN_IDENTITY);
-		if (!host_domain) {
-			dev_err(dev, "Cannot allocate smmu domain for host\n");
-			goto exit;
-		}
-
-		/* caller sets these; see __iommu_domain_alloc */
-		host_domain->ops = smmu_ops;
-		host_domain->type = IOMMU_DOMAIN_IDENTITY;
-		host_domain->pgsize_bitmap = smmu_ops->pgsize_bitmap;
-
-		dev_dbg(dev, "OLD dev->iommu_fwspec %p\n", dev->iommu_fwspec);
-
-		ret = iommu_fwspec_init(dev, smmu_dev->fwnode, smmu_ops);
-		if (ret) {
-			dev_err(dev, "Error %d from iommu_fwspec_init()\n",
-				ret);
-			goto exit;
-		}
-
-		dev_dbg(dev, "NEW dev->iommu_fwspec %p\n", dev->iommu_fwspec);
-
-		ret = iommu_fwspec_add_ids(dev, &host_sid[instance], 1);
-		if (ret) {
-			dev_err(dev, "Error %d from iommu_fwspec_add_ids()\n",
-				ret);
-			goto exit;
-		}
-
-		if ((host_sid_rdwr_arr_count != 0) &&
-			(host_sid[instance] != host_sid_rdwr[instance])) {
-			ret = iommu_fwspec_add_ids(dev,
-					&host_sid_rdwr[instance], 1);
-			if (ret) {
-				dev_err(dev,
-				"Error %d from iommu_fwspec_add_ids()\n", ret);
-				goto exit;
-			}
-		}
-
-		ret = smmu_ops->add_device(dev);
-		if (ret) {
-			dev_err(dev, "Error %d from smmu_ops->add_device()\n",
-				ret);
-			goto exit;
-		}
-
-		ret = smmu_ops->attach_dev(host_domain, dev);
-		if (ret) {
-			/* remove device from domain */
-			smmu_ops->remove_device(dev);
-
-			dev_err(dev,
-				"Error %d from smmu_ops->attach_dev()\n",
-				ret);
-			goto exit;
-		}
-	}
 
 	printk("SDP block = %lld\n", sdp_num[instance]);
 
