@@ -651,6 +651,8 @@ int octeon_delete_proc_entry(int octeon_id, char *name);
 #define octeon_assign_vf_dev_name(oct)         \
     sprintf( ((oct)->device_name), "Octeon_vf%d", ((oct)->octeon_id))
 
+#define OCTEON_MAX_SG  (ROUNDUP4(MAX_SKB_FRAGS) >> 2)
+
 #else /* __KERNEL__ */
 
 #include <fcntl.h>

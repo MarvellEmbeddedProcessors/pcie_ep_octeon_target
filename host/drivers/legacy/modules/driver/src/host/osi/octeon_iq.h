@@ -87,6 +87,9 @@ typedef struct {
       has read the commands. */
 	uint32_t flush_index;
 
+ /** SG list for this iq,  list of gather components */
+	struct octeon_gather **glist;
+
   /** Statistics for this input queue. */
 	oct_iq_stats_t stats;
 

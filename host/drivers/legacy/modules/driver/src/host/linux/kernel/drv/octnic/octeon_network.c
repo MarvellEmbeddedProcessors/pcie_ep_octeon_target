@@ -470,7 +470,7 @@ void octnic_free_netsgbuf(void *buf)
 	struct octnet_buf_free_info *finfo;
 	struct sk_buff *skb;
 	octnet_priv_t *priv;
-	struct octnic_gather *g;
+	struct octeon_gather *g;
 	u16 queue_mapping;
 	int i, frags;
 
@@ -506,10 +506,6 @@ void octnic_free_netsgbuf(void *buf)
 	octeon_unmap_single_buffer(get_octeon_device_id(priv->oct_dev),
 				   finfo->dptr, g->sg_size,
 				   CAVIUM_PCI_DMA_TODEVICE);
-
-	cavium_spin_lock(&priv->lock);
-	cavium_list_add_tail(&g->list, &priv->glist);
-	cavium_spin_unlock(&priv->lock);
 
 	free_recv_buffer((cavium_netbuf_t *) skb);
 
@@ -575,12 +571,13 @@ int __octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 	cavium_print(PRINT_FLOW, "OCTNIC: network xmit called\n");
 
 	priv = GET_NETDEV_PRIV(pndev);
+	oct_dev = priv->oct_dev;
 
 	if (netif_is_multiqueue(pndev)) {
 		q_no = priv->txq + (skb->queue_mapping %
 				    priv->linfo.num_txpciq);
 		/* mq support: defer sending if qfull */
-		if (octnet_iq_is_full(priv->oct_dev, q_no)) {
+		if (octnet_iq_is_full(oct_dev, q_no)) {
 #ifdef OCT_NIC_LOOPBACK
 			free_recv_buffer(skb);
 #endif
@@ -603,7 +600,6 @@ int __octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 #endif
 
 	if (skb_put_padto(skb, ETH_ZLEN)) {
-		oct_dev = priv->oct_dev;
 		oct_dev->instr_queue[q_no]->stats.instr_dropped++;
 		return OCT_NIC_TX_OK;
 	}
@@ -646,13 +642,13 @@ int __octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 	if (skb_shinfo(skb)->nr_frags == 0) {
 
 		cmdsetup.s.u.datasize = skb->len;
-		octnet_prepare_pci_cmd(priv->oct_dev, &(ndata.cmd), &cmdsetup);
+		octnet_prepare_pci_cmd(oct_dev, &(ndata.cmd), &cmdsetup);
 		/* Offload checksum calculation for TCP/UDP packets */
 		ndata.cmd.dptr =
 		    octeon_map_single_buffer(get_octeon_device_id
-					     (priv->oct_dev), skb->data,
+					     (oct_dev), skb->data,
 					     skb->len, CAVIUM_PCI_DMA_TODEVICE);
-		if (octeon_mapping_error(get_octeon_device_id(priv->oct_dev),
+		if (octeon_mapping_error(get_octeon_device_id(oct_dev),
 					 ndata.cmd.dptr)) {
 			cavium_error("dma mapping error\n");
 			goto oct_xmit_failed;
@@ -664,17 +660,16 @@ int __octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 
 	} else {
 		int i, j, frags;
+		octeon_instr_queue_t *iq;
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5,4,0)
 		struct skb_frag_struct *frag;
 #else
 		struct bio_vec *frag;
 #endif
-		struct octnic_gather *g;
+		struct octeon_gather *g;
 
-		cavium_spin_lock(&priv->lock);
-		g = (struct octnic_gather *)
-		    cavium_list_delete_head(&priv->glist);
-		cavium_spin_unlock(&priv->lock);
+		iq = oct_dev->instr_queue[q_no];
+		g = iq->glist[iq->host_write_index];
 
 		if (g == NULL)
 			goto oct_xmit_failed;
@@ -685,21 +680,18 @@ int __octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 		cmdsetup.s.gather = 1;
 		cmdsetup.s.u.gatherptrs = (skb_shinfo(skb)->nr_frags + 1);
         //printk("Gather: len:%d\n", skb->len);
-		octnet_prepare_pci_cmd(priv->oct_dev, &(ndata.cmd), &cmdsetup);
+		octnet_prepare_pci_cmd(oct_dev, &(ndata.cmd), &cmdsetup);
 
 		memset(g->sg, 0, g->sg_size);
 
 		g->sg[0].ptr[0] =
 		    octeon_map_single_buffer(get_octeon_device_id
-					     (priv->oct_dev), skb->data,
+					     (oct_dev), skb->data,
 					     (skb->len - skb->data_len),
 					     CAVIUM_PCI_DMA_TODEVICE);
-		if (octeon_mapping_error(get_octeon_device_id(priv->oct_dev),
+		if (octeon_mapping_error(get_octeon_device_id(oct_dev),
 					 g->sg[0].ptr[0])) {
 			cavium_error("dma mapping error\n");
-			cavium_spin_lock(&priv->lock);
-			cavium_list_add_tail(&g->list, &priv->glist);
-			cavium_spin_unlock(&priv->lock);
 			goto oct_xmit_failed;
 		}
 
@@ -711,7 +703,7 @@ int __octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 			frag = &skb_shinfo(skb)->frags[i - 1];
 
 			g->sg[(i >> 2)].ptr[(i & 3)] =
-			    octeon_map_page(get_octeon_device_id(priv->oct_dev),
+			    octeon_map_page(get_octeon_device_id(oct_dev),
 #if LINUX_VERSION_CODE <= KERNEL_VERSION(3,1,10)
 					    frag->page,
 					    frag->page_offset,
@@ -726,12 +718,12 @@ int __octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 					    frag->bv_len,
 #endif
 					    CAVIUM_PCI_DMA_TODEVICE);
-			if (octeon_mapping_error(get_octeon_device_id(priv->oct_dev),
+			if (octeon_mapping_error(get_octeon_device_id(oct_dev),
 						 g->sg[(i >> 2)].ptr[(i & 3)])) {
 				cavium_error("dma mapping error\n");
 				for (j = 1; j < i; j++) {
 					frag = &skb_shinfo(skb)->frags[j - 1];
-					octeon_unmap_page(get_octeon_device_id(priv->oct_dev),
+					octeon_unmap_page(get_octeon_device_id(oct_dev),
 					g->sg[j >> 2].ptr[j & 3],
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5,4,0)
 					frag->size,
@@ -740,9 +732,6 @@ int __octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 #endif
 					CAVIUM_PCI_DMA_TODEVICE);
 				}
-				cavium_spin_lock(&priv->lock);
-				cavium_list_add_tail(&g->list, &priv->glist);
-				cavium_spin_unlock(&priv->lock);
 				goto oct_xmit_failed;
 			}
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5,4,0)
@@ -757,7 +746,7 @@ int __octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 
 		ndata.cmd.dptr =
 		    octeon_map_single_buffer(get_octeon_device_id
-					     (priv->oct_dev), g->sg, g->sg_size,
+					     (oct_dev), g->sg, g->sg_size,
 					     CAVIUM_PCI_DMA_TODEVICE);
 
 		finfo->dptr = ndata.cmd.dptr;
@@ -767,10 +756,10 @@ int __octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 	}
 	skb_tx_timestamp(skb);
 #if defined(NO_HAS_XMIT_MORE) || LINUX_VERSION_CODE >= KERNEL_VERSION(5,4,0)
-	status = octnet_send_nic_data_pkt(priv->oct_dev, &ndata,
+	status = octnet_send_nic_data_pkt(oct_dev, &ndata,
 					  !netdev_xmit_more());
 #else
-	status = octnet_send_nic_data_pkt(priv->oct_dev, &ndata, !skb->xmit_more);
+	status = octnet_send_nic_data_pkt(oct_dev, &ndata, !skb->xmit_more);
 #endif
 	if (status == NORESP_SEND_FAILED)
 		goto oct_xmit_failed;
@@ -791,7 +780,6 @@ int __octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 	return OCT_NIC_TX_OK;
 
 oct_xmit_failed:
-	oct_dev = priv->oct_dev;
 	oct_dev->instr_queue[q_no]->stats.instr_dropped++;
 	free_recv_buffer(skb);
 	return OCT_NIC_TX_OK;

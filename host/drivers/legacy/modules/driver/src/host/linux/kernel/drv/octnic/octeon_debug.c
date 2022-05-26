@@ -128,7 +128,7 @@ static void octeon_debug_dump(struct net_device *dev)
 	int buftype;
 	int i, frags;
 	struct sk_buff *skb;
-	struct octnic_gather *g;
+	struct octeon_gather *g;
 
 	priv = GET_NETDEV_PRIV(dev);
 	oct = (octeon_device_t *)priv->oct_dev;

@@ -88,6 +88,21 @@ static inline uint16_t CAVIUM_GET_SG_SIZE(octeon_sg_entry_t * sg_entry, int pos)
 #endif
 }
 
+/** Structure of a node in list of gather components maintained by
+	NIC driver for each network device. */
+struct octeon_gather {
+
+	/** Size of the gather component at sg in bytes. */
+	int sg_size;
+
+	/** Number of bytes that sg was adjusted to make it 8B-aligned. */
+	int adjust;
+
+	/** Gather component that can accomodate max sized fragment list
+	    received from the IP layer. */
+	octeon_sg_entry_t *sg;
+};
+
 /*------------------------- End Scatter/Gather ---------------------------*/
 
 /** Octeon core address range summary. */

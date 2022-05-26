@@ -142,9 +142,6 @@ typedef struct {
 	/** Octeon Output queue from which pkts arrive for this network interface.*/
 	int rxq;
 
-	/** Linked list of gather components */
-	cavium_list_t glist;
-
 	/** Pointer to the NIC properties for the Octeon device this network
 	    interface is associated with. */
 	struct octdev_props_t *octprops;
@@ -168,27 +165,6 @@ typedef struct {
 } ____cacheline_aligned_in_smp octnet_priv_t;
 #define OCTNET_PRIV_SIZE   (sizeof(octnet_priv_t))
 
-#define OCTNIC_MAX_SG  (ROUNDUP4(MAX_SKB_FRAGS) >> 2)
-
-/** Structure of a node in list of gather components maintained by
-	NIC driver for each network device. */
-struct octnic_gather {
-
-	/** List manipulation. Next and prev pointers. */
-	cavium_list_t list;
-
-	/** Size of the gather component at sg in bytes. */
-	int sg_size;
-
-	/** Number of bytes that sg was adjusted to make it 8B-aligned. */
-	int adjust;
-
-	/** Gather component that can accomodate max sized fragment list
-	    received from the IP layer. */
-	octeon_sg_entry_t *sg;
-
-};
-
 /** This structure is used by NIC driver to store information required
 	to free the sk_buff when the packet has been fetched by Octeon.
 	Bytes offset below assume worst-case of a 64-bit system. */
@@ -201,7 +177,7 @@ struct octnet_buf_free_info {
 	struct sk_buff *skb;
 
 	/** Bytes 17-24.  Pointer to gather list. */
-	struct octnic_gather *g;
+	struct octeon_gather *g;
 
 	/** Bytes 25-32. Physical address of skb->data or gather list. */
 	uint64_t dptr;

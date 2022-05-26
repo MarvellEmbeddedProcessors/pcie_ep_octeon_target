@@ -376,65 +376,6 @@ int octnet_setup_net_queues(int octeon_id, octnet_priv_t * priv)
 	return 0;
 }
 
-void octnet_delete_glist(octnet_priv_t * priv)
-{
-	struct octnic_gather *g;
-
-	do {
-		g = (struct octnic_gather *)
-		    cavium_list_delete_head(&priv->glist);
-		if (g) {
-			if (g->sg) {
-				cavium_free_dma((void *)((unsigned long)g->sg -
-							 g->adjust));
-			}
-			cavium_free_dma(g);
-		}
-	} while (g);
-}
-
-int octnet_setup_glist(octnet_priv_t * priv)
-{
-	int i;
-	struct octnic_gather *g;
-	uint32_t tx_qsize = priv->tx_qsize << 2;	/* glist size: 4xTxQsize, for TCP_RR/STREAM perf. */
-
-	CAVIUM_INIT_LIST_HEAD(&priv->glist);
-
-	for (i = 0; i < tx_qsize; i++) {	/* setup gnodes: TCP_RR/STREAM perf. */
-
-		g = cavium_malloc_dma(sizeof(struct octnic_gather),
-				      __CAVIUM_MEM_GENERAL);
-		if (g == NULL)
-			break;
-		memset(g, 0, sizeof(struct octnic_gather));
-
-		g->sg_size =
-		    (OCTNIC_MAX_SG * OCT_SG_ENTRY_SIZE);
-
-		g->sg = cavium_malloc_dma(g->sg_size + 8, __CAVIUM_MEM_GENERAL);
-		if (g->sg == NULL) {
-			cavium_free_dma(g);
-			break;
-		}
-
-		/* The gather component should be aligned on a 64-bit boundary. */
-		if (((unsigned long)g->sg) & 7) {
-			g->adjust = 8 - (((unsigned long)g->sg) & 7);
-			g->sg =
-			    (octeon_sg_entry_t *) ((unsigned long)g->sg +
-						   g->adjust);
-		}
-		cavium_list_add_tail(&g->list, &priv->glist);
-	}
-
-	if (i == tx_qsize)	/* all gnodes allocated: TCP_RR/STREAM perf. */
-		return 0;
-
-	octnet_delete_glist(priv);
-	return 1;
-}
-
 #if defined(OCTNIC_CTRL)
 void octnet_send_rx_ctrl_cmd(octnet_priv_t * priv, int start_stop)
 {
@@ -480,8 +421,6 @@ void octnet_destroy_nic_device(int octeon_id, int ifidx)
 
 	if (cavium_atomic_read(&priv->ifstate) & OCT_NIC_IFSTATE_REGISTERED)
 		unregister_netdev(pndev);	/* corrupting link_info structure ???? */
-
-	octnet_delete_glist(priv);
 
 	octnet_free_netdev(pndev);
 
@@ -683,11 +622,6 @@ octnet_setup_nic_device(int octeon_id, oct_link_info_t * link_info, int ifidx)
 
 	priv->tx_qsize = octeon_get_tx_qsize(octeon_id, priv->txq);
 	priv->rx_qsize = octeon_get_rx_qsize(octeon_id, priv->rxq);
-
-	if (octnet_setup_glist(priv)) {
-		cavium_error("OCTNIC: Gather list allocation failed\n");
-		goto setup_nic_dev_fail;
-	}
 
 	OCTNET_IFSTATE_SET(priv, OCT_NIC_IFSTATE_DROQ_OPS);
 
