@@ -270,7 +270,7 @@ octeon_device_t *octeon_allocate_device(int pci_id)
 	octeon_device[oct_idx] = oct;
 
 	oct->octeon_id = oct_idx;
-	octeon_assign_vf_dev_name(oct);
+	octeon_assign_dev_name(oct);
 
 out:
 	spin_unlock(&allocate_lock);
