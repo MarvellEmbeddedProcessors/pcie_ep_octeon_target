@@ -775,8 +775,6 @@ void cnxk_force_io_queues_off(octeon_device_t * oct)
 	}
 }
 
-extern oct_poll_fn_status_t
-octeon_get_app_mode(void *octptr, unsigned long arg UNUSED);
 int setup_cnxk_octeon_vf_device(octeon_device_t * oct)
 {
 	uint64_t reg_val = 0ULL;
@@ -838,8 +836,6 @@ int setup_cnxk_octeon_vf_device(octeon_device_t * oct)
 	oct->fn_list.disable_output_queue = cnxk_disable_vf_output_queue;
 
 	oct->fn_list.dump_registers = cnxk_dump_vf_initialized_regs;
-
-	octeon_get_app_mode(oct, 0);
 
 	return 0;
 }

@@ -797,8 +797,6 @@ void cn93xx_force_io_queues_off(octeon_device_t * oct)
 	}
 }
 
-extern oct_poll_fn_status_t
-octeon_get_app_mode(void *octptr, unsigned long arg UNUSED);
 int setup_cn98xx_octeon_vf_device(octeon_device_t * oct)
 {
 	uint64_t reg_val = 0ULL;
