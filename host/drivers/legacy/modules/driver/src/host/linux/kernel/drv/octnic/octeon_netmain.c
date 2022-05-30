@@ -506,7 +506,7 @@ static void octnet_setup_napi(octnet_priv_t * priv)
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
 static u16 octnet_select_queue(struct net_device *dev, struct sk_buff *skb,
 			       struct net_device *sb_dev)
-#elif defined(HAS_SELECT_QUEUE_FALLBACK)
+#elif defined(HAS_SELECT_QUEUE_FALLBACK) || (LINUX_VERSION_CODE >= KERNEL_VERSION(4, 19, 0))
 static u16 octnet_select_queue(struct net_device *dev, struct sk_buff *skb,
 				struct net_device *sb_dev,
 				select_queue_fallback_t fallback)

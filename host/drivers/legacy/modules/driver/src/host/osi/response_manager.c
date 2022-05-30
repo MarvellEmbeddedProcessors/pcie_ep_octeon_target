@@ -406,7 +406,9 @@ void process_noresponse_list(octeon_device_t * oct, octeon_instr_queue_t * iq)
 		switch(buftype) {
 			case NORESP_BUFTYPE_INSTR:
 				BUG_ON(1);
+#if __GNUC__ > 6
 				__attribute__((__fallthrough__));
+#endif
 			case NORESP_BUFTYPE_NET:
 			case NORESP_BUFTYPE_NET_SG:
 			case NORESP_BUFTYPE_OHSM_SEND:

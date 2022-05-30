@@ -532,7 +532,9 @@ void octeon_destroy_resources(octeon_device_t * oct_dev)
 	case OCT_DEV_INSTR_QUEUE_INIT_DONE:
 		if (oct_dev->app_mode == CVM_DRV_BASE_APP)
 			octeon_unregister_module_handler(CVM_DRV_BASE_APP);
+#if __GNUC__ > 6
 		__attribute__ ((__fallthrough__));
+#endif
 
 	case OCT_DEV_CORE_OK:
 		/* No more instructions will be forwarded. */
@@ -543,7 +545,9 @@ void octeon_destroy_resources(octeon_device_t * oct_dev)
 				 get_oct_state_string(&oct_dev->status));
 
 		cavium_sleep_timeout(CAVIUM_TICKS_PER_SEC / 10);
+#if __GNUC__ > 6
 		__attribute__ ((__fallthrough__));
+#endif
 
 	case OCT_DEV_STOPPING:
 #ifndef PCIE_AER
@@ -561,7 +565,9 @@ void octeon_destroy_resources(octeon_device_t * oct_dev)
 #endif
 		/* Disable the device */
 		pci_disable_device(oct_dev->pci_dev);
+#if __GNUC__ > 6
 		__attribute__ ((__fallthrough__));
+#endif
 #if 0
 		if (oct_dev->drv_flags & OCTEON_MBOX_CAPABLE)
 			octeon_delete_mbox(oct_dev);
@@ -569,18 +575,24 @@ void octeon_destroy_resources(octeon_device_t * oct_dev)
 
 	case OCT_DEV_RESP_LIST_INIT_DONE:
 		octeon_delete_response_list(oct_dev);
+#if __GNUC__ > 6
 		__attribute__ ((__fallthrough__));
+#endif
 
 
 	case OCT_DEV_DISPATCH_INIT_DONE:
 		octeon_delete_dispatch_list(oct_dev);
 		octeon_delete_poll_fn_list(oct_dev);
+#if __GNUC__ > 6
 		__attribute__ ((__fallthrough__));
+#endif
 
 	case OCT_DEV_PCI_MAP_DONE:
 		octeon_unmap_pci_barx(oct_dev, 0);
 		octeon_unmap_pci_barx(oct_dev, 1);
+#if __GNUC__ > 6
 		__attribute__ ((__fallthrough__));
+#endif
 
 	case OCT_DEV_RESET_CLEANUP_DONE:
 	case OCT_DEV_BEGIN_STATE:
