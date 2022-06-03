@@ -82,6 +82,7 @@ static DEFINE_PCI_DEVICE_TABLE(octeon_pci_tbl) = {
 	{0, 0, 0, 0, 0, 0, 0}
 };
 
+extern int octeon_sriov_configure(struct pci_dev *dev, int num_vfs);
 static struct pci_driver octeon_pci_driver = {
 	.name = "Octeon",
 	.id_table = octeon_pci_tbl,
@@ -95,6 +96,7 @@ static struct pci_driver octeon_pci_driver = {
 	/* For AER */
 	.err_handler = &octeon_err_handler,
 #endif
+	.sriov_configure = octeon_sriov_configure,
 };
 
 void get_base_compile_options(char *copts UNUSED)

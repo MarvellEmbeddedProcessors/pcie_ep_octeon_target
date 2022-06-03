@@ -554,7 +554,6 @@ int octeon_enable_msix_interrupts(octeon_device_t * oct)
 
 int octeon_disable_sriov(octeon_device_t * oct)
 {
-
 #if  LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,0)
 	/* If the device VFs are assigned,we cannot disable SR-IOV */
 	if (pci_vfs_assigned(oct->pci_dev)) {
@@ -565,6 +564,7 @@ int octeon_disable_sriov(octeon_device_t * oct)
 #endif
 	/* disable iov and allow time for transactions to clear */
 	pci_disable_sriov(oct->pci_dev);
+	oct->sriov_info.sriov_enabled = 0;
 	msleep(100);
 
 	return 0;
@@ -590,6 +590,58 @@ int octeon_enable_sriov(octeon_device_t * oct)
 		oct->sriov_info.sriov_enabled = 1;
 	}
 	return 0;
+}
+
+int octeon_sriov_configure(struct pci_dev *pdev, int num_vfs)
+{
+	octeon_device_t *oct_dev = pci_get_drvdata(pdev);
+	int srn, vf_srn, rpvf, max_nvfs;
+	octeon_cn93xx_pf_t *cn93xx;
+	uint64_t regval;
+	int i, j;
+
+	cn93xx = (octeon_cn93xx_pf_t *)oct_dev->chip;
+	oct_dev->sriov_info.num_vfs = num_vfs;
+	if(num_vfs == 0)
+		return octeon_disable_sriov(oct_dev);
+
+	regval = octeon_read_csr64(oct_dev, CN93XX_SDP_EPF_RINFO);
+	vf_srn = (regval & CN93XX_SDP_EPF_RINFO_SRN) >>
+		CN93XX_SDP_EPF_RINFO_SRN_BIT_POS;
+	rpvf = (regval & CN93XX_SDP_EPF_RINFO_RPVF) >>
+		CN93XX_SDP_EPF_RINFO_RPVF_BIT_POS;
+	max_nvfs = (regval & CN93XX_SDP_EPF_RINFO_NVFS) >>
+		CN93XX_SDP_EPF_RINFO_NVFS_BIT_POS;
+
+	if (num_vfs > max_nvfs) {
+		printk("Invalid VF count; Max supported VFs = %d\n", max_nvfs);
+		return -EINVAL;
+	}
+
+	/* Assign rings to VF */
+	for (j = 0; j < oct_dev->sriov_info.num_vfs; j++) {
+		srn = vf_srn + (j * rpvf);
+		for (i = 0; i < rpvf; i++) {
+			regval = octeon_read_csr64(oct_dev, CN93XX_SDP_EPVF_RING(srn + i));
+			cavium_print_msg("SDP_EPVF_RING[0x%llx]:0x%llx\n",
+					CN93XX_SDP_EPVF_RING(srn + i), regval);
+			regval = 0;
+			if (oct_dev->pcie_port == 2)
+				regval |= (8ULL << CN93XX_SDP_FUNC_SEL_EPF_BIT_POS);
+			regval |= (uint64_t)((j+1) << CN93XX_SDP_FUNC_SEL_FUNC_BIT_POS);
+
+			octeon_write_csr64(oct_dev, CN93XX_SDP_EPVF_RING(srn + i), regval);
+
+			regval = octeon_read_csr64(oct_dev, CN93XX_SDP_EPVF_RING(srn + i));
+			cavium_print_msg("SDP_EPVF_RING[0x%llx]:0x%llx\n",
+					CN93XX_SDP_EPVF_RING(srn + i), regval);
+		}
+	}
+	oct_dev->sriov_info.rings_per_vf = rpvf;
+	CFG_GET_NUM_VFS(cn93xx->conf, oct_dev->pf_num) = oct_dev->sriov_info.num_vfs;
+	CFG_GET_RINGS_PER_VF(cn93xx->conf, oct_dev->pf_num) = oct_dev->sriov_info.rings_per_vf;
+
+	return octeon_enable_sriov(oct_dev);
 }
 
 #define FW_STATUS_VSEC_ID 0xA3
