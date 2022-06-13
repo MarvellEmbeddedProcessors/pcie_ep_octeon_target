@@ -643,7 +643,12 @@ octnet_setup_nic_device(int octeon_id, oct_link_info_t * link_info, int ifidx)
 		cavium_error("OCTNIC: Device registration failed\n");
 		goto setup_nic_dev_fail;
 	}
-
+#ifdef CONFIG_PPORT
+	/* Re-Assign base device init_name modified by register_netdev */
+	snprintf(priv->init_name, 64, "%s%d",
+		 OCTEON_NETDEV_DEV_NAME, octeon_id);
+	pndev->dev.init_name = (const char *)priv->init_name;
+#endif
 	netif_carrier_off(pndev);
 
 	if (priv->linfo.link.s.status) {
