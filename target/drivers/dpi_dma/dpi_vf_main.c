@@ -116,23 +116,32 @@ int get_dpi_dma_dev_count(int handle)
 	type = handle & 0xf;
 
 	/* rpc gets all available devices, everyone else gets 1 device */
-	return (type == HANDLE_TYPE_RPC) ? num_vfs[instance] : (num_vfs[instance] != 0);
+	return (type == HANDLE_TYPE_RPC) ? num_vfs[instance] - 1: (num_vfs[instance] != 0);
 }
 EXPORT_SYMBOL(get_dpi_dma_dev_count);
 
 struct device *get_dpi_dma_dev(int handle, int index)
 {
-	int instance, actual_idx;
+	int instance, type, actual_idx;
 
 	instance = (handle >> 4) & 0xf;
 
 	if (index < 0 || index >= num_vfs[instance])
 		return NULL;
 
-	actual_idx = index;
+	type = handle & 0xf;
+
+
+	if (type == HANDLE_TYPE_RPC)
+	    actual_idx = index + 1;
+	else
+	    actual_idx = index;
 
 	if (instance)
 		actual_idx = num_vfs[0] + index;
+
+	if (actual_idx < 0 || actual_idx >= num_vfs[instance])
+		return NULL;
 
 	return (vf[actual_idx]) ? vf[actual_idx]->dev : NULL;
 }

@@ -892,6 +892,11 @@ static bool __handle_rxq(struct otxmn_dev *mdev, int q_idx, int budget)
 			return false;
 		}
 		skb = rq->skb_list[cons_idx];
+		if (skb == NULL) {
+			/* refill might have  failed */
+			printk(KERN_ERR "mgmt_net: no skb error\n");
+			return true;
+		}
 		rq->cmd_list[cmd_idx].host_addr[i] =  ptr->ptr;
 		rq->cmd_list[cmd_idx].local_addr[i] = rq->dma_list[cons_idx];
 		rq->comp_list[cons_idx].data = rq->cmd_list[cmd_idx].comp_data;
