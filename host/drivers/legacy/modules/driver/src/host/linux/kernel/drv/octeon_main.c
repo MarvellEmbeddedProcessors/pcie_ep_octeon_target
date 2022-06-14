@@ -595,51 +595,22 @@ int octeon_enable_sriov(octeon_device_t * oct)
 int octeon_sriov_configure(struct pci_dev *pdev, int num_vfs)
 {
 	octeon_device_t *oct_dev = pci_get_drvdata(pdev);
-	int srn, vf_srn, rpvf, max_nvfs;
-	octeon_cn93xx_pf_t *cn93xx;
-	uint64_t regval;
-	int i, j;
+	int vf_srn, rpvf;
 
-	cn93xx = (octeon_cn93xx_pf_t *)oct_dev->chip;
 	oct_dev->sriov_info.num_vfs = num_vfs;
 	if(num_vfs == 0)
 		return octeon_disable_sriov(oct_dev);
 
-	regval = octeon_read_csr64(oct_dev, CN93XX_SDP_EPF_RINFO);
-	vf_srn = (regval & CN93XX_SDP_EPF_RINFO_SRN) >>
-		CN93XX_SDP_EPF_RINFO_SRN_BIT_POS;
-	rpvf = (regval & CN93XX_SDP_EPF_RINFO_RPVF) >>
-		CN93XX_SDP_EPF_RINFO_RPVF_BIT_POS;
-	max_nvfs = (regval & CN93XX_SDP_EPF_RINFO_NVFS) >>
-		CN93XX_SDP_EPF_RINFO_NVFS_BIT_POS;
+	vf_srn = oct_dev->sriov_info.vf_srn;
+	rpvf = oct_dev->sriov_info.rings_per_vf;
 
-	if (num_vfs > max_nvfs) {
-		printk("Invalid VF count; Max supported VFs = %d\n", max_nvfs);
+	if (num_vfs > oct_dev->sriov_info.max_vfs) {
+		cavium_error("Invalid VF count; Max supported VFs = %d\n",
+			     oct_dev->sriov_info.max_vfs);
 		return -EINVAL;
 	}
 
-	/* Assign rings to VF */
-	for (j = 0; j < oct_dev->sriov_info.num_vfs; j++) {
-		srn = vf_srn + (j * rpvf);
-		for (i = 0; i < rpvf; i++) {
-			regval = octeon_read_csr64(oct_dev, CN93XX_SDP_EPVF_RING(srn + i));
-			cavium_print_msg("SDP_EPVF_RING[0x%llx]:0x%llx\n",
-					CN93XX_SDP_EPVF_RING(srn + i), regval);
-			regval = 0;
-			if (oct_dev->pcie_port == 2)
-				regval |= (8ULL << CN93XX_SDP_FUNC_SEL_EPF_BIT_POS);
-			regval |= (uint64_t)((j+1) << CN93XX_SDP_FUNC_SEL_FUNC_BIT_POS);
-
-			octeon_write_csr64(oct_dev, CN93XX_SDP_EPVF_RING(srn + i), regval);
-
-			regval = octeon_read_csr64(oct_dev, CN93XX_SDP_EPVF_RING(srn + i));
-			cavium_print_msg("SDP_EPVF_RING[0x%llx]:0x%llx\n",
-					CN93XX_SDP_EPVF_RING(srn + i), regval);
-		}
-	}
-	oct_dev->sriov_info.rings_per_vf = rpvf;
-	CFG_GET_NUM_VFS(cn93xx->conf, oct_dev->pf_num) = oct_dev->sriov_info.num_vfs;
-	CFG_GET_RINGS_PER_VF(cn93xx->conf, oct_dev->pf_num) = oct_dev->sriov_info.rings_per_vf;
+	oct_dev->fn_list.configure_sriov_vfs(oct_dev);
 
 	return octeon_enable_sriov(oct_dev);
 }

@@ -402,6 +402,7 @@ struct octeon_fn_list {
 	void (*enable_interrupt) (void *, uint8_t);
 	void (*disable_interrupt) (void *, uint8_t);
 
+	void (*configure_sriov_vfs) (struct _OCTEON_DEVICE *);
 	void (*enable_io_queues) (struct _OCTEON_DEVICE *);
 	void (*disable_io_queues) (struct _OCTEON_DEVICE *);
 	void (*enable_input_queue) (struct _OCTEON_DEVICE *, int);
@@ -440,6 +441,9 @@ typedef struct cvm_sriov_info {
 	uint32_t pf_srn;
 
 	uint32_t sriov_enabled;
+
+	uint32_t max_vfs;
+	uint32_t vf_srn;
 } octeon_sriov_info_t;
 
 typedef struct octeon_mbox_data {

@@ -1852,7 +1852,7 @@ octeon_get_app_mode(void *octptr, unsigned long arg UNUSED)
     octeon_probe_module_handlers(octeon_dev->octeon_id);
 
     // Enable SRIOV here, so PF is initialized first on rebind
-    if (octeon_enable_sriov(octeon_dev)) {
+    if (octeon_dev->sriov_info.num_vfs && octeon_enable_sriov(octeon_dev)) {
 	    cavium_error("OCTEON: Failed to enable SRIOV\n");
     }
     return OCT_POLL_FN_FINISHED;

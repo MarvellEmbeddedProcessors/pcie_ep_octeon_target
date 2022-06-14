@@ -1090,17 +1090,39 @@ static inline int lowerpow2roundup(int x)
 	return x - (x >> 1);
 }
 
+static void cnxk_configure_sriov_vfs(octeon_device_t *oct)
+{
+	octeon_cnxk_pf_t *cnxk = (octeon_cnxk_pf_t *) oct->chip;
+	uint64_t rpvf, srn;
+	uint64_t regval, i, j;
+
+	rpvf = oct->sriov_info.rings_per_vf;
+
+	for (j = 0; j < oct->sriov_info.num_vfs; j++) {
+		srn = oct->sriov_info.vf_srn + (j * rpvf);
+		for (i = 0; i < rpvf; i++) {
+			regval = 0;
+			if (oct->pcie_port == 2)
+				regval |= (8ULL << CNXK_SDP_FUNC_SEL_EPF_BIT_POS);
+			regval |= (uint64_t)((j+1) << CNXK_SDP_FUNC_SEL_FUNC_BIT_POS);
+
+			octeon_write_csr64(oct, CNXK_SDP_EPVF_RING(srn + i), regval);
+		}
+	}
+
+	CFG_GET_NUM_VFS(cnxk->conf, oct->pf_num) = oct->sriov_info.num_vfs;
+	CFG_GET_RINGS_PER_VF(cnxk->conf, oct->pf_num) = oct->sriov_info.rings_per_vf;
+}
 
 static int
 octeon_get_fw_info(octeon_device_t *oct)
 {
+	octeon_cnxk_pf_t *cnxk = (octeon_cnxk_pf_t *) oct->chip;
 	uint64_t npfs = 0, rppf = 0, pf_srn = 0;
 	uint64_t rpvf = 0, vf_srn = 0;
 	uint64_t max_nvfs;
-	uint32_t srn;
-	int i, j;
 	u64 regval;
-	octeon_cnxk_pf_t *cnxk = (octeon_cnxk_pf_t *) oct->chip;
+	int i;
 
 	regval = octeon_read_csr64(oct,
 			CNXK_SDP_MAC_PF_RING_CTL(oct->pcie_port));
@@ -1148,25 +1170,11 @@ octeon_get_fw_info(octeon_device_t *oct)
 	oct->drv_flags |= OCTEON_MBOX_CAPABLE;
 
 	/* Assign rings to VF */
-	for (j = 0; j < oct->sriov_info.num_vfs; j++) {
-		srn = vf_srn + (j * rpvf);
-		for (i = 0; i < rpvf; i++) {
-			regval = octeon_read_csr64(oct, CNXK_SDP_EPVF_RING(srn + i));
-			cavium_print_msg("SDP_EPVF_RING[0x%llx]:0x%llx\n",
-					CNXK_SDP_EPVF_RING(srn + i), regval);
-			regval = 0;
-			if (oct->pcie_port == 2)
-				regval |= (8 << CNXK_SDP_FUNC_SEL_EPF_BIT_POS);
-			regval |= ((j+1) << CNXK_SDP_FUNC_SEL_FUNC_BIT_POS);
-
-			octeon_write_csr64(oct, CNXK_SDP_EPVF_RING(srn + i), regval);
-
-			regval = octeon_read_csr64(oct, CNXK_SDP_EPVF_RING(srn + i));
-			cavium_print_msg("SDP_EPVF_RING[0x%llx]:0x%llx\n",
-					CNXK_SDP_EPVF_RING(srn + i), regval);
-		}
-	}
 	oct->sriov_info.rings_per_vf = rpvf;
+	oct->sriov_info.vf_srn = vf_srn;
+	oct->sriov_info.max_vfs = max_nvfs;
+	cnxk_configure_sriov_vfs(oct);
+
 	/** All the remaining queues are handled by Physical Function */
 	//oct->sriov_info.pf_srn = oct->octeon_id * num_rings_per_pf_pt;
 	oct->sriov_info.pf_srn = pf_srn;
@@ -1248,6 +1256,7 @@ int setup_cnxk_octeon_pf_device(octeon_device_t * oct)
 	oct->fn_list.force_io_queues_off = cnxk_force_io_queues_off;
 
 	oct->fn_list.dump_registers = cnxk_dump_pf_initialized_regs;
+	oct->fn_list.configure_sriov_vfs = cnxk_configure_sriov_vfs;
 
 	cnxk_setup_reg_address(oct);
 
