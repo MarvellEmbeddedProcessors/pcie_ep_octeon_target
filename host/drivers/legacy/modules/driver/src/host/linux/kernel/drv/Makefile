@@ -106,8 +106,8 @@ all: check_cnnic
 	@rm -f $(BINDIR) 2> /dev/null; mkdir -p $(BINDIR);
 	@rm -f $(BINDIR)/octeon_drv.ko; 
 	@ln -s $(PWD)/octeon_drv.ko $(BINDIR) ; 
-	@awk 'BEGIN {print "EXTRA_CFLAGS += \t\\"} {print "-D"$$2"=vf_"$$2"\t\\"}' Module.symvers  > redefine_symbols.mk
-
+	@awk 'BEGIN {print "EXTRA_CFLAGS += \t\\"} {print "-D"$$2"=vf_"$$2"\t\\"}' Module.symvers  > redefine_symbols.mk ;
+	@awk '!/pport/' redefine_symbols.mk > tmp.mk && mv tmp.mk redefine_symbols.mk
 
 clean: check_cnnic
 	@rm -rf $(BINDIR)/octeon_drv.ko *.ko .*.cmd *.mod.* *.o *~ .tmp_versions .*.o.d
