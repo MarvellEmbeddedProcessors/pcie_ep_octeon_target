@@ -1,0 +1,9 @@
+1) soc autodetection.
+2) One mbox per pf.
+   In octeon_ep driver, figure out unique pf using
+   SR-IOV Function Dependency Link Register
+3) Set fw-ready bit to 1 in pcie config space, reset to 0 while restarting
+   look at drivers/soc/marvell/octeontx2-sdp/sdp.c/set_firmware_ready function
+4) Add keep-alive mbox message, send it periodically from app main loop
+5) support parsing of idx_range() in config file
+

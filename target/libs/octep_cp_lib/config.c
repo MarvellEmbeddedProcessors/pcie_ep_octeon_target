@@ -1,0 +1,408 @@
+#include <stdlib.h>
+#include <errno.h>
+#include <libconfig.h>
+
+#include "octep_cp_lib.h"
+#include "cp_log.h"
+#include "cp_lib.h"
+
+/**
+ * Object heirarchy
+ * *(0 or more), +(1 or more)
+ *
+ * soc = { pem* };
+ * pem = { idx, pf* };
+ * pf = { idx, if, vf* };
+ * vf = { idx, if };
+ * if = { mtu, mac_addr, link_state, rx_state, autoneg, pause_mode, speed,
+ *        supported_modes, advertisedd_modes
+ * }
+ */
+
+#define CFG_TOKEN_SOC		"soc"
+#define CFG_TOKEN_BASE_SOC	"base_soc"
+#define CFG_TOKEN_PEMS		"pems"
+#define CFG_TOKEN_PFS		"pfs"
+#define CFG_TOKEN_VFS		"vfs"
+#define CFG_TOKEN_IDX		"idx"
+#define CFG_TOKEN_IF_MTU	"mtu"
+#define CFG_TOKEN_IF_MAC_ADDR	"mac_addr"
+#define CFG_TOKEN_IF_LSTATE	"link_state"
+#define CFG_TOKEN_IF_RSTATE	"rx_state"
+#define CFG_TOKEN_IF_AUTONEG	"autoneg"
+#define CFG_TOKEN_IF_PMODE	"pause_mode"
+#define CFG_TOKEN_IF_SPEED	"speed"
+#define CFG_TOKEN_IF_SMODES	"supported_modes"
+#define CFG_TOKEN_IF_AMODES	"advertised_modes"
+
+static void print_if(struct cp_lib_if *iface)
+{
+	CP_LIB_LOG(INFO, CONFIG, " mac_addr: %02x:%02x:%02x:%02x:%02x:%02x\n",
+		   iface->mac_addr[0], iface->mac_addr[1],
+		   iface->mac_addr[2], iface->mac_addr[3],
+		   iface->mac_addr[4], iface->mac_addr[5]);
+	CP_LIB_LOG(INFO, CONFIG, " mtu: %d, link: %d, rx: %d, autoneg: 0x%x\n",
+		   iface->mtu, iface->link_state, iface->rx_state,
+		   iface->autoneg);
+	CP_LIB_LOG(INFO, CONFIG, " pause_mode: 0x%x, speed: %d\n",
+		   iface->pause_mode, iface->speed);
+	CP_LIB_LOG(INFO, CONFIG,
+		   " supported_modes: 0x%lx, advertised_modes: 0x%lx\n",
+		   iface->supported_modes, iface->advertised_modes);
+}
+
+static void print_config()
+{
+	struct cp_lib_pem *pem;
+	struct cp_lib_pf *pf;
+	struct cp_lib_vf *vf;
+
+	pem = cfg.pems;
+	while (pem) {
+		pf = pem->pfs;
+		while (pf) {
+			CP_LIB_LOG(INFO, CONFIG, "[%d]:[%d]\n",
+				   pem->idx, pf->idx);
+			print_if(&pf->iface);
+			vf = pf->vfs;
+			while (vf) {
+				CP_LIB_LOG(INFO, CONFIG,
+					   "[%d]:[%d]:[%d]\n",
+					   pem->idx, pf->idx, vf->idx);
+				print_if(&vf->iface);
+				vf = vf->next;
+			}
+			pf = pf->next;
+		}
+		pem = pem->next;
+	}
+}
+
+static struct cp_lib_pem *create_pem(int idx)
+{
+	struct cp_lib_pem *pem;
+
+	pem = calloc(sizeof(struct cp_lib_pem), 1);
+	if (!pem)
+		return NULL;
+
+	pem->idx = idx;
+	if(cfg.pems)
+		pem->next = cfg.pems;
+
+	cfg.pems = pem;
+	cfg.npem++;
+
+	return pem;
+}
+
+static struct cp_lib_pem *get_pem(int idx)
+{
+	struct cp_lib_pem *pem;
+
+	if (!cfg.pems)
+		return NULL;
+
+	pem = cfg.pems;
+	while (pem) {
+		if (pem->idx == idx)
+			return pem;
+		pem = pem->next;
+	}
+
+	return pem;
+}
+
+static struct cp_lib_pf *create_pf(struct cp_lib_pem *pemcfg, int idx)
+{
+	struct cp_lib_pf *pf;
+
+	pf = calloc(sizeof(struct cp_lib_pf), 1);
+	if (!pf)
+		return NULL;
+
+	pf->idx = idx;
+	if(pemcfg->pfs)
+		pf->next = pemcfg->pfs;
+
+	pemcfg->pfs = pf;
+	pemcfg->npf++;
+
+	return pf;
+}
+
+static struct cp_lib_pf *get_pf(struct cp_lib_pem *pemcfg, int idx)
+{
+	struct cp_lib_pf *pf;
+
+	if (!pemcfg->pfs)
+		return NULL;
+
+	pf = pemcfg->pfs;
+	while (pf) {
+		if (pf->idx == idx)
+			return pf;
+		pf = pf->next;
+	}
+
+	return pf;
+}
+
+static struct cp_lib_vf *create_vf(struct cp_lib_pf *pfcfg, int idx)
+{
+	struct cp_lib_vf *vf;
+
+	vf = calloc(sizeof(struct cp_lib_vf), 1);
+	if (!vf)
+		return NULL;
+
+	vf->idx = idx;
+	if(pfcfg->vfs)
+		vf->next = pfcfg->vfs;
+
+	pfcfg->vfs = vf;
+	pfcfg->nvf++;
+
+	return vf;
+}
+
+static struct cp_lib_vf *get_vf(struct cp_lib_pf *pfcfg, int idx)
+{
+	struct cp_lib_vf *vf;
+
+	if (!pfcfg->vfs)
+		return NULL;
+
+	vf = pfcfg->vfs;
+	while (vf) {
+		if (vf->idx == idx)
+			return vf;
+		vf = vf->next;
+	}
+
+	return vf;
+}
+
+static int parse_if(config_setting_t *lcfg, struct cp_lib_if *iface)
+{
+	config_setting_t *mac;
+	int ival, i, n;
+
+	if (config_setting_lookup_int(lcfg, CFG_TOKEN_IF_MTU, &ival))
+		iface->mtu = ival;
+
+	mac = config_setting_get_member(lcfg, CFG_TOKEN_IF_MAC_ADDR);
+	if (mac) {
+		n = config_setting_length(mac);
+		if (n > ETH_ALEN)
+			n = ETH_ALEN;
+		for (i=0; i<n; i++)
+			iface->mac_addr[i] = config_setting_get_int_elem(mac,
+									 i);
+	}
+	if (config_setting_lookup_int(lcfg, CFG_TOKEN_IF_LSTATE, &ival))
+		iface->link_state = ival;
+	if (config_setting_lookup_int(lcfg, CFG_TOKEN_IF_RSTATE, &ival))
+		iface->rx_state = ival;
+	if (config_setting_lookup_int(lcfg, CFG_TOKEN_IF_AUTONEG, &ival))
+		iface->autoneg = ival;
+	if (config_setting_lookup_int(lcfg, CFG_TOKEN_IF_PMODE, &ival))
+		iface->pause_mode = ival;
+	if (config_setting_lookup_int(lcfg, CFG_TOKEN_IF_SPEED, &ival))
+		iface->speed = ival;
+	if (config_setting_lookup_int(lcfg, CFG_TOKEN_IF_SMODES, &ival))
+		iface->supported_modes = ival;
+	if (config_setting_lookup_int(lcfg, CFG_TOKEN_IF_AMODES, &ival))
+		iface->advertised_modes = ival;
+
+	return 0;
+}
+
+static int parse_pf(config_setting_t *pf, struct cp_lib_pf *pfcfg)
+{
+	config_setting_t *vfs, *vf;
+	int nvfs, i, idx, err;
+	struct cp_lib_vf *vfcfg;
+
+	err = parse_if(pf, &pfcfg->iface);
+	if (err)
+		return err;
+
+	vfs = config_setting_get_member(pf, CFG_TOKEN_VFS);
+	if (!vfs)
+		return 0;
+
+	nvfs = config_setting_length(vfs);
+	for (i=0; i<nvfs; i++) {
+		vf = config_setting_get_elem(vfs, i);
+		if (!vf)
+			continue;
+		if (config_setting_lookup_int(vf, CFG_TOKEN_IDX, &idx) ==
+		    CONFIG_FALSE)
+			continue;
+		vfcfg = get_vf(pfcfg, idx);
+		if (!vfcfg) {
+			vfcfg = create_vf(pfcfg, idx);
+			if (!vfcfg) {
+				CP_LIB_LOG(ERR, CONFIG, "Oom for pf[%d]vf[%d]\n",
+					   pfcfg->idx, idx);
+				continue;
+			}
+		}
+		err = parse_if(vf, &vfcfg->iface);
+		if (err)
+			return err;
+	}
+
+	return 0;
+}
+
+static int parse_pem(config_setting_t *pem, struct cp_lib_pem *pemcfg)
+{
+	config_setting_t *pfs, *pf;
+	int npfs, i, idx, err;
+	struct cp_lib_pf *pfcfg;
+
+	pfs = config_setting_get_member(pem, CFG_TOKEN_PFS);
+	if (!pfs)
+		return 0;
+
+	npfs = config_setting_length(pfs);
+	for (i=0; i<npfs; i++) {
+		pf = config_setting_get_elem(pfs, i);
+		if (!pf)
+			continue;
+		if (config_setting_lookup_int(pf, CFG_TOKEN_IDX, &idx) ==
+		    CONFIG_FALSE)
+			continue;
+		pfcfg = get_pf(pemcfg, idx);
+		if (!pfcfg) {
+			pfcfg = create_pf(pemcfg, idx);
+			if (!pfcfg) {
+				CP_LIB_LOG(ERR, CONFIG, "Oom for pem[%d]pf[%d]\n",
+			   		   pemcfg->idx, idx);
+				continue;
+			}
+		}
+		err = parse_pf(pf, pfcfg);
+		if (err)
+			return err;
+	}
+
+	return 0;
+}
+
+static int parse_pems(config_setting_t *pems)
+{
+	config_setting_t *pem;
+	int npems, i, idx, err;
+	struct cp_lib_pem *pemcfg;
+
+	npems = config_setting_length(pems);
+	for (i=0; i<npems; i++) {
+		pem = config_setting_get_elem(pems, i);
+		if (!pem)
+			continue;
+		if (config_setting_lookup_int(pem, CFG_TOKEN_IDX, &idx) ==
+		    CONFIG_FALSE)
+			continue;
+		pemcfg = get_pem(idx);
+		if (!pemcfg) {
+			pemcfg = create_pem(idx);
+			if (!pemcfg) {
+				CP_LIB_LOG(ERR, CONFIG, "Oom for pem[%d]\n", idx);
+				continue;
+			}
+		}
+		err = parse_pem(pem, pemcfg);
+		if (err)
+			return err;
+	}
+
+	return 0;
+}
+
+static int parse_base_config(const char* cfg_file_path)
+{
+	config_setting_t *lcfg, *pems;
+	config_t fcfg;
+	int err;
+
+	CP_LIB_LOG(INFO, CONFIG, "base config file : %s\n", cfg_file_path);
+	config_init(&fcfg);
+	if (!config_read_file(&fcfg, cfg_file_path)) {
+		CP_LIB_LOG(ERR, CONFIG, "%s:%d - %s\n",
+			   config_error_file(&fcfg),
+			   config_error_line(&fcfg),
+			   config_error_text(&fcfg));
+		config_destroy(&fcfg);
+		return(EXIT_FAILURE);
+	}
+
+	lcfg = config_lookup(&fcfg, CFG_TOKEN_SOC);
+	if (!lcfg) {
+		config_destroy(&fcfg);
+		return -EINVAL;
+	}
+
+	pems = config_setting_get_member(lcfg, CFG_TOKEN_PEMS);
+	if (pems) {
+		err = parse_pems(pems);
+		if (err) {
+			config_destroy(&fcfg);
+			return err;
+		}
+	}
+
+	config_destroy(&fcfg);
+
+	return 0;
+}
+
+int config_parse_file(const char *cfg_file_path)
+{
+	config_setting_t *lcfg, *pems;
+	const char *str;
+	config_t fcfg;
+	int err;
+
+	CP_LIB_LOG(INFO, CONFIG, "config file : %s\n", cfg_file_path);
+	config_init(&fcfg);
+	if (!config_read_file(&fcfg, cfg_file_path)) {
+		CP_LIB_LOG(ERR, CONFIG, "%s:%d - %s\n",
+			   config_error_file(&fcfg),
+			   config_error_line(&fcfg),
+			   config_error_text(&fcfg));
+		config_destroy(&fcfg);
+		return -EINVAL;
+	}
+
+	lcfg = config_lookup(&fcfg, CFG_TOKEN_SOC);
+	if (!lcfg) {
+		config_destroy(&fcfg);
+		return -EINVAL;
+	}
+
+	if (config_setting_lookup_string(lcfg, CFG_TOKEN_BASE_SOC, &str)) {
+		err = parse_base_config(str);
+		if (err) {
+			config_destroy(&fcfg);
+			return err;
+		}
+	}
+
+	pems = config_setting_get_member(lcfg, CFG_TOKEN_PEMS);
+	if (pems) {
+		err = parse_pems(pems);
+		if (err) {
+			config_destroy(&fcfg);
+			return err;
+		}
+	}
+
+	config_destroy(&fcfg);
+
+	print_config();
+
+	return 0;
+}
