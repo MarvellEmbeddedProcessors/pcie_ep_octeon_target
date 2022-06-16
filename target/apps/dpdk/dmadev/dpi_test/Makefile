@@ -9,13 +9,11 @@ APP = dpi_test
 SRCS-y := main.c
 
 # Build using pkg-config variables if possible
-ifeq ($(TARGET_DIR),)
-$(error "Please provide TARGET_DIR=<dpdk-21.11 install directory>.")
+ifeq ($(PKG_CONFIG_PATH),)
+$(error "Please provide PKG_CONFIG_PATH=<path to 21.11 libdpdk.pc and its dependencies>.")
 endif
 
-DPDK_PC=$(TARGET_DIR)/lib/pkgconfig
-PKGCONF ?= PKG_CONFIG_PATH=$(DPDK_PC) pkg-config
-# PKG_CONFIG_SYSROOT_DIR=$(TARGET_DIR)
+PKGCONF ?= PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config
 
 ifeq ($(shell $(PKGCONF) --atleast-version="21.11.0" libdpdk && echo 0),0)
 ifeq ($(shell $(PKGCONF) --exists libdpdk && echo 0),0)
