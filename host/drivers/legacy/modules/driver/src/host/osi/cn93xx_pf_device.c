@@ -1114,7 +1114,6 @@ octeon_get_fw_info(octeon_device_t *oct)
 	uint64_t rpvf = 0, vf_srn = 0;
 	uint64_t max_nvfs;
 	u64 regval;
-	int i;
 
 	regval = octeon_read_csr64(oct,
 			CN93XX_SDP_MAC_PF_RING_CTL(oct->pcie_port));
@@ -1151,27 +1150,9 @@ octeon_get_fw_info(octeon_device_t *oct)
 	if (oct->sriov_info.num_vfs > max_nvfs)
 		oct->sriov_info.num_vfs = max_nvfs;
 	npfs = 1;
-	/* Assign rings to PF */
-	for (i = 0; i < rppf; i++) {
-		regval = octeon_read_csr64(oct, CN93XX_SDP_EPVF_RING(pf_srn + i));
-		cavium_print_msg("SDP_EPVF_RING[0x%llx]:0x%llx\n",
-				CN93XX_SDP_EPVF_RING(pf_srn + i), regval);
-		regval = 0;
-		if (oct->pcie_port == 2)
-			regval |= (8ULL << CN93XX_SDP_FUNC_SEL_EPF_BIT_POS);
-		regval |= (0ULL << CN93XX_SDP_FUNC_SEL_FUNC_BIT_POS);
-
-		octeon_write_csr64(oct, CN93XX_SDP_EPVF_RING(pf_srn + i), regval);
-
-		regval = octeon_read_csr64(oct, CN93XX_SDP_EPVF_RING(pf_srn + i));
-		cavium_print_msg("SDP_EPVF_RING[0x%llx]:0x%llx\n",
-				CN93XX_SDP_EPVF_RING(pf_srn + i), regval);
-	}
-
 	oct->drv_flags |= OCTEON_SRIOV_MODE;
 	oct->drv_flags |= OCTEON_MBOX_CAPABLE;
 
-	/* Assign rings to VF */
 	oct->sriov_info.rings_per_vf = rpvf;
 	oct->sriov_info.vf_srn = vf_srn;
 	oct->sriov_info.max_vfs = max_nvfs;
