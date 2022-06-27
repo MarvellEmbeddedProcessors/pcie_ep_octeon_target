@@ -1,7 +1,7 @@
 #SPDX-License-Identifier: BSD-3-Clause
 #Copyright (c) 2022 Marvell.
 
-PLAT ?= x86_64
+PLAT ?= aarch64
 
 ifeq ($(PLAT), aarch64)
 CROSS_COMPILE=aarch64-marvell-linux-gnu-
@@ -19,18 +19,10 @@ ifeq ($(CP_LIB_DIR),)
 $(error "CP_LIB_DIR not defined. Aborting...")
 endif
 
-ifeq ($(PLAT), x86_64)
-LIBCONFIG_PKGCONFIG_PATH ?= /usr/lib/x86_64-linux-gnu/pkgconfig
-else
-ifeq ($(LIBCONFIG_PKGCONFIG_PATH),)
-$(error Provide path to libconfig.pc with LIBCONFIG_PKGCONFIG_PATH)
-endif
-endif
-
-LIBCONFIG_PKGCONF = PKG_CONFIG_PATH=$(LIBCONFIG_PKGCONFIG_PATH) pkg-config
+LIBCONFIG_PKGCONF = PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config
 
 ifneq ($(shell $(LIBCONFIG_PKGCONF) --exists libconfig && echo 1),1)
-$(info Could not find libconfig.pc in $(LIBCONFIG_PKGCONFIG_PATH))
+$(info Could not find libconfig.pc in $(PKG_CONFIG_PATH))
 $(info Use LIBCONFIG_PKGCONFIG_PATH to provide correct path to libconfig.pc)
 $(error Aborting...)
 endif

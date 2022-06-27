@@ -1,0 +1,71 @@
+Marvell Control Plane Library Documentation {#MarvellDocumentation}
+===========================================
+
+```
+  Copyright (C) 2022 Marvell.
+  All rights reserved.
+  SPDX-License-Identifier: BSD-3-Clause
+```
+
+Library Directory structure {#section1}
+=======================
+
+Tree below describes the most important directories in library structure for end user::
+
+    octep_cp_lib
+    |-- include - Public header files for library users
+    |-- compat - compatibility header files for different platforms
+    |-- soc - internal api implementation for different platforms
+
+
+Build pre-requisites {#section2}
+========================
+
+The library requires a set of packages to be built. At minimum the library requires the following
+packages:
+
+* libconfig
+* pkg-config
+
+Libconfig {#section3}
+---------
+
+Library uses configuration files that are being read and parsed by the libconfig library so
+the cross-compiler needs to have access to it.  To cross-compile libconfig download its sources
+from [Github](https://hyperrealm.github.io/libconfig/dist/libconfig-1.7.2.tar.gz) then unpack
+and compile it via:
+
+LIBCONFIG_DIR is directory where libconfig tarball is extracted
+BUILD_DIR is directory where extracted libconfig code will be built
+PREFIX_DIR is directory where libconfig artifacts will be installed
+
+```bash
+    mkdir -p $BUILD_DIR/libconfig
+    cd $BUILD_DIR/libconfig
+    $LIBCONFIG_DIR/configure --host=aarch64-marvell-linux-gnu \
+                             --prefix=$PREFIX_DIR
+    make all
+    make install
+```
+
+Library {#section4}
+---
+
+LIB_DIR is location of library source code
+PREFIX_DIR is the location of installed dependencies
+
+```bash
+
+  cd $LIB_DIR
+  make PKG_CONFIG_PATH=$PREFIX_DIR/lib
+```
+
+Optional parameters for make are
+
+- PLAT=<aarch64(default)/x86_64>
+
+
+Following artifacts will be available in ``LIB_DIR``:
+
+- Libraries liboctep_cp.a and liboctep_cp.so
+

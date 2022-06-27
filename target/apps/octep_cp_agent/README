@@ -1,0 +1,81 @@
+Marvell Control Plane App Documentation {#MarvellDocumentation}
+===========================================
+
+```
+  Copyright (C) 2022 Marvell.
+  All rights reserved.
+  SPDX-License-Identifier: BSD-3-Clause
+```
+
+Build pre-requisites {#section2}
+========================
+
+The application requires a set of packages to be built. At minimum the application requires the following
+packages:
+
+* libconfig
+* pkg-config
+* liboctep_cp.a
+* liboctep_cp.so
+
+Libconfig {#section3}
+---------
+
+Application uses configuration files that are being read and parsed by the libconfig library so
+the cross-compiler needs to have access to it.  To cross-compile libconfig download its sources
+from [Github](https://hyperrealm.github.io/libconfig/dist/libconfig-1.7.2.tar.gz) then unpack
+and compile it via:
+
+LIBCONFIG_DIR is directory where libconfig tarball is extracted
+BUILD_DIR is directory where extracted libconfig code will be built
+PREFIX_DIR is directory where libconfig artifacts will be installed
+
+```bash
+    mkdir -p $BUILD_DIR/libconfig
+    cd $BUILD_DIR/libconfig
+    $LIBCONFIG_DIR/configure --host=aarch64-marvell-linux-gnu \
+                             --prefix=$PREFIX_DIR
+    make all
+    make install
+```
+
+
+Application {#section4}
+-----------
+
+APP_DIR is location of application source code
+PREFIX_DIR is the location of installed dependencies
+CP_LIB_DIR is the location of octep_cp_lib library binaries (liboctep_cp.so, liboctep_cp.a)
+
+```bash
+
+  cd $APP_DIR
+  make PKG_CONFIG_PATH=$PREFIX_DIR/lib CP_LIB_DIR=<path to liboctep_cp.*>
+```
+
+Optional parameters for make are
+
+- PLAT=<aarch64(default)/x86_64>
+
+
+Following artifacts will be available in ``APP_DIR``:
+
+- octep_cp_agent
+- octep_cp_agent-shared
+
+
+How to run application {#section5}
+----------------------
+Copy following files to a directory RUN_DIR
+
+$CP_LIB_DIR/liboctep_cp.so
+$APP_DIR/octep_cp_agent
+$APP_DIR/octep_cp_agent-shared
+$APP_DIR/*.cfg
+
+Run the app as follows
+
+```bash
+
+  cd $RUN_DIR
+  ./octep_cp_agent `pwd`/app.cfg
