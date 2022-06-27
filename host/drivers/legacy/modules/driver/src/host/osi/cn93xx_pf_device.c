@@ -123,6 +123,23 @@ static int cn93xx_pf_soft_reset(octeon_device_t * oct)
 	octeon_write_csr64(oct, CN93XX_SDP_WIN_WR_MASK_REG, 0xFF);
 	return 0;
 }
+/*
+ * Have separate 98xx soft reset function, as we don't want to
+ * reset the 98xx on module removal like we do the other chips.
+ */
+static int cn98xx_pf_soft_reset(octeon_device_t * oct)
+{
+	/*
+	 * Set firmware status to READY, as after module removal the
+	 * device is ready for the driver to be loaded again.
+	 */
+	OCTEON_PCI_WIN_WRITE(oct, CN93XX_PEMX_CFG_WR((u64)oct->pcie_port),
+			     0x84d0ull | (FW_STATUS_READY << 32));
+
+	/* restore the  reset value */
+	octeon_write_csr64(oct, CN93XX_SDP_WIN_WR_MASK_REG, 0xFF);
+	return 0;
+}
 
 void cn93xx_enable_error_reporting(octeon_device_t * oct)
 {
@@ -1214,7 +1231,7 @@ int setup_cn98xx_octeon_pf_device(octeon_device_t * oct)
 	oct->fn_list.interrupt_handler = cn93xx_interrupt_handler;
 	oct->fn_list.msix_interrupt_handler = cn93xx_pf_msix_interrupt_handler;
 
-	oct->fn_list.soft_reset = cn93xx_pf_soft_reset;
+	oct->fn_list.soft_reset = cn98xx_pf_soft_reset;
 	oct->fn_list.setup_device_regs = cn93xx_setup_pf_device_regs;
 	oct->fn_list.reinit_regs = cn93xx_reinit_regs;
 	oct->fn_list.update_iq_read_idx = cn93xx_update_read_index;

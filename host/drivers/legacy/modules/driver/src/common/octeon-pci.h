@@ -21,5 +21,6 @@ enum octeon_pcie_mrrs {
 	PCIE_MRRS_4096B = 5
 };
 
+#define FW_STATUS_READY         1ULL
 #define FW_STATUS_RUNNING	2ULL
 #endif
