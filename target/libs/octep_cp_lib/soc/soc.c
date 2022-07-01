@@ -10,39 +10,39 @@
 #include "cp_log.h"
 #include "cp_lib.h"
 #include "octep_ctrl_mbox.h"
-#include "otx2.h"
-#include "otx2_loop.h"
-#include "otx2_nic.h"
+#include "cnxk.h"
+#include "cnxk_loop.h"
+#include "cnxk_nic.h"
 
 static struct cp_lib_soc_ops ops[CP_LIB_SOC_MAX][OCTEP_CP_MODE_MAX] = {
-	/* otx2 */
+	/* cnxk */
 	{
 		{
-			otx2_loop_init,
-			otx2_loop_poll,
-			otx2_loop_process_sigusr1,
-			otx2_loop_uninit
+			cnxk_loop_init,
+			cnxk_loop_poll,
+			cnxk_loop_process_sigusr1,
+			cnxk_loop_uninit
 		},
 		{
-			otx2_nic_init,
-			otx2_nic_poll,
-			otx2_nic_process_sigusr1,
-			otx2_nic_uninit
+			cnxk_nic_init,
+			cnxk_nic_poll,
+			cnxk_nic_process_sigusr1,
+			cnxk_nic_uninit
 		}
 	},
 	/* cnxk */
 	{
 		{
-			otx2_loop_init,
-			otx2_loop_poll,
-			otx2_loop_process_sigusr1,
-			otx2_loop_uninit
+			cnxk_loop_init,
+			cnxk_loop_poll,
+			cnxk_loop_process_sigusr1,
+			cnxk_loop_uninit
 		},
 		{
-			otx2_nic_init,
-			otx2_nic_poll,
-			otx2_nic_process_sigusr1,
-			otx2_nic_uninit
+			cnxk_nic_init,
+			cnxk_nic_poll,
+			cnxk_nic_process_sigusr1,
+			cnxk_nic_uninit
 		}
 	}
 };

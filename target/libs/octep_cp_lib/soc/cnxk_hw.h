@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright (c) 2022 Marvell.
  */
-#ifndef __OTX2_HW_H__
-#define __OTX2_HW_H__
+#ifndef __CNXK_HW_H__
+#define __CNXK_HW_H__
 
 /* pem0 bar4 index8 address, this is a chunk of 4mb */
 #define PEMX_BASE(a)		(0x8E0000000000ull | (unsigned long long)a<<36)
@@ -134,4 +134,4 @@ struct octep_iface_tx_stats {
 	uint64_t ctl;
 };
 
-#endif /* __OTX2_HW_H__ */
+#endif /* __CNXK_HW_H__ */

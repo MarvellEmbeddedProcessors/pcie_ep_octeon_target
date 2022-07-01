@@ -21,7 +21,7 @@ enum {
 	CP_LIB_LOGTYPE_LOOP,	/**< Log related to loop mode. */
 	CP_LIB_LOGTYPE_NIC,	/**< Log related to nic mode. */
 	CP_LIB_LOGTYPE_SOC,	/**< Log related to soc abstraction. */
-	CP_LIB_LOGTYPE_OTX2	/**< Log related to otx2 soc. */
+	CP_LIB_LOGTYPE_CNXK	/**< Log related to cnxk soc's. */
 };
 
 static int

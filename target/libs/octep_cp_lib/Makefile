@@ -35,11 +35,11 @@ CFLAGS = -O3 -Werror -Wall -fPIC -g \
 LDFLAGS = -shared -fvisibility=hidden $(LIBCONFIG_SHARED_LIB_FLAGS)
 
 SRCS = main.c config.c
-SRCS += soc/soc.c soc/otx2.c soc/otx2_loop.c soc/otx2_nic.c
+SRCS += soc/soc.c soc/cnxk.c soc/cnxk_loop.c soc/cnxk_nic.c
 SRCS += soc/octep_ctrl_mbox.c
 
 OBJS = main.o config.o
-OBJS += soc.o otx2.o otx2_loop.o otx2_nic.o octep_ctrl_mbox.o
+OBJS += soc.o cnxk.o cnxk_loop.o cnxk_nic.o octep_ctrl_mbox.o
 
 STATIC_BIN = $(LIB).a
 SHARED_BIN = $(LIB).so

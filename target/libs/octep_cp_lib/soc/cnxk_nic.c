@@ -7,30 +7,30 @@
 #include "octep_cp_lib.h"
 #include "cp_log.h"
 #include "cp_lib.h"
-#include "otx2_nic.h"
+#include "cnxk_nic.h"
 
-int otx2_nic_init(struct octep_cp_lib_cfg *p_cfg)
+int cnxk_nic_init(struct octep_cp_lib_cfg *p_cfg)
 {
 	CP_LIB_LOG(INFO, NIC, "init\n");
 
 	return 0;
 }
 
-int otx2_nic_poll(int max_events)
+int cnxk_nic_poll(int max_events)
 {
 	CP_LIB_LOG(INFO, NIC, "poll\n");
 
 	return 0;
 }
 
-int otx2_nic_process_sigusr1()
+int cnxk_nic_process_sigusr1()
 {
 	CP_LIB_LOG(INFO, NIC, "process_sigusr1\n");
 
 	return 0;
 }
 
-int otx2_nic_uninit()
+int cnxk_nic_uninit()
 {
 	CP_LIB_LOG(INFO, NIC, "uninit\n");
 

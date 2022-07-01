@@ -14,11 +14,11 @@
 #include "cp_lib.h"
 #include "octep_ctrl_mbox.h"
 #include "octep_ctrl_net.h"
-#include "otx2.h"
-#include "otx2_loop.h"
-#include "otx2_hw.h"
+#include "cnxk.h"
+#include "cnxk_loop.h"
+#include "cnxk_hw.h"
 
-#define OTX2_LOOP_INVALID_HOST_IF_ID		0xffff
+#define CNXK_LOOP_INVALID_HOST_IF_ID		0xffff
 
 struct if_data {
 	struct octep_iface_rx_stats rx_stats;
@@ -37,7 +37,7 @@ static volatile int dummy_perst = 0;
 
 static void copy_if_stats(struct if_data *iface, uint32_t offset)
 {
-	uint64_t *addr = (uint64_t *)(otx2_mbox.barmem + offset);
+	uint64_t *addr = (uint64_t *)(mbox.barmem + offset);
 
 	cp_write64(iface->rx_stats.pkts, addr++);
 	cp_write64(iface->rx_stats.octets, addr++);
@@ -253,7 +253,7 @@ static inline int get_iface(struct cp_lib_pf *pf, int idx,
 	return -ENAVAIL;
 }
 
-static int otx2_loop_process_mbox_req(void *user_ctx,
+static int cnxk_loop_process_mbox_req(void *user_ctx,
 				      struct octep_ctrl_mbox_msg *msg)
 {
 	struct octep_ctrl_net_h2f_req *req;
@@ -347,7 +347,7 @@ static int alloc_if_data()
 		while (pf) {
 			pf->psoc = calloc(sizeof(struct if_data), 1);
 			if (!pf->psoc) {
-				CP_LIB_LOG(ERR, OTX2, "Oom for pem[%d]pf[%d]\n",
+				CP_LIB_LOG(ERR, LOOP, "Oom for pem[%d]pf[%d]\n",
 					   pem->idx, pf->idx);
 				free_if_data();
 				return -ENOMEM;
@@ -356,7 +356,7 @@ static int alloc_if_data()
 			while (vf) {
 				vf->psoc = calloc(sizeof(struct if_data), 1);
 				if (!vf->psoc) {
-					CP_LIB_LOG(ERR, OTX2,
+					CP_LIB_LOG(ERR, LOOP,
 						   "Oom for pem[%d]pf[%d]"
 						   "vf[%d]\n",
 						   pem->idx, pf->idx, vf->idx);
@@ -373,7 +373,7 @@ static int alloc_if_data()
 	return 0;
 }
 
-int otx2_loop_init(struct octep_cp_lib_cfg *p_cfg)
+int cnxk_loop_init(struct octep_cp_lib_cfg *p_cfg)
 {
 	int err;
 
@@ -386,7 +386,7 @@ int otx2_loop_init(struct octep_cp_lib_cfg *p_cfg)
 	if (err)
 		return err;
 
-	err = otx2_init(otx2_loop_process_mbox_req, &cfg.pems[0].pfs[0]);
+	err = cnxk_init(cnxk_loop_process_mbox_req, &cfg.pems[0].pfs[0]);
 	if (err)
 		return err;
 
@@ -396,7 +396,7 @@ int otx2_loop_init(struct octep_cp_lib_cfg *p_cfg)
 	return 0;
 }
 
-int otx2_loop_poll(int max_events)
+int cnxk_loop_poll(int max_events)
 {
 	struct octep_ctrl_mbox_msg msg;
 	int num_events = 0;
@@ -418,10 +418,10 @@ int otx2_loop_poll(int max_events)
 			continue;
 		}
 
-		if (octep_ctrl_mbox_is_host_ready(&otx2_mbox))
+		if (octep_ctrl_mbox_is_host_ready(&mbox))
 			break;
 
-		num_events += (octep_ctrl_mbox_recv(&otx2_mbox, &msg) == 0);
+		num_events += (octep_ctrl_mbox_recv(&mbox, &msg) == 0);
 	}
 	lp_state = LOOP_POLL_STATE_INVALID;
 
@@ -458,19 +458,19 @@ static void toggle_random_link()
 	msg.hdr.flags = OCTEP_CTRL_MBOX_MSG_HDR_FLAG_NOTIFY;
 	msg.hdr.sizew = OCTEP_CTRL_NET_F2H_STATE_REQ_SZW;
 	msg.msg = &req;
-	err = octep_ctrl_mbox_send(&otx2_mbox, &msg);
+	err = octep_ctrl_mbox_send(&mbox, &msg);
 	if (err)
 		CP_LIB_LOG(INFO, LOOP,
 			   "Error (%d) while sending link toggle mbox msg.\n",
 			   err);
-	err = otx2_raise_oei_trig_interrupt();
+	err = cnxk_raise_oei_trig_interrupt();
 	if (err)
 		CP_LIB_LOG(INFO, LOOP,
 			   "Error (%d) while triggering oei_trig interrupt.\n",
 			   err);
 }
 
-int otx2_loop_process_sigusr1()
+int cnxk_loop_process_sigusr1()
 {
 	static int func = 0;
 
@@ -488,7 +488,7 @@ int otx2_loop_process_sigusr1()
 	return 0;
 }
 
-int otx2_loop_uninit()
+int cnxk_loop_uninit()
 {
 	CP_LIB_LOG(INFO, LOOP, "uninit\n");
 
@@ -499,7 +499,7 @@ int otx2_loop_uninit()
 			usleep(100);
 	}
 
-	otx2_uninit();
+	cnxk_uninit();
 	free_if_data();
 
 	return 0;
