@@ -136,8 +136,7 @@ static inline void process_get_if_stats(struct if_data *iface,
 	struct octep_ctrl_net_h2f_resp *resp;
 
 	resp = (struct octep_ctrl_net_h2f_resp *)msg->msg;
-	if ((req->get_stats.offset) &&
-	    (req->get_stats.offset < OCTEP_DRV_BARMEM_LEN)) {
+	if (req->get_stats.offset) {
 		CP_LIB_LOG(INFO, LOOP, "Cmd: get if stats : %x\n",
 			   req->get_stats.offset);
 		copy_if_stats(iface, req->get_stats.offset);
