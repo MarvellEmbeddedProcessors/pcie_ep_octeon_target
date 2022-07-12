@@ -99,12 +99,6 @@ static inline void otx2_vf_uninit(struct dpivf_t *dpi_vf)
 
 int otx2_init(void)
 {
-	int ret;
-
-	ret = otxx_init();
-	if (ret != 0)
-		return ret;
-
 	otx2_dpipf = try_then_request_module(symbol_get(otx2_dpipf_com),
 					     "octeontx2_dpi");
 	if (otx2_dpipf == NULL) {

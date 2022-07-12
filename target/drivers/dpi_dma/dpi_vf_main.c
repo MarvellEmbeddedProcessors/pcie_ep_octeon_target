@@ -91,10 +91,10 @@ static struct vf_soc_ops socs[SOC_MAX] = {
 		.buf_alloc = otx2_buf_alloc,
 		.buf_free = otx2_buf_free,
 		.fill_header = cn10k_fill_header,
-		.dma_to_host = otx2_dma_to_host,
-		.dma_sync = otxx_dma_sync,
-		.dma_async_vector = otxx_dma_async_vector,
-		.dma_sync_sli = otxx_dma_sync_sli,
+		.dma_to_host = cn10k_dma_to_host,
+		.dma_sync = cn10k_dma_sync,
+		.dma_async_vector = cn10k_dma_async_vector,
+		//.dma_sync_sli = otxx_dma_sync_sli,
 		.host_writel = otx2_host_writel,
 		.host_map_writel = otxx_host_map_writel,
 		.host_iounmap = otxx_host_iounmap,
@@ -298,6 +298,9 @@ int dpi_vf_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 		num_vfs[0] = num_vfs[0] + 1;
 	else				/* DPI-1 */
 		num_vfs[1] = num_vfs[1] + 1;
+
+	if (pdev->subsystem_device >= PCI_SUBSYS_DEVID_CN10K_A)
+		num_vfs[0] = num_vfs[0] + 1;
 
 	vf[total_vfs++] = dpi_vf;
 	if(num_vfs[0] == 1)

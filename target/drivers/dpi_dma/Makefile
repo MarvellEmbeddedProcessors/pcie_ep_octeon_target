@@ -29,12 +29,17 @@ OTXX_LINKED = 0
 
 #Octeontx2 support
 ifneq ($(CONFIG_OCTEONTX2_DPI_PF),)
-SRCS += soc_otx2.c soc_otxx.c
+SRCS += soc_otx2.c soc_otxx.c soc_cn10k.c
 ccflags-$(CONFIG_OCTEONTX2_DPI_PF) += -DCONFIG_SOC_OCTEONTX2
 CFLAGS_soc_otx2.o += -I$(KDIR)/drivers/soc/marvell/octeontx2-dpi/
 CFLAGS_soc_otx2.o += -I$(KDIR)/drivers/soc/marvell/octeontx2-npa/
 CFLAGS_soc_otx2.o += -I$(KDIR)/drivers/net/ethernet/marvell/octeontx2/af
 CFLAGS_soc_otx2.o += -I$(KDIR)/drivers/net/ethernet/marvell/octeontx2/nic
+
+CFLAGS_soc_cn10k.o += -I$(KDIR)/drivers/soc/marvell/octeontx2-dpi/
+CFLAGS_soc_cn10k.o += -I$(KDIR)/drivers/soc/marvell/octeontx2-npa/
+CFLAGS_soc_cn10k.o += -I$(KDIR)/drivers/net/ethernet/marvell/octeontx2/af
+CFLAGS_soc_cn10k.o += -I$(KDIR)/drivers/net/ethernet/marvell/octeontx2/nic
 
 # We prefer to use header files from octeontx2 driver
 CFLAGS_dpi_vf_main.o += -I$(KDIR)/drivers/soc/marvell/octeontx2-dpi/
