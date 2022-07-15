@@ -98,6 +98,11 @@
 #define   cavium_spin_lock_irqsave(lock, flags)     spin_lock_irqsave(lock, flags)
 #define   cavium_spin_unlock_irqrestore(lock,flags) spin_unlock_irqrestore(lock, flags)
 
+#define   cavium_mutex_init(lock)                    mutex_init((lock))
+#define   cavium_mutex_lock(lock)                    mutex_lock((lock))
+#define   cavium_mutex_unlock(lock)                  mutex_unlock((lock))
+#define   cavium_mutex_destroy(lock)                 mutex_destroy((lock))
+
 #define   cavium_init_wait_channel(wc_ptr)          init_waitqueue_head(wc_ptr)
 #define   cavium_init_wait_entry(we_ptr, task)      init_waitqueue_entry(we_ptr, task)
 #define   cavium_add_to_waitq(wq_ptr, we_ptr)       add_wait_queue(wq_ptr, we_ptr)
@@ -162,6 +167,7 @@
 typedef pid_t cavium_pid_t;
 typedef struct task_struct cavium_ostask_t;
 typedef spinlock_t cavium_spinlock_t;
+typedef struct mutex cavium_mutex_t;
 typedef struct semaphore cavium_semaphore_t;
 typedef struct tasklet cavium_tasklet_t;
 typedef struct tasklet_struct cavium_tasklet_struct_t;	/* added for OS transparency */

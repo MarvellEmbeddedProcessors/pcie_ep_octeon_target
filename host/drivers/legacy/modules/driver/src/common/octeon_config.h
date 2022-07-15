@@ -831,7 +831,7 @@ typedef octeon_config_t cn83xx_vf_config_t;
 #define MAX_OCTEON_INSTR_QUEUES         CN83XX_MAX_INPUT_QUEUES
 
 /* Maximum number of Octeon Instruction (command) queues */
-#define MAX_OCTEON_OUTPUT_QUEUES        CN83XX_MAX_OUTPUT_QUEUES
+#define MAX_OCTEON_OUTPUT_QUEUES        128
 
 /* Maximum number of DMA software output queues per Octeon device. 
    Though CN56XX supports 5 DMA engines, only the first 2 can generate

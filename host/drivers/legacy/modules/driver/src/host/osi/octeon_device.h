@@ -21,7 +21,6 @@ typedef struct _OCTEON_DEVICE octeon_device_t;
 #include "octeon_droq.h"
 #include "pending_list.h"
 #include "response_manager.h"
-#include "octeon_mailbox.h"
 #include "octeon_debug.h"
 #include "octeon-common.h"
 
@@ -415,13 +414,24 @@ struct octeon_fn_list {
 
 /* wrappers around work structs */
 struct cavium_wk {
-	struct delayed_work work;
+	struct work_struct work;
 	void *ctxptr;
 	u64 ctxul;
-};  
+};
 struct cavium_wq {
 	struct workqueue_struct *wq;
 	struct cavium_wk wk;
+};
+
+struct cavium_delayed_wk {
+	struct delayed_work work;
+	void *ctxptr;
+	u64 ctxul;
+};
+
+struct cavium_delayed_wq {
+	struct workqueue_struct *wq;
+	struct cavium_delayed_wk wk;
 };
 
 #define MAX_MSIX_VECTORS	64
@@ -455,25 +465,30 @@ typedef struct octeon_mbox_data {
 
 } octeon_mbox_data_t;
 
+
+#define MAX_MBOX_DATA_SIZE	256
+
 typedef struct cvm_mbox_info {
-
-	/** A spinlock to protect access to this q_mbox. */
-	cavium_spinlock_t lock;
-
 	uint32_t q_no;
-
 	uint32_t state;
-
 	/** SLI_MAC_PF_MBOX_INT for PF, SLI_PKT_MBOX_INT for VF. */
 	void *mbox_int_reg;
-
 	/** SLI_PKT_PF_VF_MBOX_SIG(0) for PF, SLI_PKT_PF_VF_MBOX_SIG(1) for VF. */
 	void *mbox_write_reg;
-
 	/** SLI_PKT_PF_VF_MBOX_SIG(1) for PF, SLI_PKT_PF_VF_MBOX_SIG(0) for VF. */
 	void *mbox_read_reg;
-
 	octeon_mbox_data_t mbox_data;
+
+	/* added for new mail box */
+	cavium_mutex_t lock;
+	uint32_t vf_id;
+	struct cavium_wk wk;
+	octeon_device_t *oct;
+	uint64_t *pf_vf_data_reg;
+	uint64_t *vf_pf_data_reg;
+	int32_t config_data_index;
+	int32_t message_len;
+	uint8_t config_data[MAX_MBOX_DATA_SIZE];
 } octeon_mbox_t;
 
 typedef struct cvm_ioq_vector {
@@ -507,7 +522,7 @@ struct iq_intr_wq {
  */
 struct _OCTEON_DEVICE {
 	/** work queue to initialize device */
-	struct cavium_wq dev_init_wq;
+	struct cavium_delayed_wq dev_init_wq;
 
 	int num_iqs;
 

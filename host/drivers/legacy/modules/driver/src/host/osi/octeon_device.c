@@ -4,6 +4,7 @@
 
 #include "barmap.h"
 #include "octeon_device.h"
+#include "octeon_mbox.h"
 #include "octeon_macros.h"
 #include "octeon_mem_ops.h"
 #include "oct_config_data.h"
@@ -455,74 +456,56 @@ int octeon_setup_output_queues(octeon_device_t * oct)
 
 int octeon_setup_mbox(octeon_device_t * oct)
 {
-	int i = 0, num_ioqs = 0;
+	int i = 0, num_vfs = 0, rings_per_vf = 0;
+	int vf_srn, ring;
 
-	if (!(oct->drv_flags & OCTEON_MBOX_CAPABLE))
-		return 0;
+	num_vfs = oct->sriov_info.num_vfs;
+	vf_srn = 0;
+	rings_per_vf = oct->sriov_info.rings_per_vf;
 
-	if (OCTEON_CN83XX_PF(oct->chip_id))
-		num_ioqs =
-		    CFG_GET_TOTAL_PF_RINGS(CHIP_FIELD(oct, cn83xx_pf, conf),
-					   oct->pf_num);
-	else if (OCTEON_CN9XXX_PF(oct->chip_id))
-		num_ioqs =
-		    CFG_GET_TOTAL_PF_RINGS(CHIP_FIELD(oct, cn93xx_pf, conf),
-					   oct->pf_num);
-	else if (OCTEON_CNXK_PF(oct->chip_id))
-		num_ioqs =
-		    CFG_GET_TOTAL_PF_RINGS(CHIP_FIELD(oct, cnxk_pf, conf),
-					   oct->pf_num);
-	else
-		return 0;
-
-	for (i = 0; i < num_ioqs; i++) {
-		oct->mbox[i] = cavium_alloc_virt(sizeof(octeon_mbox_t));
-		if (oct->mbox[i] == NULL)
+	for (i = 0; i < num_vfs; i++) {
+		ring  = vf_srn + rings_per_vf * i;
+		oct->mbox[ring] = cavium_alloc_virt(sizeof(octeon_mbox_t));
+		if (oct->mbox[ring] == NULL)
 			goto free_mbox;
-
-		cavium_memset(oct->mbox[i], 0, sizeof(octeon_mbox_t));
-		oct->fn_list.setup_mbox_regs(oct, i);
+		cavium_memset(oct->mbox[ring], 0, sizeof(octeon_mbox_t));
+		cavium_mutex_init(&oct->mbox[ring]->lock);
+		INIT_WORK(&oct->mbox[ring]->wk.work, handle_mbox_work);
+		oct->mbox[ring]->wk.ctxptr = oct->mbox[i];
+		if(  oct->mbox[i] == NULL)
+		{
+			oct->mbox[ring]->wk.ctxptr = oct->mbox[ring];
+		}
+		oct->mbox[ring]->oct = oct;
+		oct->mbox[ring]->vf_id = i;
+		oct->fn_list.setup_mbox_regs(oct, ring);
 	}
-
-	/* Mail Box Thread creation */
-#if 0
-	if (octeon_init_mbox_thread(oct))
-		goto free_mbox;
-#endif
 	return 0;
 
 free_mbox:
 	while (i) {
 		i--;
-		cavium_free_virt(oct->mbox[i]);
+		ring  = vf_srn + rings_per_vf * i;
+		cancel_work_sync(&oct->mbox[ring]->wk.work);
+		cavium_free_virt(oct->mbox[ring]);
+		oct->mbox[ring] = NULL;
 	}
 	return 1;
 }
 
 int octeon_delete_mbox(octeon_device_t * oct)
 {
-	int i = 0, num_ioqs = 0;
+	int i = 0, ring;
+	int num_vfs = oct->sriov_info.num_vfs;
+	int vf_srn = 0;
+	int rings_per_vf = oct->sriov_info.rings_per_vf;
 
-	if (!(oct->drv_flags & OCTEON_MBOX_CAPABLE))
-		return 0;
-
-	if (OCTEON_CN83XX_PF(oct->chip_id))
-		num_ioqs =
-		    CFG_GET_TOTAL_PF_RINGS(CHIP_FIELD(oct, cn83xx_pf, conf),
-					   oct->pf_num);
-	else
-		return 0;
-
-#if 0
-//	octeon_delete_mbox_thread(oct);
-//	cavium_print_msg("OCTEON[%d]: deleted MBOX thread.\n", oct->octeon_id);
-#endif
-
-	for (i = 0; i < num_ioqs; i++) {
-		cavium_memset(oct->mbox[i], 0, sizeof(octeon_mbox_t));
-		cavium_free_virt(oct->mbox[i]);
-
-		oct->mbox[i] = NULL;
+	for (i = 0; i < num_vfs; i++) {
+		ring  = vf_srn + rings_per_vf * i;
+		if (work_pending(&oct->mbox[ring]->wk.work))
+			cancel_work_sync(&oct->mbox[ring]->wk.work);
+		cavium_free_virt(oct->mbox[ring]);
+		oct->mbox[ring] = NULL;
 	}
 	cavium_print_msg("OCTEON[%d]: freed mbox struct.\n", oct->octeon_id);
 

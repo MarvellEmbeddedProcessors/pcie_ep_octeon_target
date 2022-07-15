@@ -308,6 +308,14 @@
 #define    CNXK_SDP_R_MBOX_VF_PF_DATA(ring)          \
        (CNXK_SDP_R_MBOX_VF_PF_DATA_START + ((ring) * CNXK_RING_OFFSET))
 
+#define    CNXK_SDP_MBOX_VF_PF_DATA_START       0x24000
+#define    CNXK_SDP_MBOX_PF_VF_DATA_START       0x22000
+
+#define    CNXK_SDP_MBOX_VF_PF_DATA(ring)          \
+       (CNXK_SDP_MBOX_VF_PF_DATA_START + ((ring) * CNXK_EPVF_RING_OFFSET ))
+#define    CNXK_SDP_MBOX_PF_VF_DATA(ring)      \
+       (CNXK_SDP_MBOX_PF_VF_DATA_START + ((ring) * CNXK_EPVF_RING_OFFSET ))
+
 /* ##################### Interrupt Registers ########################## */
 
 /* In PF: Each bit indicates a ring that is signalling interrupt. 

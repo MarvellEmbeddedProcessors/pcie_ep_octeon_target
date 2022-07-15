@@ -1882,6 +1882,8 @@ int octeon_core_cfg_callback(void *octeon_dev, unsigned long arg)
 	return 0;
 }
 
+/* The below function is not being used/called */
+#if 0
 int octeon_request_core_config(octeon_device_t * octeon_dev)
 {
 	oct_mbox_cmd_t mbox_cmd_queue;
@@ -1915,7 +1917,7 @@ int octeon_request_core_config(octeon_device_t * octeon_dev)
 #endif
 	return 0;
 }
-
+#endif
 
 void octeon_probe_module_handlers(int octeon_id)
 {
@@ -1949,6 +1951,8 @@ void octeon_probe_module_handlers(int octeon_id)
 	}
 }
 
+/* The below function is not being used/called */
+#if 0
 oct_poll_fn_status_t
 octeon_pfvf_handshake(void *octptr, unsigned long arg UNUSED)
 {
@@ -2042,6 +2046,7 @@ octeon_pfvf_handshake(void *octptr, unsigned long arg UNUSED)
 	return OCT_POLL_FN_CONTINUE;
 
 }
+#endif
 
 void octeon_iq_intr_tune(struct work_struct *work)
 {

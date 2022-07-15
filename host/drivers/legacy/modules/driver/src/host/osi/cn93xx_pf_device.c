@@ -524,20 +524,13 @@ static void cn93xx_setup_pf_mbox_regs(octeon_device_t * oct, int q_no)
 {
 	octeon_mbox_t *mbox = oct->mbox[q_no];
 
-	mbox->q_no = q_no;
-
-	/* PF mbox interrupt reg */
-	mbox->mbox_int_reg = (uint8_t *) oct->mmio[0].hw_addr +
-					      CN93XX_SDP_EPF_MBOX_RINT(0);  //TODO requires two variables to read 128 bits.
-
 	/* PF to VF DATA reg. PF writes into this reg */
-	mbox->mbox_write_reg = (uint8_t *) oct->mmio[0].hw_addr +
-			     CN93XX_SDP_R_MBOX_PF_VF_DATA(q_no);
+	mbox->pf_vf_data_reg = (uint64_t *)((uint8_t *) oct->mmio[0].hw_addr +
+			     CN93XX_SDP_MBOX_PF_VF_DATA(q_no));
 
 	/* VF to PF DATA reg. PF reads from this reg */
-	mbox->mbox_read_reg = (uint8_t *) oct->mmio[0].hw_addr +
-          CN93XX_SDP_R_MBOX_VF_PF_DATA(q_no);
-
+	mbox->vf_pf_data_reg = (uint64_t *)((uint8_t *) oct->mmio[0].hw_addr +
+	CN93XX_SDP_MBOX_VF_PF_DATA(q_no));
 }
 
 static void cn93xx_enable_input_queue(octeon_device_t * oct, int iq_no)
@@ -670,19 +663,30 @@ void cn93xx_force_io_queues_off(octeon_device_t * oct)
 }
 
 /* MailBox Interrupts */
-void cn93xx_handle_pf_mbox_intr(octeon_device_t * oct)
+void cn93xx_handle_pf_mbox_intr(octeon_device_t * oct, uint64_t reg_val, uint64_t reg_val2)
 {
-	uint64_t mbox_int_val = 0ULL, val = 0ULL, qno = 0ULL;
-	cavium_print_msg("MBOX interrupt received on PF\n");
-	mbox_int_val = OCTEON_READ64(oct->mbox[0]->mbox_int_reg);
+	int qno = 0;
 
-	for (qno = 0; qno < 64; qno++) {
-		val = OCTEON_READ64(oct->mbox[qno]->mbox_read_reg);
-		cavium_print_msg("PF MBOX READ: val:%llx from VF:%llx\n", val,
-				 qno);
+	if (reg_val) {
+		for (qno = 0; qno < 64; qno++) {
+			if (reg_val & (0x1UL << qno)) {
+				if (oct->mbox[qno] != NULL)
+					schedule_work(&oct->mbox[qno]->wk.work);
+				else
+					cavium_print_msg("bad mbox qno %d\n", qno);
+			}
+		}
 	}
-
-	OCTEON_WRITE64(oct->mbox[0]->mbox_int_reg, mbox_int_val);
+	if (reg_val2) {
+		for (qno = 0; qno < 64; qno++) {
+			if (reg_val2 & (0x1UL << qno)) {
+				if (oct->mbox[qno + 64] != NULL)
+					schedule_work(&oct->mbox[qno + 64]->wk.work);
+				else
+					cavium_print_msg("bad mbox qno %d\n", qno + 64);
+			}
+		}
+	}
 }
 
 cvm_intr_return_t cn93xx_pf_msix_interrupt_handler(void *dev)
@@ -700,7 +704,8 @@ cvm_intr_return_t cn93xx_pf_msix_interrupt_handler(void *dev)
 cvm_intr_return_t cn93xx_interrupt_handler(void *dev)
 {
 	uint64_t reg_val = 0;
-    int i =0;
+	uint64_t reg_val2 = 0;
+	int i = 0;
 	octeon_device_t *oct = (octeon_device_t *) dev;
 
 	/* Check for IRERR INTR */
@@ -762,10 +767,14 @@ cvm_intr_return_t cn93xx_interrupt_handler(void *dev)
 
 	/* Check for MBOX INTR */
 	reg_val = octeon_read_csr64(oct, CN93XX_SDP_EPF_MBOX_RINT(0)); //TODO
-	if (reg_val) {
-		cavium_print_msg("received MBOX_RINT intr: 0x%016llx\n",
-				 reg_val);
-		cn93xx_handle_pf_mbox_intr(oct);
+	reg_val2 = octeon_read_csr64(oct, CN93XX_SDP_EPF_MBOX_RINT(1)); //TODO
+	if (reg_val || reg_val2) {
+
+		cn93xx_handle_pf_mbox_intr(oct, reg_val, reg_val2);
+		if (reg_val)
+			octeon_write_csr64(oct, CN93XX_SDP_EPF_MBOX_RINT(0), reg_val);
+		if (reg_val2)
+			octeon_write_csr64(oct, CN93XX_SDP_EPF_MBOX_RINT(1), reg_val2);
 		goto irq_handled;
 	}
 
@@ -978,7 +987,10 @@ static void cn93xx_enable_pf_interrupt(void *chip, uint8_t intr_flag)
 	/* Clear any pending OEI interrupts from before loading driver */
 	reg_val = octeon_read_csr64(oct, CN93XX_SDP_EPF_OEI_RINT);
 	octeon_write_csr64(oct, CN93XX_SDP_EPF_OEI_RINT, reg_val);
-
+	octeon_write_csr64(oct, CN93XX_SDP_EPF_MBOX_RINT_ENA_W1S(0), -1ULL);
+	octeon_write_csr64(oct, CN93XX_SDP_EPF_MBOX_RINT_ENA_W1S(1), -1ULL);
+	reg_val = octeon_read_csr64(oct, CN93XX_SDP_EPF_MBOX_RINT_ENA_W1S(0));
+	reg_val = octeon_read_csr64(oct, CN93XX_SDP_EPF_MBOX_RINT_ENA_W1S(1));
 	octeon_write_csr64(oct, CN93XX_SDP_EPF_MISC_RINT_ENA_W1S,
 			   intr_mask);
 	octeon_write_csr64(oct, CN93XX_SDP_EPF_PP_VF_RINT_ENA_W1S(0),  //TODO

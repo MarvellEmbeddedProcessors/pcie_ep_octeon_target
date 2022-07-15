@@ -639,10 +639,10 @@ static u8 oct_get_fw_ready_status(octeon_device_t * oct)
 static void octeon_device_init_work(struct work_struct *work)
 {
 	octeon_device_t *oct_dev;
-	struct cavium_wq *wq;
+	struct cavium_delayed_wq *wq;
 	u8 status;
 
-	wq = container_of(work, struct cavium_wq, wk.work.work);
+	wq = container_of(work, struct cavium_delayed_wq, wk.work.work);
 	oct_dev = (octeon_device_t *)wq->wk.ctxptr;
 
 	cavium_atomic_set(&oct_dev->status, OCT_DEV_CHECK_FW);
@@ -768,12 +768,9 @@ void octeon_destroy_resources(octeon_device_t * oct_dev)
 
 		/* Disable the device */
 		pci_disable_device(oct_dev->pci_dev);
-
-		if (oct_dev->drv_flags & OCTEON_MBOX_CAPABLE) {
-			octeon_delete_mbox(oct_dev);
-			cavium_print_msg("OCTEON[%d]: MBOX deleted.\n",
+		octeon_delete_mbox(oct_dev);
+		cavium_print_msg("OCTEON[%d]: MBOX deleted.\n",
 					 oct_dev->octeon_id);
-		}
 #if __GNUC__ > 6
 		__attribute__((__fallthrough__));
 #endif

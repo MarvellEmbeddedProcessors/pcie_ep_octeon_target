@@ -90,9 +90,9 @@ OBJS += octeon_vf_linux.o            	\
 	../../../../osi/octvf/cnxk_vf_device.o \
 	../../../../osi/octeon_errata.o    \
 	../../../../osi/octeon_mem_ops.o   \
-	../../../../osi/octeon_mailbox.o   		\
 	../../../../osi/request_manager.o   		\
-	../../../../osi/octvf/octeon_vf_droq.o
+	../../../../osi/octvf/octeon_vf_droq.o	\
+	../../../../osi/octeon_mbox.o
 
 OBJNAME := octeon_vf_drv
 
