@@ -43,6 +43,63 @@ void octeon_cleanup_iq_intr_moderation(octeon_device_t *oct)
 	iq_intr_wq->wq = NULL;
 }
 
+static void octeon_delete_glist(octeon_instr_queue_t *iq, int count)
+{
+	struct octeon_gather *g;
+	int i;
+
+	for (i = 0; i <  count; i++) {
+		g = iq->glist[i];
+		if (g) {
+			if (g->sg) {
+				cavium_free_dma((void *)((unsigned long)g->sg -
+							 g->adjust));
+			}
+			cavium_free_dma(g);
+		}
+	}
+	cavium_free_virt(iq->glist);
+}
+
+static int octeon_setup_glist(octeon_instr_queue_t *iq, int count)
+{
+	int i;
+	struct octeon_gather *g;
+
+	iq->glist = cavium_alloc_virt(sizeof(struct octeon_gather *) * count);
+	if (iq->glist == NULL)
+		return 1;
+
+	for (i = 0; i < count; i++) {
+		g = cavium_malloc_dma(sizeof(struct octeon_gather),
+				      __CAVIUM_MEM_GENERAL);
+		if (g == NULL)
+			goto err;
+		memset(g, 0, sizeof(struct octeon_gather));
+
+		g->sg_size = (OCTEON_MAX_SG * OCT_SG_ENTRY_SIZE);
+
+		g->sg = cavium_malloc_dma(g->sg_size + 8, __CAVIUM_MEM_GENERAL);
+		if (g->sg == NULL) {
+			cavium_free_dma(g);
+			goto err;
+		}
+
+		/* The gather component should be aligned on a 64-bit boundary. */
+		if (((unsigned long)g->sg) & 7) {
+			g->adjust = 8 - (((unsigned long)g->sg) & 7);
+			g->sg =
+			    (octeon_sg_entry_t *) ((unsigned long)g->sg +
+						   g->adjust);
+		}
+		iq->glist[i] = g;
+	}
+	return 0;
+err:
+	octeon_delete_glist(iq, i);
+	return 1;
+}
+
 /* Return 0 on success, 1 on failure */
 int octeon_init_instr_queue(octeon_device_t * oct, int iq_no)
 {
@@ -153,6 +210,13 @@ int octeon_init_instr_queue(octeon_device_t * oct, int iq_no)
 		oct->io_qmask.iq64B |= (1ULL << iq_no);
 	iq->iqcmd_64B = (conf->instr_type == 64);
 
+	if (octeon_setup_glist(iq, iq->max_count)) {
+ 		cavium_error
+ 		    ("OCTEON: Cannot create gather list for insttr queue %d\n",
+ 		     iq_no);
+		return 1;
+	}
+
 	oct->fn_list.setup_iq_regs(oct, iq_no);
 
 	return 0;
@@ -188,6 +252,7 @@ int octeon_delete_instr_queue(octeon_device_t * oct, int iq_no)
 	if (iq->nrlist)
 		cavium_free_virt(iq->nrlist);
 
+	octeon_delete_glist(iq, iq->max_count);
 	if (iq->base_addr) {
 		q_size = iq->max_count * desc_size;
 		octeon_pci_free_consistent(oct->pci_dev, q_size, iq->base_addr,

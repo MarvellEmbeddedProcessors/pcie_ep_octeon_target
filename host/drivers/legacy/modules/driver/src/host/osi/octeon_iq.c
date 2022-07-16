@@ -216,6 +216,7 @@ int octeon_init_instr_queue(octeon_device_t * oct, int iq_no)
  		cavium_error
  		    ("OCTEON: Cannot create gather list for insttr queue %d\n",
  		     iq_no);
+		return 1;
 	}
 
 	oct->fn_list.setup_iq_regs(oct, iq_no);
