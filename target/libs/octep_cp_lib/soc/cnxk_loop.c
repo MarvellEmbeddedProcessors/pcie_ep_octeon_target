@@ -274,8 +274,11 @@ static int cnxk_loop_process_mbox_req(void *user_ctx,
 			req->hdr.receiver,
 			&iface,
 			&ifdata);
-	if (err)
+	if (err) {
+		CP_LIB_LOG(INFO, LOOP, "Invalid receiver: %u\n",
+			   req->hdr.receiver);
 		return err;
+	}
 
 	iface->host_if_id = req->hdr.sender;
 	switch (req->hdr.cmd) {
@@ -398,13 +401,15 @@ int cnxk_loop_init(struct octep_cp_lib_cfg *p_cfg)
 int cnxk_loop_poll(int max_events)
 {
 	struct octep_ctrl_mbox_msg msg;
-	int num_events = 0;
+	union octep_ctrl_net_h2f_data_sz data;
+	int num_events = 0, err;
 
-	CP_LIB_LOG(INFO, LOOP, "poll\n");
+	//CP_LIB_LOG(INFO, LOOP, "poll\n");
 	if (lp_state != LOOP_POLL_STATE_INVALID)
 		return -EAGAIN;
 
 	lp_state = LOOP_POLL_STATE_BEGIN;
+	msg.msg = &data;
 	while (lp_state == LOOP_POLL_STATE_BEGIN && num_events < max_events) {
 		if (dummy_perst) {
 			CP_LIB_LOG(INFO, LOOP, "perst.\n");
@@ -417,10 +422,15 @@ int cnxk_loop_poll(int max_events)
 			continue;
 		}
 
-		if (octep_ctrl_mbox_is_host_ready(&mbox))
+		err = octep_ctrl_mbox_is_host_ready(&mbox);
+		if (err)
 			break;
 
-		num_events += (octep_ctrl_mbox_recv(&mbox, &msg) == 0);
+		err = octep_ctrl_mbox_recv(&mbox, &msg);
+		if (err)
+			break;
+
+		num_events++;
 	}
 	lp_state = LOOP_POLL_STATE_INVALID;
 
@@ -432,9 +442,11 @@ static void toggle_random_link()
 	struct octep_ctrl_mbox_msg msg = { 0 };
 	struct octep_ctrl_net_f2h_req req = { 0 };
 	struct cp_lib_if *iface = NULL;
+	struct if_data *ifdata;
 	int err;
 
 	CP_LIB_LOG(INFO, LOOP, "toggling random link\n");
+	err = get_iface(&cfg.pems[0].pfs[0], 0, &iface, &ifdata);
 	if (!iface) {
 		CP_LIB_LOG(INFO, LOOP,
 			   "No active interfaces to trigger "
@@ -475,14 +487,14 @@ int cnxk_loop_process_sigusr1()
 
 	CP_LIB_LOG(INFO, LOOP, "sigusr1\n");
 
-	if (func)
+	if (!func)
 		toggle_random_link();
 	else {
 		CP_LIB_LOG(INFO, LOOP, "setting dummy_perst\n");
 		dummy_perst = 1;
 	}
 
-	func = !func;
+	//func = !func;
 
 	return 0;
 }

@@ -41,8 +41,7 @@
 #define OCTEP_CTRL_MBOX_F2HQ_ELEM_SZ_OFFSET(m)		((OCTEP_CTRL_MBOX_F2HQ_INFO_OFFSET(m)) + 8)
 #define OCTEP_CTRL_MBOX_F2HQ_ELEM_CNT_OFFSET(m)		((OCTEP_CTRL_MBOX_F2HQ_INFO_OFFSET(m)) + 12)
 
-#define OCTEP_CTRL_MBOX_Q_OFFSET(m, i)			((m) + \
-							 (sizeof(struct octep_ctrl_mbox_msg) * i))
+#define OCTEP_CTRL_MBOX_Q_OFFSET(q, i)			((q->hw_q) + (q->elem_sz * i))
 
 static inline uint32_t octep_ctrl_mbox_circq_inc(uint32_t index, uint32_t mask)
 {
@@ -59,22 +58,74 @@ static inline uint32_t octep_ctrl_mbox_circq_depth(uint32_t pi, uint32_t ci, uin
 	return ((pi - ci) & mask);
 }
 
+static inline uint16_t get_q_elem_sz(uint16_t data_sz)
+{
+	static const int align = sizeof(uint64_t);
+	uint16_t sz;
+
+	sz = data_sz + sizeof(union octep_ctrl_mbox_msg_hdr);
+	if (sz % align)
+		sz += (align - (sz % align));
+
+	return sz;
+}
+
+static inline int set_mbox_info(struct octep_ctrl_mbox *mbox)
+{
+	uint16_t hesz, fesz, isz, esz, ecnt;
+
+	isz = OCTEP_CTRL_MBOX_INFO_INFO_SZ + OCTEP_CTRL_MBOX_H2FQ_INFO_SZ + OCTEP_CTRL_MBOX_F2HQ_INFO_SZ;
+	if (isz >= mbox->barmem_sz)
+		return -ENOMEM;
+
+	hesz = get_q_elem_sz(mbox->h2fq.elem_sz);
+	fesz = get_q_elem_sz(mbox->f2hq.elem_sz);
+	esz = (hesz > fesz) ? hesz : fesz;
+	ecnt = ((mbox->barmem_sz - isz) / esz) >> 1;
+
+	/* get lowest power of 2 */
+	while (ecnt > 1) {
+		if (!(ecnt & (ecnt - 1)))
+			break;
+
+		ecnt--;
+	}
+
+	/* each queue should get atleast 1 element */
+	if (ecnt < 2)
+		return -ENOMEM;
+
+	mbox->h2fq.elem_cnt = ecnt;
+	mbox->h2fq.mask = ecnt - 1;
+	mbox->h2fq.elem_sz = esz;
+	mbox->h2fq.hw_prod = OCTEP_CTRL_MBOX_H2FQ_PROD_OFFSET(mbox->barmem);
+	mbox->h2fq.hw_cons = OCTEP_CTRL_MBOX_H2FQ_CONS_OFFSET(mbox->barmem);
+	mbox->h2fq.hw_q = mbox->barmem + isz;
+
+	mbox->f2hq.elem_cnt = ecnt;
+	mbox->f2hq.mask = ecnt - 1;
+	mbox->f2hq.elem_sz = esz;
+	mbox->f2hq.hw_prod = OCTEP_CTRL_MBOX_F2HQ_PROD_OFFSET(mbox->barmem);
+	mbox->f2hq.hw_cons = OCTEP_CTRL_MBOX_F2HQ_CONS_OFFSET(mbox->barmem);
+	mbox->f2hq.hw_q = (mbox->h2fq.hw_q + (esz * ecnt));
+
+	return 0;
+}
+
 int octep_ctrl_mbox_init(struct octep_ctrl_mbox *mbox)
 {
+	int err;
+
 	if (!mbox)
 		return -EINVAL;
 
-	if (!mbox->barmem ||
-	    !mbox->h2fq.elem_sz || !mbox->f2hq.elem_sz ||
-	    !mbox->h2fq.elem_cnt || !mbox->f2hq.elem_cnt)
+	if (!mbox->barmem || !mbox->barmem_sz ||
+	    !mbox->h2fq.elem_sz || !mbox->f2hq.elem_sz)
 		return -EINVAL;
 
-	/* element count has to be power of 2, mask has to be cnt - 1 */
-	if ((mbox->h2fq.elem_cnt & (mbox->h2fq.elem_cnt - 1)) ||
-	    (mbox->f2hq.elem_cnt & (mbox->f2hq.elem_cnt - 1)) ||
-	    (mbox->h2fq.mask != (mbox->h2fq.elem_cnt - 1)) ||
-	    (mbox->f2hq.mask != (mbox->f2hq.elem_cnt - 1)))
-		return -EINVAL;
+	err = set_mbox_info(mbox);
+	if (err)
+		return err;
 
 	cp_write64(OCTEP_CTRL_MBOX_MAGIC_NUMBER,
 		   OCTEP_CTRL_MBOX_INFO_MAGIC_NUM_OFFSET(mbox->barmem));
@@ -84,15 +135,6 @@ int octep_ctrl_mbox_init(struct octep_ctrl_mbox *mbox)
 //		   OCTEP_CTRL_MBOX_INFO_FW_VERSION_OFFSET(mbox->barmem));
 	cp_write64(OCTEP_CTRL_MBOX_STATUS_INIT,
 		   OCTEP_CTRL_MBOX_INFO_FW_STATUS_OFFSET(mbox->barmem));
-
-	/* Align element size to word size */
-	mbox->h2fq.elem_sz += (mbox->h2fq.elem_sz % (sizeof(uint64_t)));
-	mbox->h2fq.hw_prod = OCTEP_CTRL_MBOX_H2FQ_PROD_OFFSET(mbox->barmem);
-	mbox->h2fq.hw_cons = OCTEP_CTRL_MBOX_H2FQ_CONS_OFFSET(mbox->barmem);
-	mbox->h2fq.hw_q = mbox->barmem +
-			  OCTEP_CTRL_MBOX_INFO_INFO_SZ +
-			  OCTEP_CTRL_MBOX_H2FQ_INFO_SZ +
-			  OCTEP_CTRL_MBOX_F2HQ_INFO_SZ;
 	cp_write32(0, OCTEP_CTRL_MBOX_H2FQ_PROD_OFFSET(mbox->barmem));
 	cp_write32(0, OCTEP_CTRL_MBOX_H2FQ_CONS_OFFSET(mbox->barmem));
 	cp_write32(mbox->h2fq.elem_sz,
@@ -101,14 +143,6 @@ int octep_ctrl_mbox_init(struct octep_ctrl_mbox *mbox)
 		   OCTEP_CTRL_MBOX_H2FQ_ELEM_CNT_OFFSET(mbox->barmem));
 	pthread_mutex_init(&mbox->h2fq_lock, NULL);
 
-	/* Align element size to word size */
-	mbox->f2hq.elem_sz += (mbox->f2hq.elem_sz % (sizeof(uint64_t)));
-	mbox->f2hq.hw_prod = OCTEP_CTRL_MBOX_F2HQ_PROD_OFFSET(mbox->barmem);
-	mbox->f2hq.hw_cons = OCTEP_CTRL_MBOX_F2HQ_CONS_OFFSET(mbox->barmem);
-	mbox->f2hq.hw_q = mbox->h2fq.hw_q +
-			  ((mbox->h2fq.elem_sz +
-			    sizeof(union octep_ctrl_mbox_msg_hdr)) *
-			   mbox->h2fq.elem_cnt);
 	cp_write32(0, OCTEP_CTRL_MBOX_F2HQ_PROD_OFFSET(mbox->barmem));
 	cp_write32(0, OCTEP_CTRL_MBOX_F2HQ_CONS_OFFSET(mbox->barmem));
 	cp_write32(mbox->f2hq.elem_sz,
@@ -160,7 +194,7 @@ int octep_ctrl_mbox_send(struct octep_ctrl_mbox *mbox,
 	if (!octep_ctrl_mbox_circq_space(pi, ci, q->mask))
 		return -ENOMEM;
 
-	qidx = OCTEP_CTRL_MBOX_Q_OFFSET(q->hw_q, pi);
+	qidx = OCTEP_CTRL_MBOX_Q_OFFSET(q, pi);
 	mbuf = (uint64_t*)msg->msg;
 
 	pthread_mutex_lock(&mbox->f2hq_lock);
@@ -214,14 +248,13 @@ int octep_ctrl_mbox_recv(struct octep_ctrl_mbox *mbox,
 	if (!count)
 		return -EAGAIN;
 
-	qidx = OCTEP_CTRL_MBOX_Q_OFFSET(q->hw_q, ci);
+	qidx = OCTEP_CTRL_MBOX_Q_OFFSET(q, ci);
 	mbuf = (uint64_t*)msg->msg;
-
 	pthread_mutex_lock(&mbox->h2fq_lock);
 
 	msg->hdr.word0 = cp_read64(qidx);
-	for (i=1; i<=msg->hdr.sizew; i++)
-		*mbuf++ = cp_read64(qidx + i);
+	for (i=0; i<msg->hdr.sizew; i++)
+		mbuf[i] = cp_read64((qidx + 1 + i));
 
 	ci = octep_ctrl_mbox_circq_inc(ci, q->mask);
 	cp_write32(ci, q->hw_cons);
@@ -233,10 +266,8 @@ int octep_ctrl_mbox_recv(struct octep_ctrl_mbox *mbox,
 		return 0;
 
 	mbox->process_req(mbox->user_ctx, msg);
-	mbuf = (uint64_t*)msg->msg;
-	for (i=1; i<=msg->hdr.sizew; i++) {
-		cp_write64(*mbuf++, (qidx + i));
-	}
+	for (i=0; i<msg->hdr.sizew; i++)
+		cp_write64(mbuf[i], (qidx + 1 + i));
 
 	cp_write64(msg->hdr.word0, qidx);
 

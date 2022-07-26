@@ -29,10 +29,6 @@
 #define FW_STATUS_INVALID		0x0ul
 
 #define MBOX_SZ				(size_t)(4 * 1024 * 1024)
-#define MBOX_H2FQ_ELEM_CNT		64
-#define MBOX_H2FQ_MASK			63
-#define MBOX_F2HQ_ELEM_CNT		64
-#define MBOX_F2HQ_MASK			63
 
 static off_t mbox_bar4_addr = 0;
 static void* oei_trig_addr = NULL;
@@ -88,7 +84,7 @@ static int get_bar4_idx8_addr()
 		return -ENOMEM;
 	}
 
-	mbox_bar4_addr = ((val << 22) >> 4) & (~1);
+	mbox_bar4_addr = (((val & (~1)) >> 4) << 22);
 	CP_LIB_LOG(INFO, CNXK, "pem0 bar4 addr 0x%lx\n", mbox_bar4_addr);
 
 	return 0;
@@ -125,11 +121,7 @@ static int init_mbox(fn_cnxk_process_req fn, void *mbox_user_ctx)
 	}
 	mbox.barmem_sz = MBOX_SZ;
 	mbox.h2fq.elem_sz = sizeof(union octep_ctrl_net_h2f_data_sz);
-	mbox.h2fq.elem_cnt = MBOX_H2FQ_ELEM_CNT;
-	mbox.h2fq.mask = MBOX_H2FQ_MASK;
 	mbox.f2hq.elem_sz = sizeof(union octep_ctrl_net_f2h_data_sz);
-	mbox.f2hq.elem_cnt = MBOX_F2HQ_ELEM_CNT;
-	mbox.f2hq.mask = MBOX_F2HQ_MASK;
 	mbox.process_req = fn;
 	mbox.user_ctx = mbox_user_ctx;
 
@@ -138,6 +130,10 @@ static int init_mbox(fn_cnxk_process_req fn, void *mbox_user_ctx)
 		CP_LIB_LOG(INFO, CNXK, "pem0 pf0 mbox init failed.\n");
 		munmap(mbox.barmem, MBOX_SZ);
 	}
+	CP_LIB_LOG(INFO, CNXK, "mbox h2fq: esz %u ecnt %u mask %u\n",
+		   mbox.h2fq.elem_sz, mbox.h2fq.elem_cnt, mbox.h2fq.mask);
+	CP_LIB_LOG(INFO, CNXK, "mbox f2hq: esz %u ecnt %u mask %u\n",
+		   mbox.f2hq.elem_sz, mbox.f2hq.elem_cnt, mbox.f2hq.mask);
 
 	return err;
 }

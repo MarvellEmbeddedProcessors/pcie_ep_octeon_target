@@ -57,7 +57,7 @@ int octep_cp_lib_init(struct octep_cp_lib_cfg *p_cfg)
 __attribute__((visibility("default")))
 int octep_cp_lib_poll(int max_events)
 {
-	CP_LIB_LOG(INFO, LIB, "poll\n");
+	//CP_LIB_LOG(INFO, LIB, "poll\n");
 
 	if (state != CP_LIB_STATE_READY)
 		return -EAGAIN;
