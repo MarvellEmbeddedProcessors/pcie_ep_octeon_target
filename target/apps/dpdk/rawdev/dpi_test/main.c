@@ -50,7 +50,14 @@
 #define DPI_MAX_DATA_SZ_PER_PTR	65535
 #define DPI_MAX_PFS 2
 
+/* Un-comment this definition to enable using Ctrl-Z to restart the application.
+ * This is useful for testing the DPI driver's stop/restart capability
+ * (used by other applications, such as mrvl-nvme).
+ */
+/* #define USE_CTRL_Z_FOR_APP_RESTART */
+
 static volatile bool force_quit;
+static volatile bool restart_app;
 
 static struct dpi_cring_data_s cring[DPI_MAX_PFS * DPI_MAX_VFS];
 uint64_t raddr, laddr;
@@ -76,6 +83,11 @@ signal_handler(int signum)
 		printf("\n\nSignal %d received, preparing to exit...\n",
 				signum);
 		force_quit = true;
+	} else if (signum == SIGTSTP) {
+		printf("\n\nSignal %d received, praparing to stop/restart...\n",
+			signum);
+		force_quit = true;
+		restart_app = true;
 	}
 }
 
@@ -956,6 +968,12 @@ int main(int argc, char **argv)
 	signal(SIGINT, signal_handler);
 	signal(SIGTERM, signal_handler);
 
+	restart_app = false;
+#ifdef USE_CTRL_Z_FOR_APP_RESTART
+	/* use <Ctrl-z> to restart application */
+	signal(SIGTSTP, signal_handler);
+#endif
+
 	/* parse application arguments (after the EAL ones) */
 	ret = dpi_parse_args(argc, argv);
 	if (ret < 0)
@@ -972,6 +990,8 @@ int main(int argc, char **argv)
 	timer_period *= rte_get_timer_hz();
 
 	printf("%d rawdev ports detected\n", nb_ports);
+
+app_restart:
 	/* Configure rawdev ports */
 	for (i = 0; i < nb_ports; i++) {
 		conf.chunk_pool = chunk_pool;
@@ -1039,7 +1059,7 @@ int main(int argc, char **argv)
 		for (i = 0; i < nb_ports; i++) {
 			int j;
 
-			for (j = 0; j < n_iter; j++) {
+			for (j = 0; (j < n_iter) && !force_quit; j++) {
 				if (mode == 1)
 					ret = dma_test_inbound(i, size);
 				else if (mode == 2)
@@ -1075,6 +1095,14 @@ close_devs:
 		if (rte_rawdev_close(i))
 			printf("Dev close failed for port %d\n", i);
 	}
+
+	if (restart_app) {
+		printf("\n\n\nRestarting application...\n\n\n\n");
+		restart_app = false;
+		force_quit = false;
+		goto app_restart;
+	}
+
 	if (chunk_pool)
 		rte_mempool_free(chunk_pool);
 	printf("Bye...\n");
