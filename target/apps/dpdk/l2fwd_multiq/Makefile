@@ -9,7 +9,7 @@ APP = l2fwd_multiq
 SRCS-y := main.c
 
 # Build using pkg-config variables if possible
-DPDK_PC?=$(TARGET_DIR)/usr/lib/pkgconfig/
+DPDK_PC?=$(TARGET_DIR)/usr/lib/pkgconfig/:$(STAGING_DIR)/usr/lib/pkgconfig/
 PKGCONF ?= PKG_CONFIG_PATH=$(DPDK_PC) PKG_CONFIG_SYSROOT_DIR=$(TARGET_DIR) pkg-config
 
 ifeq ($(shell $(PKGCONF) --exists libdpdk && echo 0),0)
