@@ -7,6 +7,7 @@ export OCTEONTX_HOST_ROOT
 
 SUBDIRS=drivers/legacy/modules/driver/src
 SUBDIRS+=drivers/mgmt_net
+SUBDIRS+=drivers/phc
 
 all: $(SUBDIRS)
 		for d in $(SUBDIRS); do \

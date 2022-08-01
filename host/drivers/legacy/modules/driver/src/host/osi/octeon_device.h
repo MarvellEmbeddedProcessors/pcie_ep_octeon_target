@@ -526,6 +526,11 @@ struct octep_vf_info {
 	u32 flags;
 };
 
+struct oct_ep_ptp_clock {
+	struct ptp_clock *ptp_clock;
+	struct ptp_clock_info caps;
+	octeon_device_t *oct_dev;
+};
 /** The Octeon device. 
  *  Each Octeon device has this structure to represent all its
  *  components.
@@ -693,6 +698,10 @@ struct _OCTEON_DEVICE {
 	int32_t mbox_data_index;
 
 	int32_t mbox_rcv_message_len;
+
+	/* PHC related fields */
+	struct cavium_delayed_wq dev_poll_wq;
+	struct oct_ep_ptp_clock *oct_ep_ptp_clock;
 
 } ____cacheline_aligned_in_smp;
 

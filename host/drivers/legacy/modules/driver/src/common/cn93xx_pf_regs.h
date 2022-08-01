@@ -16,6 +16,17 @@
 #define    CN93XX_RST_CORE_DOMAIN_W1S    0x000087E006001820ULL
 #define    CN93XX_RST_CORE_DOMAIN_W1C    0x000087E006001828ULL
 
+/*
+ * PTP register offsets from base of PTP block.  These are used
+ * along with a BAR4 region mapping to read them.  The BAR4
+ * mapping must be set up by Octeon, as the some BAR4 configuration
+ * registers are not accessible from the host.
+ */
+#define    CN93XX_MIO_PTP_BAR4_REGION               14
+#define    CN93XX_MIO_PTP_CLOCK_CFG_OFFSET          0xf00
+#define    CN93XX_MIO_PTP_CLOCK_HI_OFFSET           0xf10
+#define    CN93XX_MIO_PTP_CKOUT_THRESH_HI_OFFSET    0xf38
+
 #define     CN93XX_CONFIG_XPANSION_BAR             0x38
 
 #define     CN93XX_CONFIG_PCIE_CAP                 0x70
@@ -540,6 +551,10 @@
 
 
 #define    INVALID_MAP    0xffff
+/* For BAR4 mappings    */
+#define PEMX_BASE(a)			(0x8E0000000000ull | \
+					 (unsigned long long)a<<36)
+#define BAR4_IDX_OFFSET(i)		(0x700ull | i<<3)
 		   
 #endif
 

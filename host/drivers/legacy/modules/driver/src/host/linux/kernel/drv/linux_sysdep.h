@@ -46,6 +46,7 @@
 #include <asm/uaccess.h>
 #include <asm/types.h>
 #include <linux/pci.h>
+#include <linux/ptp_clock_kernel.h>
 #ifdef PCIE_AER
 #include <linux/aer.h>
 #endif
