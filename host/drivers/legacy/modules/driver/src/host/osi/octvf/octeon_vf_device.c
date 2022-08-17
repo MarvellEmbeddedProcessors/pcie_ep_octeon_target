@@ -2708,7 +2708,7 @@ int octeon_bar_access_valid(octeon_device_t * oct)
 		   || OCTEON_CN9XXX_VF(oct->chip_id)) {
 		val = octeon_read_csr64(oct, CN93XX_SDP_MAC_NUMBER);
 	} else if (OCTEON_CNXK_PF(oct->chip_id)
-		   || OCTEON_CNXK_PF(oct->chip_id)) {
+		   || OCTEON_CNXK_VF(oct->chip_id)) {
 		val = octeon_read_csr64(oct, CNXK_SDP_MAC_NUMBER);
 	} else {
 		printk("ERROR: unsupported Octeon in octeon_bar_access_valid()\n");

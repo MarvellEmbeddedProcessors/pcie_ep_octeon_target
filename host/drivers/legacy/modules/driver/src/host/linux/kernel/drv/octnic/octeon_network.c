@@ -901,7 +901,7 @@ struct net_device_stats *octnet_stats(struct net_device *pndev)
 	int i, total_rings;
 
 	total_rings = oct_dev->sriov_info.rings_per_pf;
-	if (OCTEON_CN9XXX_VF(oct_dev->chip_id))
+	if (OCTEON_CN9XXX_VF(oct_dev->chip_id) || OCTEON_CNXK_VF(oct_dev->chip_id))
 		total_rings = oct_dev->sriov_info.rings_per_vf;
 	memset(stats, 0, sizeof(struct net_device_stats));
 	cavium_print(PRINT_FLOW, "octnet_stats: network stats called\n");
@@ -1120,7 +1120,7 @@ oct_get_ethtool_stats(struct net_device *netdev,
 	rx_packets = rx_bytes = rx_dropped = 0;
 
 	total_rings = oct_dev->sriov_info.rings_per_pf;
-	if (OCTEON_CN9XXX_VF(oct_dev->chip_id))
+	if (OCTEON_CN9XXX_VF(oct_dev->chip_id) || OCTEON_CNXK_VF(oct_dev->chip_id))
 		total_rings = oct_dev->sriov_info.rings_per_vf;
 	for (i = 0; i < total_rings; i++) {
 		instr_queue =  oct_dev->instr_queue[i];
@@ -1178,7 +1178,7 @@ static void oct_get_strings(struct net_device *netdev, u32 stringset, u8 * data)
 	}
 
 	total_rings = oct_dev->sriov_info.rings_per_pf;
-	if (OCTEON_CN9XXX_VF(oct_dev->chip_id))
+	if (OCTEON_CN9XXX_VF(oct_dev->chip_id) || OCTEON_CNXK_VF(oct_dev->chip_id))
 		total_rings = oct_dev->sriov_info.rings_per_vf;
 	num_stats = ARRAY_LENGTH(oct_iq_stats_strings);
 	for (i = 0; i < total_rings; i++) {
@@ -1205,7 +1205,7 @@ static int oct_get_sset_count(struct net_device *netdev, int sset)
 	octeon_device_t *oct_dev = priv->oct_dev;
 
 	total_rings = oct_dev->sriov_info.rings_per_pf;
-	if (OCTEON_CN9XXX_VF(oct_dev->chip_id))
+	if (OCTEON_CN9XXX_VF(oct_dev->chip_id) || OCTEON_CNXK_VF(oct_dev->chip_id))
 		total_rings = oct_dev->sriov_info.rings_per_vf;
 	return ARRAY_LENGTH(ethtool_stats_keys) +
 		(total_rings * ARRAY_LENGTH(oct_iq_stats_strings)) +
@@ -1219,7 +1219,7 @@ static int oct_get_stats_count(struct net_device *netdev)
 	octeon_device_t *oct_dev = priv->oct_dev;
 
 	total_rings = oct_dev->sriov_info.rings_per_pf;
-	if (OCTEON_CN9XXX_VF(oct_dev->chip_id))
+	if (OCTEON_CN9XXX_VF(oct_dev->chip_id) || OCTEON_CNXK_VF(oct_dev->chip_id))
 		total_rings = oct_dev->sriov_info.rings_per_vf;
 	return ARRAY_LENGTH(ethtool_stats_keys) +
 		(total_rings * ARRAY_LENGTH(oct_iq_stats_strings)) +
