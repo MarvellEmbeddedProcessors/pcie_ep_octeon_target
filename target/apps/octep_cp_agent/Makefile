@@ -27,12 +27,16 @@ $(info Use LIBCONFIG_PKGCONFIG_PATH to provide correct path to libconfig.pc)
 $(error Aborting...)
 endif
 
+LIBCONFIG_CFLAGS = $(shell $(LIBCONFIG_PKGCONF) --cflags libconfig)
 LIBCONFIG_SHARED_LIB_FLAGS = $(shell $(LIBCONFIG_PKGCONF) --libs libconfig)
 LIBCONFIG_STATIC_LIB_FLAGS = $(shell $(LIBCONFIG_PKGCONF) --static --libs libconfig)
 
-SRCS = main.c
+SRCS = main.c loop.c app_config.c
 
-CFLAGS = -O3 -Werror -Wall -I$(CP_LIB_DIR)/include
+CFLAGS = -O3 -Werror -Wall \
+	-I$(CP_LIB_DIR)/include \
+	-I$(CURDIR)/compat/$(PLAT) \
+	$(LIBCONFIG_CFLAGS)
 
 LDFLAGS_SHARED = -L$(CP_LIB_DIR) -l$(NAME_PREFIX)
 LDFLAGS_SHARED += $(LIBCONFIG_SHARED_LIB_FLAGS)

@@ -17,8 +17,6 @@
 #include "cp_lib.h"
 #include "octep_ctrl_mbox.h"
 #include "cnxk.h"
-#include "cnxk_loop.h"
-#include "cnxk_nic.h"
 
 #ifndef BIT_ULL
 #define BIT_ULL(nr) (1ULL << (nr))
@@ -404,40 +402,24 @@ static int detect_soc()
 	return 0;
 }
 
-static struct cp_lib_soc_ops ops[CP_LIB_SOC_MAX][OCTEP_CP_MODE_MAX] = {
-	/* cnxk */
+static struct cp_lib_soc_ops ops[CP_LIB_SOC_MAX] = {
+	/* otx2 */
 	{
-		{
-			cnxk_loop_init,
-			cnxk_loop_poll,
-			cnxk_loop_process_sigusr1,
-			cnxk_loop_uninit
-		},
-		{
-			cnxk_nic_init,
-			cnxk_nic_poll,
-			cnxk_nic_process_sigusr1,
-			cnxk_nic_uninit
-		}
+		cnxk_init,
+		cnxk_msg_poll,
+		cnxk_send_heartbeat,
+		cnxk_uninit
 	},
 	/* cnxk */
 	{
-		{
-			cnxk_loop_init,
-			cnxk_loop_poll,
-			cnxk_loop_process_sigusr1,
-			cnxk_loop_uninit
-		},
-		{
-			cnxk_nic_init,
-			cnxk_nic_poll,
-			cnxk_nic_process_sigusr1,
-			cnxk_nic_uninit
-		}
+		cnxk_init,
+		cnxk_msg_poll,
+		cnxk_send_heartbeat,
+		cnxk_uninit
 	}
 };
 
-int soc_get_ops(enum octep_cp_mode mode, struct cp_lib_soc_ops **p_ops)
+int soc_get_ops(struct cp_lib_soc_ops **p_ops)
 {
 	int err;
 
@@ -445,14 +427,13 @@ int soc_get_ops(enum octep_cp_mode mode, struct cp_lib_soc_ops **p_ops)
 	if (err)
 		return err;
 
-	cfg.soc = (model.flag & (SOC_MODEL_CN10K)) ?
+	lib_cfg.soc = (model.flag & (SOC_MODEL_CN10K)) ?
 		   CP_LIB_SOC_CNXK : CP_LIB_SOC_OTX2;
-	if (mode >= OCTEP_CP_MODE_MAX || !p_ops) {
-		CP_LIB_LOG(INFO, SOC, "Invalid param: mode:%d p_ops:%p\n",
-			   mode, p_ops);
+	if (!p_ops) {
+		CP_LIB_LOG(INFO, SOC, "Invalid param: p_ops:%p\n", p_ops);
 		return -EINVAL;
 	}
-	*p_ops = &ops[cfg.soc][mode];
+	*p_ops = &ops[lib_cfg.soc];
 
 	return 0;
 }

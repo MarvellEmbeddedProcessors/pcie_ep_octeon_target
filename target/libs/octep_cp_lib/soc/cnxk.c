@@ -178,7 +178,22 @@ static int set_fw_ready(int status)
 	return 0;
 }
 
-int cnxk_init(fn_cnxk_process_req process_mbox, void *mbox_user_ctx)
+static int cnxk_process_mbox_req(void *user_ctx,
+				 struct octep_ctrl_mbox_msg *msg)
+{
+	int resp_szw;
+
+	if (user_cfg.msg_handler) {
+		resp_szw = user_cfg.msg_handler(OCTEP_CP_EVENT_MBOX, user_ctx,
+						msg->msg);
+		msg->hdr.flags = OCTEP_CTRL_MBOX_MSG_HDR_FLAG_RESP;
+		msg->hdr.sizew = resp_szw;
+	}
+
+	return 0;
+}
+
+int cnxk_init(struct octep_cp_lib_cfg *cfg)
 {
 	int err = 0;
 
@@ -187,7 +202,7 @@ int cnxk_init(fn_cnxk_process_req process_mbox, void *mbox_user_ctx)
 	err = get_bar4_idx8_addr();
 	if (err)
 		return err;
-	err = init_mbox(process_mbox, mbox_user_ctx);
+	err = init_mbox(cnxk_process_mbox_req, NULL);
 	if (err)
 		return err;
 	err = open_oei_trig_csr();
@@ -210,6 +225,29 @@ oei_trig_fail:
 	octep_ctrl_mbox_uninit(&mbox);
 	munmap(mbox.barmem, MBOX_SZ);
 	return err;
+}
+
+int cnxk_msg_poll()
+{
+	struct octep_ctrl_mbox_msg mbox_msg;
+	union octep_ctrl_net_h2f_data_sz data;
+	int err;
+
+	err = octep_ctrl_mbox_is_host_ready(&mbox);
+	if (err)
+		return err;
+
+	mbox_msg.msg = &data;
+	err = octep_ctrl_mbox_recv(&mbox, &mbox_msg);
+	if (err)
+		return err;
+
+	return 0;
+}
+
+int cnxk_send_heartbeat()
+{
+	return 0;
 }
 
 int cnxk_raise_oei_trig_interrupt()

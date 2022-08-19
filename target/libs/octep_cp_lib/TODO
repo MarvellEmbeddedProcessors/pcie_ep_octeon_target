@@ -6,4 +6,4 @@
    look at drivers/soc/marvell/octeontx2-sdp/sdp.c/set_firmware_ready function
 4) Add keep-alive mbox message, send it periodically from app main loop
 5) support parsing of idx_range() in config file
-
+6) replace pem with dom/domain in code
