@@ -13,6 +13,10 @@ MODULE_AUTHOR("Cavium Networks");
 MODULE_DESCRIPTION("Octeon Host PCI Nic Driver");
 MODULE_LICENSE("GPL");
 
+int keepalive_miss_limit = 10;
+module_param(keepalive_miss_limit, int, 0);
+MODULE_PARM_DESC(keepalive_miss_limit, "Number of missed keepalive IRQS required to bring link down");
+
 extern void octnet_napi_drv_callback(int oct_id, int oq_no, int event);
 extern void octnet_napi_callback(void *);
 
@@ -256,7 +260,6 @@ int octnet_get_inittime_link_status(void *oct, void *props_ptr)
 	return (ls->status);
 }
 
-#define HB_LIMIT	10
 oct_poll_fn_status_t
 octnet_check_alive(void *oct, unsigned long props_ptr)
 {
@@ -267,19 +270,9 @@ octnet_check_alive(void *oct, unsigned long props_ptr)
 	props = (struct octdev_props_t *)props_ptr;
 	ls = props->ls;
 
-	if (!oct_dev->is_alive_flag
-	    && oct_dev->heartbeat_miss_cnt >= HB_LIMIT
-	    && ls->link_info[0].link.s.status) {
-		cavium_print_msg("OCTNIC[%d] - setting link down down due to %d missed heartbeats.\n",
-				 oct_dev->octeon_id, HB_LIMIT);
-		ls->link_info[0].link.s.status = 0;
-		netif_carrier_off(props->pndev[0]);
-		octnet_stop_txqueue(props->pndev[0]);
-	}
-
 	if (!oct_dev->is_alive_flag) {
 		oct_dev->heartbeat_miss_cnt++;
-		if (oct_dev->heartbeat_miss_cnt <= HB_LIMIT)
+		if (oct_dev->heartbeat_miss_cnt <= keepalive_miss_limit)
 			cavium_print_msg("OCTNIC[%d] - missed heartbeat: %d\n",
 					 oct_dev->octeon_id,
 					 oct_dev->heartbeat_miss_cnt);
@@ -291,6 +284,16 @@ octnet_check_alive(void *oct, unsigned long props_ptr)
 		netif_carrier_on(props->pndev[0]);
 		octnet_txqueues_wake(props->pndev[0]);
 		oct_dev->heartbeat_miss_cnt = 0;
+	}
+
+	if (!oct_dev->is_alive_flag
+	    && oct_dev->heartbeat_miss_cnt >= keepalive_miss_limit
+	    && ls->link_info[0].link.s.status) {
+		cavium_print_msg("OCTNIC[%d] - setting link down down due to %d missed heartbeats.\n",
+				 oct_dev->octeon_id, keepalive_miss_limit);
+		ls->link_info[0].link.s.status = 0;
+		netif_carrier_off(props->pndev[0]);
+		octnet_stop_txqueue(props->pndev[0]);
 	}
 
 	/* reset the value. Interrupt will set this value again */
@@ -1487,6 +1490,11 @@ int init_module()
 		cavium_print_msg("OCTNIC: Driver compile options: NONE\n");
 
 	cavium_memset(octprops, 0, sizeof(void *) * MAX_OCTEON_DEVICES);
+
+	if (keepalive_miss_limit < 4) {
+	    cavium_error("OCTNIC: keepalive_miss_limit parameter must be at least 4, setting to 4\n");
+	    keepalive_miss_limit = 4;
+	}
 
 #if defined(OCTEON_EXCLUDE_BASE_LOAD)
 	if (octeon_base_init_module()) {
