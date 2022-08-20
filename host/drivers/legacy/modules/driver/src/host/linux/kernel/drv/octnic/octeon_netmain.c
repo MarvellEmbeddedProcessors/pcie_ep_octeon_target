@@ -13,9 +13,14 @@ MODULE_AUTHOR("Cavium Networks");
 MODULE_DESCRIPTION("Octeon Host PCI Nic Driver");
 MODULE_LICENSE("GPL");
 
-int keepalive_miss_limit = 10;
-module_param(keepalive_miss_limit, int, 0);
+/*
+ * This is only used on the PF.  This file is shared with the VF, so it
+ * also is present for the VF, but is not used.
+ */
+int keepalive_miss_limit = 20;
+module_param(keepalive_miss_limit, int, 0600);
 MODULE_PARM_DESC(keepalive_miss_limit, "Number of missed keepalive IRQS required to bring link down");
+#define MIN_STARTUP_KEEPALIVE_MISS_CNT	15
 
 extern void octnet_napi_drv_callback(int oct_id, int oq_no, int event);
 extern void octnet_napi_callback(void *);
@@ -1216,7 +1221,7 @@ int octnet_init_nic_module(int octeon_id, void *octeon_dev)
 	/* register a poll fn to check if octeon is alive */
 	poll_ops.fn = octnet_check_alive;
 	poll_ops.fn_arg = (unsigned long)octprops[octeon_id];
-	poll_ops.ticks = CAVIUM_TICKS_PER_SEC*6;
+	poll_ops.ticks = CAVIUM_TICKS_PER_SEC;
 	strcpy(poll_ops.name, "Octeon Alive Status");
 	octeon_register_poll_fn(octeon_id, &poll_ops);
 
@@ -1491,9 +1496,11 @@ int init_module()
 
 	cavium_memset(octprops, 0, sizeof(void *) * MAX_OCTEON_DEVICES);
 
-	if (keepalive_miss_limit < 4) {
-	    cavium_error("OCTNIC: keepalive_miss_limit parameter must be at least 4, setting to 4\n");
-	    keepalive_miss_limit = 4;
+	if (keepalive_miss_limit < MIN_STARTUP_KEEPALIVE_MISS_CNT) {
+	    cavium_error("OCTNIC: keepalive_miss_limit parameter must be at least %d, setting to %d\n",
+			 MIN_STARTUP_KEEPALIVE_MISS_CNT,
+			 MIN_STARTUP_KEEPALIVE_MISS_CNT);
+	    keepalive_miss_limit = MIN_STARTUP_KEEPALIVE_MISS_CNT;
 	}
 
 #if defined(OCTEON_EXCLUDE_BASE_LOAD)

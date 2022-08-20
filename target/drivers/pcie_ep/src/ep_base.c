@@ -78,7 +78,7 @@ union sdp_epf_oei_trig {
 
 #define NPU_HANDSHAKE_SIGNATURE 0xABCDABCD
 #define KEEPALIVE_OEI_TRIG_BIT	5
-#define KEEPALIVE_INTERVAL_MS	5000
+#define KEEPALIVE_INTERVAL_MS	500
 
 void __iomem *nwa_internal_addr;
 EXPORT_SYMBOL(nwa_internal_addr);
