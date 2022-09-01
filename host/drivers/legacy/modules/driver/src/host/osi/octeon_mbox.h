@@ -1,3 +1,7 @@
+/* Copyright (c) 2022 Marvell.
+ * SPDX-License-Identifier: GPL-2.0
+ */
+
 #ifndef __OCTEON_MBOX_H__
 #define __OCTEON_MBOX_H__
 
@@ -8,6 +12,7 @@
 typedef enum {
 	OTX_VF_MBOX_CMD_SET_MTU,
 	OTX_VF_MBOX_CMD_SET_MAC_ADDR,
+	OTX_VF_MBOX_CMD_GET_MAC_ADDR,
 	OTX_VF_MBOX_CMD_START_QUEUE,
 	OTX_VF_MBOX_CMD_STOP_QUEUE,
 	OTX_VF_MBOX_CMD_GET_LINK,
@@ -38,7 +43,6 @@ typedef enum {
 
 typedef enum {
 	OTX_VF_LINK_SPEED_NONE,
-	OTX_VF_LINK_SPEED_10,
 	OTX_VF_LINK_SPEED_100,
 	OTX_VF_LINK_SPEED_1000,
 	OTX_VF_LINK_SPEED_2500,

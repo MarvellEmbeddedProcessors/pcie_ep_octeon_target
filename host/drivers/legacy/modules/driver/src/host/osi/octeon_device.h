@@ -516,6 +516,11 @@ struct iq_intr_wq {
 	uint64_t last_pkt_cnt[64];
 };
 
+/* The Octeon VF device specific info data structure.*/
+struct octep_vf_info {
+	u8 mac_addr[ETH_ALEN];
+};
+
 /** The Octeon device. 
  *  Each Octeon device has this structure to represent all its
  *  components.
@@ -673,6 +678,8 @@ struct _OCTEON_DEVICE {
 	cavium_oei_cb_t oei_irq_handler;
 	int is_alive_flag;	/* flag set by irq handler if alive */
 	int heartbeat_miss_cnt; /* count of missed alive checks */
+	/* VFs info */
+	struct octep_vf_info vf_info[MAX_OCTEON_DEVICES];
 } ____cacheline_aligned_in_smp;
 
 #define CHIP_FIELD(oct, TYPE, field)             \

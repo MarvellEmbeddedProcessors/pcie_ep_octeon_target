@@ -1,4 +1,7 @@
-/* */
+/* Copyright (c) 2022 Marvell.
+ * SPDX-License-Identifier: GPL-2.0
+ */
+
 #include "octeon_hw.h"
 #include "octeon_mbox.h"
 #include "octeon_config.h"
@@ -26,25 +29,34 @@ handle_vf_set_mtu(octeon_device_t *oct, int vf_id, union otx_vf_mbox_word cmd,
 	rsp->s_set_mtu.id = cmd.s_set_mtu.id;
 	rsp->s_set_mtu.type = OTX_VF_MBOX_TYPE_RSP_ACK;
 	cavium_print_msg("mbox handle mtu cmd vf %d id %d mtu is %d\n",
-			vf_id, cmd.s_set_mtu.id, (int)cmd.s_set_mtu.mtu);
+			 vf_id, cmd.s_set_mtu.id, (int)cmd.s_set_mtu.mtu);
 }
 
 static void
 handle_vf_set_mac_addr(octeon_device_t *oct,  int vf_id, union otx_vf_mbox_word cmd,
 		      union otx_vf_mbox_word *rsp)
 {
-	uint8_t vf_mac_addr[6];
 	int i;
 
 	for (i = 0; i < MBOX_MAX_DATA_SIZE; i++)
-		vf_mac_addr[i] = cmd.s_set_mac.mac_addr[i];
+		oct->vf_info[vf_id].mac_addr[i] = cmd.s_set_mac.mac_addr[i];
 
 	rsp->s_set_mac.id = cmd.s_set_mac.id;
 	rsp->s_set_mac.type = OTX_VF_MBOX_TYPE_RSP_ACK;
-	cavium_print_msg("mbox handle set mac addr vf %d cmd_id %d \
-			mac %02x:%02x:%02x:%02x:%02x:%02x\n", vf_id, cmd.s_set_mac.id,
-			vf_mac_addr[0], vf_mac_addr[1], vf_mac_addr[2], vf_mac_addr[3],
-			vf_mac_addr[4], vf_mac_addr[5]);
+	cavium_print_msg("%s %pM\n",  __func__, oct->vf_info[vf_id].mac_addr);
+}
+
+static void
+handle_vf_get_mac_addr(octeon_device_t *oct,  int vf_id, union otx_vf_mbox_word cmd,
+		      union otx_vf_mbox_word *rsp)
+{
+	int i;
+
+	rsp->s_set_mac.id = cmd.s_set_mac.id;
+	rsp->s_set_mac.type = OTX_VF_MBOX_TYPE_RSP_ACK;
+	for (i = 0; i < MBOX_MAX_DATA_SIZE; i++)
+		rsp->s_set_mac.mac_addr[i] = oct->vf_info[vf_id].mac_addr[i];
+	cavium_print_msg("%s vf_info: %pM\n",  __func__, oct->vf_info[vf_id].mac_addr);
 }
 
 static void
@@ -155,6 +167,9 @@ void handle_mbox_work(struct work_struct *work)
 		break;
 	case OTX_VF_MBOX_CMD_SET_MAC_ADDR:
 		handle_vf_set_mac_addr(oct, vf_id, cmd, &rsp);
+		break;
+	case OTX_VF_MBOX_CMD_GET_MAC_ADDR:
+		handle_vf_get_mac_addr(oct, vf_id, cmd, &rsp);
 		break;
 	case OTX_VF_MBOX_CMD_BULK_SEND:
 		handle_vf_pf_config_data(oct, mbox, vf_id, cmd, &rsp);
