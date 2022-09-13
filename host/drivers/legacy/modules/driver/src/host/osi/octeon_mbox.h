@@ -8,7 +8,7 @@
 #include "octeon_main.h"
 
 #define OTX_PF_MBOX_VERSION 0
-
+#define OCTEON_VF_FLAG_PF_SET_MAC  (1 << 0) /* PF has set MAC address */
 typedef enum {
 	OTX_VF_MBOX_CMD_SET_MTU,
 	OTX_VF_MBOX_CMD_SET_MAC_ADDR,
@@ -74,11 +74,26 @@ struct otx_vf_mbox_link {
 	uint64_t rsvd:37;
 } __packed;
 
-#define OTX_VF_MBOX_TIMEOUT_MS 10
+#define OTX_VF_MBOX_TIMEOUT_MS 1000
 #define OTX_VF_MBOX_MAX_RETRIES 2
-#define OTX_VF_MBOX_VERSION     1
+#define OTX_VF_MBOX_VERSION     0
 #define MBOX_MAX_DATA_SIZE      6
 #define MBOX_MORE_FRAG_FLAG     1
+#define MBOX_MAX_DATA_BUF_SIZE 256
+
+#define OTX_VF_MBOX_WRITE_WAIT_TIME        msecs_to_jiffies(1)
+
+enum otx_mbox_cmd_status {
+	OTX_VF_MBOX_STATUS_SUCCESS = 0,
+	OTX_VF_MBOX_STATUS_FAILED = 1,
+	OTX_VF_MBOX_STATUS_BUSY = 2
+};
+
+enum otx_vf_mbox_state {
+	OTX_VF_MBOX_STATE_IDLE = 0,
+	OTX_VF_MBOX_STATE_BUSY = 1,
+};
+
 
 union otx_vf_mbox_word {
 	uint64_t u64;

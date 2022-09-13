@@ -13,6 +13,7 @@
 #include "if_pport.h"
 #endif
 
+#include "octeon_vf_mbox.h"
 extern struct octdev_props_t *octprops[MAX_OCTEON_DEVICES];
 #define ARRAY_LENGTH(a) (sizeof(a)/ sizeof( (a)[0]))
 
@@ -290,47 +291,44 @@ void octnet_set_mcast_list(octnet_os_devptr_t * pndev)
 /* Net device set_mac_address */
 int octnet_set_mac(struct net_device *pndev, void *addr)
 {
-#if defined(OCTNIC_CTRL)
-	int ret = 0;
-#endif
-	octnet_priv_t *priv;
 	struct sockaddr *p_sockaddr = (struct sockaddr *)addr;
-	octnic_ctrl_pkt_t nctrl;
-	octnic_ctrl_params_t nparams;
+	octeon_device_t *oct_dev;
+	octnet_priv_t *priv;
+	uint8_t *mac_addr;
+	int ret_val;
 
-	priv = GET_NETDEV_PRIV(pndev);
-
-	nctrl.ncmd.u64 = 0;
-	nctrl.ncmd.s.cmd = OCTNET_CMD_CHANGE_MACADDR;
-	nctrl.ncmd.s.param1 = priv->linfo.ifidx;
-	nctrl.ncmd.s.param2 = 0;
-	nctrl.ncmd.s.more = 1;
-	nctrl.netpndev = (unsigned long)pndev;
-	nctrl.cb_fn = octnet_link_ctrl_cmd_completion;
-	nctrl.wait_time = 100;
-
-	nctrl.udd[0] = 0;
-	/* The MAC Address is presented in network byte order. */
-	cavium_memcpy((uint8_t *) & nctrl.udd[0] + 2, p_sockaddr->sa_data,
-		      ETH_ALEN);
-
-	nparams.resp_order = OCTEON_RESP_ORDERED;
-#if defined(OCTNIC_CTRL)
-	ret = octnet_send_nic_ctrl_pkt(priv->oct_dev, &nctrl, nparams);
-	if (ret < 0) {
-		cavium_error("OCTNIC: MAC Address change failed\n");
-		return -1;
+	if (!is_valid_ether_addr(p_sockaddr->sa_data)) {
+		cavium_error("%s Invalid  MAC Address %pM\n", __func__, p_sockaddr->sa_data);
+		return -EADDRNOTAVAIL;
 	}
-#else
-	octnet_link_ctrl_cmd_completion((void *)&nctrl);
-#endif
+	priv = GET_NETDEV_PRIV(pndev);
+	oct_dev = priv->oct_dev;
+	mac_addr = (uint8_t *)p_sockaddr->sa_data;
 
+	if (OCTEON_CN9PLUS_VF(oct_dev->chip_id)) {
+		ret_val = octnet_vf_mbox_set_mac_addr(oct_dev, mac_addr);
+		if (ret_val) {
+			cavium_error("%s octnet_vf_mbox_set_mac_addr %pM fail ret_val: %d\n",
+				     __func__, mac_addr, ret_val);
+			return -EADDRNOTAVAIL;
+		}
+		cavium_print_msg("%s octnet_vf_mbox_set_mac_addr is success %pM on %s\n",
+			__func__, mac_addr, pndev->name);
+	} else {
+		cavium_print_msg("OCTNIC: %s PF MACAddr changed to %pM on %s\n",
+				  __func__, mac_addr, pndev->name);
+	}
+
+	cavium_memcpy(pndev->dev_addr, mac_addr, ETH_ALEN);
+	cavium_print_msg("OCTNIC: %s MACAddr changed to 0x%llx on %s\n",
+			  __func__, *((uint64_t *) &pndev->dev_addr), pndev->name);
 	return 0;
 }
 
 /* Net device change_mtu */
 int octnet_change_mtu(struct net_device *pndev, int new_mtu)
 {
+	octeon_device_t *oct_dev;
 	octnet_priv_t *priv;
 	octnic_ctrl_pkt_t nctrl;
 	octnic_ctrl_params_t nparams;
@@ -339,6 +337,7 @@ int octnet_change_mtu(struct net_device *pndev, int new_mtu)
 
 	cavium_print(PRINT_FLOW, "OCTNIC: %s called\n", __CVM_FUNCTION__);
 	priv = GET_NETDEV_PRIV(pndev);
+	oct_dev = priv->oct_dev;
 
 	/* Limit the MTU to make sure the ethernet packets are between 64 bytes
 	   and 65535 bytes */
@@ -374,20 +373,27 @@ int octnet_change_mtu(struct net_device *pndev, int new_mtu)
 		return -1;
 	}
 	octnet_link_ctrl_cmd_completion((void *)&nctrl);
-
+	if (OCTEON_CN9PLUS_VF(oct_dev->chip_id)) {
+		ret = octnet_vf_mbox_send_mtu_set(oct_dev, new_mtu);
+		if (ret) {
+			cavium_error("%s octnet_vf_mbox_send_mtu_set %d fail ret_val: %d\n",
+				     __func__, new_mtu, ret);
+			return -EADDRNOTAVAIL;
+		}
+		cavium_print_msg("%s octnet_vf_mbox_send_mtu_set is success %d on %s\n",
+			__func__, new_mtu, pndev->name);
+	}
 	return 0;
 }
 
 int octnet_get_vf_config(struct net_device *dev,
 			 int vf, struct ifla_vf_info *ivi)
 {
-	u8 mac_addr[ETH_ALEN] = {0, 1, 2, 3, 4, 5};
+	octnet_priv_t *priv = GET_NETDEV_PRIV(dev);
+	octeon_device_t *oct_dev = priv->oct_dev;
 
-	/* TODO fill in based on real values - for now hard code */
 	ivi->vf = vf;
-
-	ether_addr_copy(ivi->mac, mac_addr);
-
+	ether_addr_copy(ivi->mac, oct_dev->vf_info[vf].mac_addr);
 	ivi->vlan = 0;
 	ivi->qos = 0;
 	ivi->spoofchk = 0;
@@ -401,7 +407,22 @@ int octnet_get_vf_config(struct net_device *dev,
 
 int octnet_set_vf_mac(struct net_device *dev, int vf, u8 *mac)
 {
-	cavium_print_msg("set vf[%d] mac not supported %pM\n", vf, mac);
+	int i;
+	octnet_priv_t *priv;
+	octeon_device_t *oct_dev;
+
+	if (!is_valid_ether_addr(mac)) {
+		cavium_error("%s Invalid  MAC Address %pM\n", __func__, mac);
+		return -EADDRNOTAVAIL;
+	}
+
+	priv = GET_NETDEV_PRIV(dev);
+	oct_dev = priv->oct_dev;
+	cavium_print_msg("%s set dev name[%s] oct_dev name [%s] vf[%d] mac %pM\n",
+			__func__, dev->name, oct_dev->device_name, vf, mac);
+	for (i = 0; i < ETH_ALEN; i++)
+		oct_dev->vf_info[vf].mac_addr[i] = mac[i];
+	oct_dev->vf_info[vf].flags |=  OCTEON_VF_FLAG_PF_SET_MAC;
 	return 0;
 }
 

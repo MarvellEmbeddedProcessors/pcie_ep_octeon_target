@@ -40,6 +40,105 @@ static int cn93xx_vf_soft_reset(octeon_device_t * oct)
 	return 0;
 }
 
+static int
+cn93xx_vf_send_mbox_cmd_nolock(octeon_device_t *oct_dev, union otx_vf_mbox_word cmd,
+			       union otx_vf_mbox_word *rsp)
+{
+	volatile uint64_t reg_val = 0ull;
+	volatile u8 __iomem *vf_pf_data_reg;
+	int retry_count = 0;
+	int count = 0;
+	long timeout = OTX_VF_MBOX_WRITE_WAIT_TIME;
+	octeon_mbox_t *mbox = oct_dev->mbox[0];
+
+	cmd.s.type = OTX_VF_MBOX_TYPE_CMD;
+	cmd.s.version = OTX_VF_MBOX_VERSION;
+	oct_dev->mbox_cmd_id = ~oct_dev->mbox_cmd_id;
+	cmd.s.id = oct_dev->mbox_cmd_id;
+	vf_pf_data_reg = mbox->mbox_write_reg;
+retry:
+	OCTEON_WRITE64(vf_pf_data_reg, cmd.u64);
+	for (count = 0; count < OTX_VF_MBOX_TIMEOUT_MS; count++) {
+		schedule_timeout_uninterruptible(timeout);
+		reg_val = OCTEON_READ64(vf_pf_data_reg);
+		if (reg_val != cmd.u64) {
+			rsp->u64 = reg_val;
+			if (rsp->s.id == cmd.s.id)
+				break;
+			/* resp for previous cmd. retry */
+			retry_count++;
+			if (retry_count == OTX_VF_MBOX_MAX_RETRIES)
+				break;
+			goto retry;
+		}
+	}
+	if (count == OTX_VF_MBOX_TIMEOUT_MS ||
+	    retry_count == OTX_VF_MBOX_MAX_RETRIES) {
+		cavium_error("%s Timeout count:%d retry_count:%d\n", __func__, count, retry_count);
+		return -ETIMEDOUT;
+	}
+	rsp->u64 = reg_val;
+	return 0;
+}
+
+static int
+cn93xx_vf_send_mbox_cmd(octeon_device_t *oct_dev, union otx_vf_mbox_word cmd,
+			union otx_vf_mbox_word *rsp)
+{
+	volatile uint64_t reg_val = 0ull;
+	volatile u8 __iomem *vf_pf_data_reg;
+	unsigned long flags;
+	int retry_count = 0;
+	int count = 0;
+	long timeout = OTX_VF_MBOX_WRITE_WAIT_TIME;
+	octeon_mbox_t *mbox = oct_dev->mbox[0];
+
+	cavium_spin_lock_irqsave(&oct_dev->vf_mbox_lock, flags);
+	if (mbox->state == OTX_VF_MBOX_STATE_BUSY) {
+		spin_unlock_irqrestore(&oct_dev->vf_mbox_lock, flags);
+		cavium_error("%s VF Mbox is in Busy state\n", __func__);
+		return OTX_VF_MBOX_STATUS_BUSY;
+	}
+	mbox->state = OTX_VF_MBOX_STATE_BUSY;
+	cavium_spin_unlock_irqrestore(&oct_dev->vf_mbox_lock, flags);
+
+	cmd.s.type = OTX_VF_MBOX_TYPE_CMD;
+	cmd.s.version = OTX_VF_MBOX_VERSION;
+
+	oct_dev->mbox_cmd_id = ~oct_dev->mbox_cmd_id;
+	cmd.s.id = oct_dev->mbox_cmd_id;
+	vf_pf_data_reg = mbox->mbox_write_reg;
+retry:
+	OCTEON_WRITE64(vf_pf_data_reg, cmd.u64);
+	for (count = 0; count < OTX_VF_MBOX_TIMEOUT_MS; count++) {
+		schedule_timeout_uninterruptible(timeout);
+		reg_val = OCTEON_READ64(vf_pf_data_reg);
+		if (reg_val != cmd.u64) {
+			rsp->u64 = reg_val;
+			if (rsp->s.id == cmd.s.id)
+				break;
+			/* resp for previous cmd. retry */
+			retry_count++;
+			if (retry_count == OTX_VF_MBOX_MAX_RETRIES)
+				break;
+			goto retry;
+		}
+		count++;
+	}
+	cavium_spin_lock_irqsave(&oct_dev->vf_mbox_lock, flags);
+	if (count == OTX_VF_MBOX_TIMEOUT_MS ||
+	    retry_count == OTX_VF_MBOX_MAX_RETRIES) {
+		cavium_error("%s Timeout count:%d retry_count:%d\n", __func__, count, retry_count);
+		spin_unlock_irqrestore(&oct_dev->vf_mbox_lock, flags);
+		return -ETIMEDOUT;
+	}
+	mbox->state = OTX_VF_MBOX_STATE_IDLE;
+	spin_unlock_irqrestore(&oct_dev->vf_mbox_lock, flags);
+
+	rsp->u64 = reg_val;
+	return 0;
+}
+
 void cn93xx_dump_regs(octeon_device_t * oct, int qno)
 {
 //	printk("R[%d]_IN_INSTR_DBELL: 0x%016llx\n", qno, octeon_read_csr64(oct,
@@ -528,6 +627,7 @@ static void cn93xx_setup_vf_mbox_regs(octeon_device_t * oct, int q_no)
 	octeon_mbox_t *mbox = oct->mbox[q_no];
 
 	mbox->q_no = q_no;
+	mbox->state = OTX_VF_MBOX_STATE_IDLE;
 
 	/* PF mbox interrupt reg */
 	mbox->mbox_int_reg = (uint8_t *) oct->mmio[0].hw_addr +
@@ -759,7 +859,6 @@ static void cn93xx_disable_vf_interrupt(void *chip, uint8_t intr_flag)
 	octeon_cn93xx_vf_t *cn93xx = (octeon_cn93xx_vf_t *) chip;
 	octeon_device_t *oct = (octeon_device_t *) cn93xx->oct;
 	uint32_t q_no;
-
 	for (q_no = 0; q_no < oct->rings_per_vf; q_no++) {
 		reg_val =
 		    octeon_read_csr64(oct,
@@ -768,7 +867,7 @@ static void cn93xx_disable_vf_interrupt(void *chip, uint8_t intr_flag)
 		octeon_write_csr64(oct,
 				   CN93XX_VF_SDP_R_MBOX_PF_VF_INT(q_no), reg_val);
 	}
-	cavium_print_msg("VF MBOX interrupts enabled.\n");
+	cavium_print_msg("VF MBOX interrupts disabled.\n");
 }
 
 
@@ -831,8 +930,7 @@ int setup_cn98xx_octeon_vf_device(octeon_device_t * oct)
 	cavium_print_msg("RINGS PER VF ARE:::%d\n", oct->rings_per_vf);
 
 	oct->drv_flags |= OCTEON_MSIX_CAPABLE;
-	/* VF does not use MBOX */
-	//oct->drv_flags |= OCTEON_MBOX_CAPABLE;
+	oct->drv_flags |= OCTEON_MBOX_CAPABLE;
 	oct->drv_flags |= OCTEON_MSIX_AFFINITY_CAPABLE;
 
 	oct->fn_list.setup_iq_regs = cn93xx_setup_vf_iq_regs;
@@ -858,12 +956,12 @@ int setup_cn98xx_octeon_vf_device(octeon_device_t * oct)
 	oct->fn_list.disable_input_queue = cn93xx_disable_vf_input_queue;
 	oct->fn_list.disable_output_queue = cn93xx_disable_vf_output_queue;
 
-
 	oct->fn_list.force_io_queues_off = cn93xx_force_io_queues_off;
-
 
 	oct->fn_list.dump_registers = cn93xx_dump_vf_initialized_regs;
 
+	oct->fn_list.send_mbox_cmd = cn93xx_vf_send_mbox_cmd;
+	oct->fn_list.send_mbox_cmd_nolock = cn93xx_vf_send_mbox_cmd_nolock;
 	return 0;
 }
 
@@ -901,7 +999,7 @@ int setup_cn93xx_octeon_vf_device(octeon_device_t * oct)
 	cavium_print_msg("RINGS PER VF ARE:::%d\n", oct->rings_per_vf);
 
 	oct->drv_flags |= OCTEON_MSIX_CAPABLE;
-	/* VF does not use MBOX */
+	oct->drv_flags |= OCTEON_MBOX_CAPABLE;
 	oct->drv_flags |= OCTEON_MSIX_AFFINITY_CAPABLE;
 
 	oct->fn_list.setup_iq_regs = cn93xx_setup_vf_iq_regs;
@@ -929,6 +1027,8 @@ int setup_cn93xx_octeon_vf_device(octeon_device_t * oct)
 
 	oct->fn_list.dump_registers = cn93xx_dump_vf_initialized_regs;
 
+	oct->fn_list.send_mbox_cmd = cn93xx_vf_send_mbox_cmd;
+	oct->fn_list.send_mbox_cmd_nolock = cn93xx_vf_send_mbox_cmd_nolock;
 	return 0;
 }
 

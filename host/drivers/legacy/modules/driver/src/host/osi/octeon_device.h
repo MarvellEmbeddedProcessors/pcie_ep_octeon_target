@@ -33,7 +33,7 @@ typedef struct _OCTEON_DEVICE octeon_device_t;
 #include "cn93xx_vf_device.h"
 #include "cnxk_pf_device.h"
 #include "cnxk_vf_device.h"
-
+#include "octeon_mbox.h"
 #include "barmap.h"
 
 #define PCI_DMA_64BIT                  0xffffffffffffffffULL
@@ -410,6 +410,11 @@ struct octeon_fn_list {
 	void (*disable_output_queue) (struct _OCTEON_DEVICE *, int);
 	void (*force_io_queues_off) (struct _OCTEON_DEVICE *);
 	void (*dump_registers) (struct _OCTEON_DEVICE *);
+	int (*send_mbox_cmd)(struct _OCTEON_DEVICE *otx_epvf, union otx_vf_mbox_word cmd,
+			     union otx_vf_mbox_word *rsp);
+	int (*send_mbox_cmd_nolock)(struct _OCTEON_DEVICE *otx_epvf, union otx_vf_mbox_word cmd,
+				    union otx_vf_mbox_word *rsp);
+
 };
 
 /* wrappers around work structs */
@@ -465,7 +470,6 @@ typedef struct octeon_mbox_data {
 
 } octeon_mbox_data_t;
 
-
 #define MAX_MBOX_DATA_SIZE	256
 
 typedef struct cvm_mbox_info {
@@ -519,6 +523,7 @@ struct iq_intr_wq {
 /* The Octeon VF device specific info data structure.*/
 struct octep_vf_info {
 	u8 mac_addr[ETH_ALEN];
+	u32 flags;
 };
 
 /** The Octeon device. 
@@ -665,7 +670,7 @@ struct _OCTEON_DEVICE {
 	uint32_t mbox_wait_cond;
 	int mbox_stop_thread;
 	cavium_wait_channel mbox_wc;
-	cavium_spinlock_t mbox_lock;
+	cavium_spinlock_t vf_mbox_lock;
 	cvm_kthread_t mbox_id;
 	void *mbox_cmd_queue;
 
@@ -680,6 +685,15 @@ struct _OCTEON_DEVICE {
 	int heartbeat_miss_cnt; /* count of missed alive checks */
 	/* VFs info */
 	struct octep_vf_info vf_info[MAX_OCTEON_DEVICES];
+
+	int mbox_cmd_id;
+
+	uint8_t mbox_data_buf[MBOX_MAX_DATA_BUF_SIZE];
+
+	int32_t mbox_data_index;
+
+	int32_t mbox_rcv_message_len;
+
 } ____cacheline_aligned_in_smp;
 
 #define CHIP_FIELD(oct, TYPE, field)             \

@@ -38,12 +38,19 @@ handle_vf_set_mac_addr(octeon_device_t *oct,  int vf_id, union otx_vf_mbox_word 
 {
 	int i;
 
+	rsp->s_set_mac.id = cmd.s_set_mac.id;
+	if (oct->vf_info[vf_id].flags & OCTEON_VF_FLAG_PF_SET_MAC) {
+		cavium_print_msg("%s VF%d attempted to override administratively set MAC address\n",
+				  __func__, vf_id);
+		rsp->s_set_mac.type = OTX_VF_MBOX_TYPE_RSP_NACK;
+		return;
+	}
+
 	for (i = 0; i < MBOX_MAX_DATA_SIZE; i++)
 		oct->vf_info[vf_id].mac_addr[i] = cmd.s_set_mac.mac_addr[i];
 
-	rsp->s_set_mac.id = cmd.s_set_mac.id;
 	rsp->s_set_mac.type = OTX_VF_MBOX_TYPE_RSP_ACK;
-	cavium_print_msg("%s %pM\n",  __func__, oct->vf_info[vf_id].mac_addr);
+	cavium_print_msg("%s vf:%d Mac %pM\n",  __func__, vf_id, oct->vf_info[vf_id].mac_addr);
 }
 
 static void
@@ -56,7 +63,7 @@ handle_vf_get_mac_addr(octeon_device_t *oct,  int vf_id, union otx_vf_mbox_word 
 	rsp->s_set_mac.type = OTX_VF_MBOX_TYPE_RSP_ACK;
 	for (i = 0; i < MBOX_MAX_DATA_SIZE; i++)
 		rsp->s_set_mac.mac_addr[i] = oct->vf_info[vf_id].mac_addr[i];
-	cavium_print_msg("%s vf_info: %pM\n",  __func__, oct->vf_info[vf_id].mac_addr);
+	cavium_print_msg("%s vf:%d Mac: %pM\n",  __func__, vf_id, oct->vf_info[vf_id].mac_addr);
 }
 
 static void

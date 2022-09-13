@@ -80,6 +80,7 @@ KBUILD_EXTRA_SYMBOLS := $(SUBDIRS)/../Module.symvers
 
 OBJS += octeon_netmain.o   \
         octeon_network.o   \
+        octeon_vf_mbox.o   \
         ../../../../osi/octeon_nic.o
 
 OBJNAME := octnic

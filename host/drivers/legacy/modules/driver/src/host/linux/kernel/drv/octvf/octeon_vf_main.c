@@ -827,6 +827,8 @@ int octeon_device_init(octeon_device_t * octeon_dev)
 
 	cavium_spin_lock_init(&octeon_dev->oct_lock);
 
+	cavium_spin_lock_init(&octeon_dev->vf_mbox_lock);
+
 	/* Initialize the dispatch mechanism used to push packets arriving on
 	   Octeon Output queues. */
 	if (octeon_init_dispatch_list(octeon_dev))

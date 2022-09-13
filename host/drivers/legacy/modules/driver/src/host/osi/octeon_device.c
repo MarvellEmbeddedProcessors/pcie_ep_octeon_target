@@ -480,6 +480,7 @@ int octeon_setup_mbox(octeon_device_t * oct)
 		oct->mbox[ring]->vf_id = i;
 		oct->fn_list.setup_mbox_regs(oct, ring);
 	}
+	memset(oct->vf_info, 0, (MAX_OCTEON_DEVICES*sizeof(struct octep_vf_info)));
 	return 0;
 
 free_mbox:

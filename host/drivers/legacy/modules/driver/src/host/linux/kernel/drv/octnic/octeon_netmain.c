@@ -9,6 +9,7 @@
 #include "octeon_nic.h"
 #include "octeon_compat.h"
 
+#include "octeon_vf_mbox.h"
 MODULE_AUTHOR("Cavium Networks");
 MODULE_DESCRIPTION("Octeon Host PCI Nic Driver");
 MODULE_LICENSE("GPL");
@@ -151,6 +152,36 @@ void octnet_inittime_ls_callback(octeon_req_status_t status, void *buf)
 	cavium_wakeup(&link_status->s.wc);
 }
 
+int octnet_query_set_vf_mac(octeon_device_t *oct, uint8_t *mac_addr)
+{
+	int ret_val;
+
+	if (OCTEON_CN9PLUS_VF(oct->chip_id)) {
+		memset(mac_addr, 0, ETH_ALEN);
+		ret_val = octnet_vf_mbox_get_mac_addr(oct, mac_addr);
+		if (!ret_val) {
+			if (!is_valid_ether_addr(mac_addr)) {
+				eth_random_addr(mac_addr);
+				cavium_print_msg("%s PF doesn't have VF MAC address\n",
+						 __func__);
+				cavium_print_msg("%sVF setting Random MAC address %pM\n",
+						 __func__, mac_addr);
+				ret_val = octnet_vf_mbox_set_mac_addr(oct, mac_addr);
+				if (ret_val) {
+					cavium_error("%s vf_mbox_set_mac_addr %pM fail\n",
+							__func__, mac_addr);
+					return -EADDRNOTAVAIL;
+				}
+			}
+		} else {
+			cavium_error("%s vf_mbox_get_mac_addr %pM fail ret_val: %d\n",
+				      __func__, mac_addr, ret_val);
+			return -EADDRNOTAVAIL;
+		}
+	}
+	return 0;
+}
+
 /* Get the link status at init time. This routine sleeps till a response
    arrives from the core app. This is because the initialization cannot
    proceed till the host knows about the number of ethernet interfaces
@@ -163,8 +194,8 @@ int octnet_get_inittime_link_status(void *oct, void *props_ptr)
 ///	octeon_instr_status_t retval;
 //	oct_stats_dma_info_t *dma_info;
 	int q_no;
-	int num_q = 0;
-	static int mac_offset = 1;
+	int num_q = 0, i, j;
+	uint8_t macaddr[ETH_ALEN];
 
 	octeon_device_t *oct_dev = (octeon_device_t *) oct;
 	props = (struct octdev_props_t *)props_ptr;
@@ -246,9 +277,16 @@ int octnet_get_inittime_link_status(void *oct, void *props_ptr)
         ls->link_info[0].gmxport = 2048;
         ls->link_info[0].hw_addr = (0x20f000b9849 + oct_dev->octeon_id);
 
-	/* Increment MAC addresses for VFs */
-	if (OCTEON_CN9PLUS_VF(oct_dev->chip_id))
-		ls->link_info[0].hw_addr += mac_offset++;
+	/* Query VF's MAC address from PF using mailbox command */
+	if (OCTEON_CN9PLUS_VF(oct_dev->chip_id)) {
+		if (octnet_query_set_vf_mac(oct_dev, macaddr)) {
+			cavium_error("%s setting VF's Mac Address %pM fail\n",
+				      __func__, macaddr);
+			return -1;
+		}
+		for (i = 0, j = 5; i < 6; i++, j--)
+			*((uint8_t *) (((uint8_t *) &ls->link_info[0].hw_addr) + j)) = macaddr[i];
+	}
 
 //        ls->link_info[0].hw_addr = 0x000FB71188BC;
         ls->link_info[0].num_rxpciq = num_q;
@@ -523,7 +561,7 @@ octnet_setup_nic_device(int octeon_id, oct_link_info_t * link_info, int ifidx)
 {
 	octnet_priv_t *priv;
 	octnet_os_devptr_t *pndev;
-	uint8_t macaddr[6], i, j;
+	uint8_t macaddr[ETH_ALEN], i, j;
 	octeon_device_t *oct =
 	    (octeon_device_t *) get_octeon_device_ptr(octeon_id);
 
@@ -624,7 +662,7 @@ octnet_setup_nic_device(int octeon_id, oct_link_info_t * link_info, int ifidx)
 				   j));
 
 	/* Copy MAC Address to OS network device structure */
-	cavium_memcpy(pndev->dev_addr, &macaddr, ETH_ALEN);
+	cavium_memcpy(pndev->dev_addr, macaddr, ETH_ALEN);
 
 	priv->linfo.link.u64 = link_info->link.u64;
 

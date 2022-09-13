@@ -538,7 +538,7 @@ int octeon_setup_mbox(octeon_device_t * oct)
 	if (!(oct->drv_flags & OCTEON_MBOX_CAPABLE))
 		return 0;
 
-	if (OCTEON_CN83XX_VF(oct->chip_id))
+	if ((OCTEON_CN83XX_VF(oct->chip_id)) || (OCTEON_CN9PLUS_VF(oct->chip_id)))
 		num_ioqs = oct->rings_per_vf;
 	else
 		return 0;
@@ -576,7 +576,7 @@ int octeon_delete_mbox(octeon_device_t * oct)
 	if (!(oct->drv_flags & OCTEON_MBOX_CAPABLE))
 		return 0;
 
-	if (OCTEON_CN83XX_VF(oct->chip_id))
+	if ((OCTEON_CN83XX_VF(oct->chip_id)) || (OCTEON_CN9PLUS_VF(oct->chip_id)))
 		num_ioqs = oct->rings_per_vf;
 	else
 		return 0;
