@@ -293,6 +293,12 @@ static int npu_base_setup(struct otx_pcie_ep *pcie_ep_dev)
 	       bar_idx_addr, bar_idx_val);
 	npu_csr_write(bar_idx_addr, bar_idx_val);
 
+	bar_idx_addr = PEMX_BASE(pcie_ep_dev->pem_base, pem_num[instance]) + PEM_BAR_INDEX_OFFSET(14);
+	bar_idx_val = ((NPU_PTP_BASE >> 22) << 4) | 1;
+	printk("Writing BAR entry-14 to map PTP; addr=%llx, val=%llx\n",
+	       bar_idx_addr, bar_idx_val);
+	npu_csr_write(bar_idx_addr, bar_idx_val);
+
 	pcie_ep_dev->oei_trig_remap_addr =
 		(uint64_t)ioremap(pcie_ep_dev->oei_trig_addr | (epf_num[instance] << 25), 8);
 	if (pcie_ep_dev->oei_trig_remap_addr == (uint64_t)NULL) {
