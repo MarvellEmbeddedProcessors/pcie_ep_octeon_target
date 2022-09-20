@@ -1,0 +1,103 @@
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright (c) 2021 Marvell.
+ */
+
+#ifndef __L2FWD_PCIE_EP_COMPAT_H__
+#define __L2FWD_PCIE_EP_COMPAT_H__
+
+#define L2FWD_PCIE_EP_RTE_VERSION  RTE_VERSION_NUM(RTE_VER_YEAR, RTE_VER_MONTH, \
+                                                RTE_VER_MINOR, RTE_VER_RELEASE)
+
+#if L2FWD_PCIE_EP_RTE_VERSION < RTE_VERSION_NUM(21, 11, 0, 0)
+#define L2FWD_PCIE_EP_ETH_MQ_RX_NONE              ETH_MQ_RX_NONE
+
+#define L2FWD_PCIE_EP_ETH_RX_OFFLOAD_TCP_CKSUM    DEV_RX_OFFLOAD_TCP_CKSUM
+#define L2FWD_PCIE_EP_ETH_RX_OFFLOAD_VLAN_FILTER  DEV_RX_OFFLOAD_VLAN_FILTER
+#define L2FWD_PCIE_EP_ETH_RX_OFFLOAD_IPV4_CKSUM   DEV_RX_OFFLOAD_IPV4_CKSUM
+#define L2FWD_PCIE_EP_ETH_RX_OFFLOAD_UDP_CKSUM    DEV_RX_OFFLOAD_UDP_CKSUM
+#define L2FWD_PCIE_EP_ETH_RX_OFFLOAD_SCATTER      DEV_RX_OFFLOAD_SCATTER
+#define L2FWD_PCIE_EP_ETH_RX_OFFLOAD_VLAN_STRIP   DEV_RX_OFFLOAD_VLAN_STRIP
+#define L2FWD_PCIE_EP_ETH_RX_OFFLOAD_JUMBO_FRAME  DEV_RX_OFFLOAD_JUMBO_FRAME
+
+#define L2FWD_PCIE_EP_TX_IP_CKSUM		  PKT_TX_IP_CKSUM
+#define L2FWD_PCIE_EP_TX_TCP_CKSUM                PKT_TX_TCP_CKSUM
+#define L2FWD_PCIE_EP_TX_UDP_CKSUM                PKT_TX_UDP_CKSUM
+#define L2FWD_PCIE_EP_TX_IPV4			  PKT_TX_IPV4
+#define L2FWD_PCIE_EP_TX_IPV6			  PKT_TX_IPV6
+#define L2FWD_PCIE_EP_RX_IP_CKSUM_GOOD		  PKT_RX_IP_CKSUM_GOOD
+#define L2FWD_PCIE_EP_RX_L4_CKSUM_GOOD		  PKT_RX_L4_CKSUM_GOOD
+
+#define L2FWD_PCIE_EP_ETH_MQ_TX_NONE              ETH_MQ_TX_NONE
+
+#define L2FWD_PCIE_EP_ETH_TX_OFFLOAD_MULTI_SEGS   DEV_TX_OFFLOAD_MULTI_SEGS
+#define L2FWD_PCIE_EP_ETH_TX_OFFLOAD_IPV4_CKSUM   DEV_TX_OFFLOAD_IPV4_CKSUM
+#define L2FWD_PCIE_EP_ETH_TX_OFFLOAD_UDP_CKSUM    DEV_TX_OFFLOAD_UDP_CKSUM
+
+#define L2FWD_PCIE_EP_ETH_LINK_DOWN               ETH_LINK_DOWN
+#define L2FWD_PCIE_EP_ETH_LINK_FULL_DUPLEX        ETH_LINK_FULL_DUPLEX
+
+static inline
+struct rte_pci_device *l2fwd_pcie_ep_get_pci_dev(uint16_t port)
+{
+	return RTE_ETH_DEV_TO_PCI(&rte_eth_devices[port]);
+}
+
+static void l2fwd_configure_pkt_len(struct rte_eth_conf *port_conf,
+				    struct rte_eth_dev_info *dev_info)
+{
+	port_conf->rxmode.max_rx_pkt_len = dev_info->max_rx_pktlen;
+	if (dev_info->max_rx_pktlen > RTE_ETHER_MAX_LEN) {
+		port_conf->rxmode.offloads |= DEV_RX_OFFLOAD_JUMBO_FRAME;
+	}
+}
+
+#else /* L2FWD_PCIE_EP_RTE_VERSION */
+
+#define L2FWD_PCIE_EP_ETH_MQ_RX_NONE              RTE_ETH_MQ_RX_NONE
+
+#define L2FWD_PCIE_EP_ETH_RX_OFFLOAD_TCP_CKSUM    RTE_ETH_RX_OFFLOAD_TCP_CKSUM
+#define L2FWD_PCIE_EP_ETH_RX_OFFLOAD_VLAN_FILTER  RTE_ETH_RX_OFFLOAD_VLAN_FILTER
+#define L2FWD_PCIE_EP_ETH_RX_OFFLOAD_IPV4_CKSUM   RTE_ETH_RX_OFFLOAD_IPV4_CKSUM
+#define L2FWD_PCIE_EP_ETH_RX_OFFLOAD_UDP_CKSUM    RTE_ETH_RX_OFFLOAD_UDP_CKSUM
+#define L2FWD_PCIE_EP_ETH_RX_OFFLOAD_SCATTER      RTE_ETH_RX_OFFLOAD_SCATTER
+#define L2FWD_PCIE_EP_ETH_RX_OFFLOAD_VLAN_STRIP   RTE_ETH_RX_OFFLOAD_VLAN_STRIP
+#define L2FWD_PCIE_EP_ETH_RX_OFFLOAD_JUMBO_FRAME  0
+
+#define L2FWD_PCIE_EP_TX_IP_CKSUM		  RTE_MBUF_F_TX_IP_CKSUM
+#define L2FWD_PCIE_EP_TX_TCP_CKSUM                RTE_MBUF_F_TX_TCP_CKSUM
+#define L2FWD_PCIE_EP_TX_UDP_CKSUM                RTE_MBUF_F_TX_UDP_CKSUM
+#define L2FWD_PCIE_EP_TX_IPV4			  RTE_MBUF_F_TX_IPV4
+#define L2FWD_PCIE_EP_TX_IPV6			  RTE_MBUF_F_TX_IPV6
+#define L2FWD_PCIE_EP_RX_IP_CKSUM_GOOD		  RTE_MBUF_F_RX_IP_CKSUM_GOOD
+#define L2FWD_PCIE_EP_RX_L4_CKSUM_GOOD		  RTE_MBUF_F_RX_L4_CKSUM_GOOD
+
+#define L2FWD_PCIE_EP_ETH_MQ_TX_NONE              RTE_ETH_MQ_TX_NONE
+
+#define L2FWD_PCIE_EP_ETH_TX_OFFLOAD_MULTI_SEGS   RTE_ETH_TX_OFFLOAD_MULTI_SEGS
+#define L2FWD_PCIE_EP_ETH_TX_OFFLOAD_IPV4_CKSUM   RTE_ETH_TX_OFFLOAD_IPV4_CKSUM
+#define L2FWD_PCIE_EP_ETH_TX_OFFLOAD_UDP_CKSUM    RTE_ETH_TX_OFFLOAD_UDP_CKSUM
+
+#define L2FWD_PCIE_EP_ETH_LINK_DOWN               RTE_ETH_LINK_DOWN
+#define L2FWD_PCIE_EP_ETH_LINK_FULL_DUPLEX        RTE_ETH_LINK_FULL_DUPLEX
+
+static inline
+struct rte_pci_device *l2fwd_pcie_ep_get_pci_dev(uint16_t port)
+{
+	struct rte_eth_dev_info dev_info;
+	int ret;
+
+	ret = rte_eth_dev_info_get(port, &dev_info);
+	if (ret != 0)
+		return NULL;
+	return RTE_DEV_TO_PCI(dev_info.device);
+}
+
+static void l2fwd_configure_pkt_len(struct rte_eth_conf *port_conf,
+				    struct rte_eth_dev_info *dev_info)
+{
+	port_conf->rxmode.mtu = dev_info->max_mtu;
+}
+
+#endif /* L2FWD_PCIE_EP_RTE_VERSION */
+
+#endif /* __L2FWD_PCIE_EP_COMPAT_H__ */

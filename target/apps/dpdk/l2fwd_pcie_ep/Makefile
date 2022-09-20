@@ -6,10 +6,10 @@
 APP = l2fwd_pcie_ep
 
 # all source are stored in SRCS-y
-SRCS-y := main.c sdp_app.c
+SRCS-y := main.c
 
 # Build using pkg-config variables if possible
-DPDK_PC?=$(TARGET_DIR)/usr/lib/pkgconfig/
+DPDK_PC?=$(TARGET_DIR)/usr/lib/pkgconfig/:$(STAGING_DIR)/usr/lib/pkgconfig/
 PKGCONF ?= PKG_CONFIG_PATH=$(DPDK_PC) PKG_CONFIG_SYSROOT_DIR=$(TARGET_DIR) pkg-config
 
 ifeq ($(shell $(PKGCONF) --exists libdpdk && echo 0),0)
@@ -43,10 +43,7 @@ build:
 clean:
 	rm -f build/$(APP) build/$(APP)-static build/$(APP)-shared
 	test -d build && rmdir -p build || true
-	rm -f .l2fwd_pcie_ep_not_built
 
 else
-all:
-	$(info "Only meson based build is supported")
-	touch .l2fwd_pcie_ep_not_built
+$(error "Only meson based build is supported")
 endif

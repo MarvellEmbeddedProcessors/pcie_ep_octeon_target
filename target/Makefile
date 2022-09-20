@@ -8,14 +8,12 @@ export OCTEONTX_TARGET_ROOT
 SUBDIRS=drivers/dpi_dma
 SUBDIRS+=drivers/pcie_ep/src
 SUBDIRS+=drivers/mgmt_net
-SUBIDRS+=apps/dpdk/l2fwd_multiq
 SUBIDRS+=apps/dpdk/l2fwd_pcie_ep
 SUBIDRS+=apps/dpdk/rawdev/dpi_test
 SUBIDRS+=apps/dpdk/dmadev/dpi_test
 
 .PHONY: apps
 apps:
-	$(MAKE) -C apps/dpdk/l2fwd_multiq
 	$(MAKE) -C apps/dpdk/l2fwd_pcie_ep
 	$(MAKE) -C apps/dpdk/rawdev/dpi_test
 	$(MAKE) -C apps/dpdk/dmadev/dpi_test

@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <math.h>
 #include <inttypes.h>
 #include <sys/types.h>
 #include <sys/queue.h>
@@ -20,6 +21,7 @@
 #include <stdbool.h>
 #include <unistd.h>
 
+#include <rte_version.h>
 #include <rte_common.h>
 #include <rte_log.h>
 #include <rte_malloc.h>
@@ -39,15 +41,17 @@
 #include <rte_ether.h>
 #include <rte_ethdev.h>
 #include <rte_mempool.h>
+#include <rte_mbuf_core.h>
 #include <rte_mbuf.h>
+#include <rte_net.h>
 #include <rte_bus_pci.h>
 
-#include "otx-drv.h"
+#include "compat.h"
+#include "sdp_mdata.h"
+
 static volatile bool force_quit;
 
-static char conf_file[256];
-
-#define MAX_MTU 		(9 * 1024)
+#define MAX_MTU		(9 * 1024)
 #define MAX_NUM_SEG_PER_PKT	16
 
 #define RTE_LOGTYPE_L2FWD RTE_LOGTYPE_USER1
@@ -56,11 +60,52 @@ static char conf_file[256];
 #define BURST_TX_DRAIN_US 100 /* TX drain every ~100us */
 #define MEMPOOL_CACHE_SIZE 256
 
-#define PORT_TYPE_NPU_NET 0
-#define PORT_TYPE_NPU_PCI_PF 1
-#define PORT_TYPE_NPU_PCI_VF 2
+#define PORT_TYPE_NPU_NONE 0
+#define PORT_TYPE_NPU_NET_LBK 1
+#define PORT_TYPE_NPU_PCI 2
+#define PORT_TYPE_NPU_MAX 3
+const char *port_type_str_arr[PORT_TYPE_NPU_MAX] = { "none", "net/lbk", "pci" };
 
+#define PORT_MODE_NPU_NONE 0
+#define PORT_MODE_NPU_LOOP 1
+#define PORT_MODE_NPU_NIC 2
+#define PORT_MODE_NPU_MAX 3
+static const char *port_mode_str_arr[PORT_MODE_NPU_MAX] = {"none", "loop", "nic"};
 
+#define L2_PTYPE_SHIFT (__builtin_ctz(RTE_PTYPE_L2_MASK))
+#define L3_PTYPE_SHIFT (__builtin_ctz(RTE_PTYPE_L3_MASK))
+#define L4_PTYPE_SHIFT (__builtin_ctz(RTE_PTYPE_L4_MASK))
+
+#define MAX_L2_TYPES  ((RTE_PTYPE_L2_MASK >> L2_PTYPE_SHIFT) + 1)
+#define MAX_L3_TYPES  ((RTE_PTYPE_L3_MASK >> L3_PTYPE_SHIFT) + 1)
+#define MAX_L4_TYPES  ((RTE_PTYPE_L4_MASK >> L4_PTYPE_SHIFT) + 1)
+
+#define L2FWD_PTYPE_UNKNOWN	   (RTE_PTYPE_UNKNOWN >> L2_PTYPE_SHIFT)
+#define L2FWD_PTYPE_L2_ETHER	   (RTE_PTYPE_L2_ETHER >> L2_PTYPE_SHIFT)
+#define L2FWD_PTYPE_L2_ETHER_VLAN  (RTE_PTYPE_L2_ETHER_VLAN >> L2_PTYPE_SHIFT)
+
+#define L2FWD_PTYPE_L3_IPV4    (RTE_PTYPE_L3_IPV4 >> L3_PTYPE_SHIFT)
+#define L2FWD_PTYPE_L3_IPV6    (RTE_PTYPE_L3_IPV6 >> L3_PTYPE_SHIFT)
+
+#define L2FWD_PTYPE_L4_TCP    (RTE_PTYPE_L4_TCP >> L4_PTYPE_SHIFT)
+#define L2FWD_PTYPE_L4_UDP    (RTE_PTYPE_L4_UDP >> L4_PTYPE_SHIFT)
+
+#define L2FWD_ETHER_VLAN_HDR_LEN (RTE_ETHER_HDR_LEN + 4)
+/* cnxk/otx2 does not suppport RTE_PTYPE_L2_ETHER.
+ * so just assume l2 is ether for unknown (0)
+ */
+static const int l2_lens_arr[MAX_L2_TYPES] = { [L2FWD_PTYPE_UNKNOWN]       = RTE_ETHER_HDR_LEN,
+					       [L2FWD_PTYPE_L2_ETHER]      = RTE_ETHER_HDR_LEN,
+					       [L2FWD_PTYPE_L2_ETHER_VLAN] = L2FWD_ETHER_VLAN_HDR_LEN };
+
+static const int l3_lens_arr[MAX_L3_TYPES] = { [L2FWD_PTYPE_L3_IPV4] = sizeof(struct rte_ipv4_hdr),
+					       [L2FWD_PTYPE_L3_IPV6] = sizeof(struct rte_ipv6_hdr) };
+
+static const uint64_t l3_ol_flags[MAX_L3_TYPES]  = { [L2FWD_PTYPE_L3_IPV4] =  (L2FWD_PCIE_EP_TX_IPV4 | L2FWD_PCIE_EP_TX_IP_CKSUM),
+						     [L2FWD_PTYPE_L3_IPV6] =   L2FWD_PCIE_EP_TX_IPV6 };
+
+static const uint64_t l4_ol_flags[MAX_L4_TYPES]  = { [L2FWD_PTYPE_L4_TCP] = L2FWD_PCIE_EP_TX_TCP_CKSUM,
+						     [L2FWD_PTYPE_L4_UDP] = L2FWD_PCIE_EP_TX_UDP_CKSUM };
 /*
  * Configurable number of RX/TX ring descriptors
  */
@@ -71,24 +116,23 @@ static uint16_t nb_txd = RTE_TEST_TX_DESC_DEFAULT;
 
 /* ethernet addresses of ports */
 static struct rte_ether_addr l2fwd_ports_eth_addr[RTE_MAX_ETHPORTS];
-int port_map[RTE_MAX_ETHPORTS];
-int port_type[RTE_MAX_ETHPORTS];
+struct port_info {
+	uint16_t port_id;
+	uint16_t dst_port_id;
+	uint16_t port_type;
+	uint16_t port_mode;
+} __rte_cache_aligned;
+
+static struct port_info port_map_info[RTE_MAX_ETHPORTS] = {
+	[0 ... RTE_MAX_ETHPORTS - 1].port_id = RTE_MAX_ETHPORTS,
+	[0 ... RTE_MAX_ETHPORTS - 1].dst_port_id = RTE_MAX_ETHPORTS,
+	[0 ... RTE_MAX_ETHPORTS - 1].port_type = PORT_TYPE_NPU_NONE,
+	[0 ... RTE_MAX_ETHPORTS - 1].port_mode = PORT_MODE_NPU_NONE,
+};
 
 static int dump_pkt;
-static int reflector_mode;
-static int generator_mode;
-static int gen_mbuf_jumbo;
 static int max_mbuf_size;
-static int gen_pkt_size;
-static uint32_t gen_port_mask = 0;
-static int start_gen;
-static struct rte_mempool *gen_pktmbuf_pool = NULL;
-static int gen_next_flow[RTE_MAX_LCORE];
 #define MBUF_JUMBO_SIZE 9216
-#define DEF_GEN_PKT_SIZE 256
-#define GEN_SEND_FNAME "/tmp/gen_send"
-
-
 
 static unsigned int l2fwd_queues_per_port = 1;
 
@@ -101,7 +145,8 @@ struct lcore_queue_conf {
 } __rte_cache_aligned;
 struct lcore_queue_conf lcore_queue_conf[RTE_MAX_LCORE];
 
-static struct rte_eth_dev_tx_buffer *tx_buffer[RTE_MAX_ETHPORTS][MAX_QUEUE_PER_PORT];
+static struct rte_eth_dev_tx_buffer
+		*tx_buffer[RTE_MAX_ETHPORTS][MAX_QUEUE_PER_PORT];
 
 struct rte_mempool * l2fwd_pktmbuf_pool = NULL;
 
@@ -118,38 +163,6 @@ struct l2fwd_port_statistics port_stats[RTE_MAX_ETHPORTS][MAX_QUEUE_PER_PORT];
 static uint64_t timer_period_hz;
 static uint64_t timer_period_sec = 10; /* default period is 10 seconds */
 
-static int
-parse_gen_file(const char *fname)
-{
-	int nb_ports = rte_eth_dev_count_avail();
-	FILE *file = fopen(fname, "r");
-	unsigned total_ports;
-	uint32_t i;
-
-	if (file == NULL)
-		return 0;
-	gen_port_mask = 0;
-	fscanf(file, "%d 0x%x", &gen_pkt_size, &gen_port_mask);
-	fclose(file);
-	if (gen_pkt_size < 0 || gen_pkt_size > max_mbuf_size)
-		gen_pkt_size = DEF_GEN_PKT_SIZE;
-	printf("gen_pkt_size %d\n", gen_pkt_size);
-
-	total_ports = 0;
-	printf("gen_ports: ");
-	for (i = 0; i < RTE_MAX_ETHPORTS; i++) {
-		if (i >= (unsigned int)nb_ports)
-			break;
-		if ((1UL << i) & gen_port_mask) {
-			printf("%u ", i);
-			total_ports++;
-		}
-	}
-	printf("\n");
-	printf("total_ports: %u\n", total_ports);
-	rte_smp_wmb();
-	return total_ports;
-}
 
 static void
 print_stats(void)
@@ -181,8 +194,8 @@ print_stats(void)
 			PS((cur_stats[port].dropped -
 			    prev_stats[port].dropped)),
 			cur_stats[port].tx,
-		        cur_stats[port].rx,
-		        cur_stats[port].dropped);
+			cur_stats[port].rx,
+			cur_stats[port].dropped);
 	}
 	memcpy(&prev_stats, &cur_stats, sizeof(cur_stats));
 }
@@ -196,229 +209,128 @@ drop_pkt(uint32_t portid, struct rte_mbuf *m, unsigned queue)
 	buffer->error_callback(&m, 1, buffer->error_userdata);
 }
 
-static int
-prep_mbuf_for_app(uint32_t portid, struct rte_mbuf *mbuf)
+
+
+static void
+prep_mbuf_rx(uint32_t portid, struct rte_mbuf *mbuf,
+	     unsigned *cksum_offload)
 {
-	if ((port_type[portid] == PORT_TYPE_NPU_PCI_PF) ||
-		(port_type[portid] == PORT_TYPE_NPU_PCI_VF)) {
-		//printf("packet from PF/VF port-%d\n", portid);
-		rte_pktmbuf_adj(mbuf, CVM_RAW_FRONT_SIZE);
-		mbuf->l2_len -= CVM_RAW_FRONT_SIZE;
+	if (port_map_info[portid].port_mode == PORT_MODE_NPU_NIC) {
+		rte_pktmbuf_adj(mbuf, sizeof(struct sdp_tx_mdata));
+		*cksum_offload = 1;
 	}
-	return 0;
 }
 
-static int
-prep_mbuf_for_port(uint32_t portid, struct rte_mbuf *mbuf)
+static void fast_set_lens_flags(struct rte_mbuf *m)
 {
-        volatile cvmcs_resp_hdr_t *resp_ptr = NULL;
+	uint32_t ptype = m->packet_type;
 
-	if ((port_type[portid] != PORT_TYPE_NPU_PCI_PF) &&
-		(port_type[portid] != PORT_TYPE_NPU_PCI_VF)) {
-		if (RTE_ETH_IS_IPV4_HDR(mbuf->packet_type))
-                        mbuf->ol_flags |= PKT_TX_IP_CKSUM | PKT_TX_IPV4;
-                if (RTE_ETH_IS_IPV6_HDR(mbuf->packet_type))
-                        mbuf->ol_flags |= PKT_TX_IPV6;
-                if ((mbuf->packet_type & RTE_PTYPE_L4_MASK) == RTE_PTYPE_L4_TCP)
-                        mbuf->ol_flags |= PKT_TX_TCP_CKSUM;
-                if ((mbuf->packet_type & RTE_PTYPE_L4_MASK) == RTE_PTYPE_L4_UDP)
-                        mbuf->ol_flags |= PKT_TX_UDP_CKSUM;
-		return 0;
+	int l2_idx, l3_idx, l4_idx;
+
+	l2_idx = (ptype & RTE_PTYPE_L2_MASK) >> L2_PTYPE_SHIFT;
+	l3_idx = (ptype & RTE_PTYPE_L3_MASK) >> L3_PTYPE_SHIFT;
+	l4_idx = (ptype & RTE_PTYPE_L4_MASK) >> L4_PTYPE_SHIFT;
+
+	m->l2_len = l2_lens_arr[l2_idx];
+	m->l3_len = l3_lens_arr[l3_idx];
+	m->ol_flags |= (l3_ol_flags[l3_idx] | l4_ol_flags[l4_idx]);
+}
+
+static void slow_set_lens_flags(struct rte_mbuf *m)
+{
+	struct rte_net_hdr_lens hdr_lens;
+	uint32_t ptype;
+
+	ptype = rte_net_get_ptype(m, &hdr_lens, RTE_PTYPE_ALL_MASK);
+	m->l2_len = hdr_lens.l2_len;
+	m->l3_len = hdr_lens.l3_len;
+	m->l4_len = hdr_lens.l4_len;
+	if ((ptype & RTE_PTYPE_L3_MASK) == RTE_PTYPE_L3_IPV4) {
+		m->ol_flags |= L2FWD_PCIE_EP_TX_IPV4;
+		m->ol_flags |= L2FWD_PCIE_EP_TX_IP_CKSUM;
 	}
+	if ((ptype & RTE_PTYPE_L3_MASK) == RTE_PTYPE_L3_IPV6)
+		m->ol_flags |= L2FWD_PCIE_EP_TX_IPV6;
+	if ((ptype & RTE_PTYPE_L4_MASK) == RTE_PTYPE_L4_TCP)
+		m->ol_flags |= L2FWD_PCIE_EP_TX_TCP_CKSUM;
+	if ((ptype & RTE_PTYPE_L4_MASK) == RTE_PTYPE_L4_UDP)
+		m->ol_flags |= L2FWD_PCIE_EP_TX_UDP_CKSUM;
+}
 
-	resp_ptr = (cvmcs_resp_hdr_t *)rte_pktmbuf_prepend(mbuf,
-							   CVMX_RESP_HDR_SIZE);
-	if (!resp_ptr) {
+static void set_rx_mdata(struct rte_mbuf *m)
+{
+	union sdp_rx_mdata *rx_mdata;
+
+	rx_mdata = (union sdp_rx_mdata *)
+		rte_pktmbuf_prepend(m, sizeof(union sdp_rx_mdata));
+	if (unlikely(!rx_mdata)) {
 		printf( "No head room available\n");
-		return -1;
+		rte_pktmbuf_free(m);
 	}
-	mbuf->l2_len += CVMX_RESP_HDR_SIZE;
-	resp_ptr->u64 = 0;
-	resp_ptr->s.opcode = CORE_NW_DATA_OP;
-	resp_ptr->s.destqport = 0;
-	return 0;
-}
-
-static uint32_t cfg_ip_src      = RTE_IPV4(10, 254, 0, 0);
-static uint32_t cfg_ip_dst      = RTE_IPV4(10, 253, 0, 0);
-static uint16_t cfg_udp_src     = 1000;
-static uint16_t cfg_udp_dst     = 1001;
-static int cfg_n_flows = 65535;
-static struct rte_ether_addr cfg_ether_src = {
-	{ 0x00, 0x01, 0x02, 0x03, 0x04, 0x00 } };
-static struct rte_ether_addr cfg_ether_dst = {
-	{ 0x00, 0x01, 0x02, 0x03, 0x04, 0x01 } };
-
-#define IP_DEFTTL  64   /* from RFC 1340. */
-
-static inline uint16_t
-ip_sum(const unaligned_uint16_t *hdr, int hdr_len)
-{
-	uint32_t sum = 0;
-
-	while (hdr_len > 1) {
-		sum += *hdr++;
-		if (sum & 0x80000000)
-			sum = (sum & 0xFFFF) + (sum >> 16);
-		hdr_len -= 2;
-	}
-	while (sum >> 16)
-		sum = (sum & 0xFFFF) + (sum >> 16);
-	return ~sum;
-}
-
-static struct rte_mbuf*
-generate_pkt(int *next_flow)
-{
-	struct rte_mbuf  *pkt;
-	struct rte_ether_hdr *eth_hdr;
-	struct rte_ipv4_hdr *ip_hdr;
-	struct rte_udp_hdr *udp_hdr;
-	uint64_t ol_flags = 0;
-
-	pkt = rte_pktmbuf_alloc(gen_pktmbuf_pool);
-	if (!pkt)
-		return NULL;
-
-	pkt->data_len = gen_pkt_size;
-	pkt->next = NULL;
-
-	ol_flags = PKT_TX_IP_CKSUM | PKT_TX_IPV4;
-	ol_flags |= PKT_TX_UDP_CKSUM;
-
-	/* Initialize Ethernet header. */
-	eth_hdr = rte_pktmbuf_mtod(pkt, struct rte_ether_hdr *);
-	rte_ether_addr_copy(&cfg_ether_dst, &eth_hdr->d_addr);
-	rte_ether_addr_copy(&cfg_ether_src, &eth_hdr->s_addr);
-	eth_hdr->ether_type = rte_cpu_to_be_16(RTE_ETHER_TYPE_IPV4);
-
-	/* Initialize IP header. */
-	ip_hdr = (struct rte_ipv4_hdr *)(eth_hdr + 1);
-	memset(ip_hdr, 0, sizeof(*ip_hdr));
-	ip_hdr->version_ihl     = RTE_IPV4_VHL_DEF;
-	ip_hdr->type_of_service = 0;
-	ip_hdr->fragment_offset = 0;
-	ip_hdr->time_to_live    = IP_DEFTTL;
-	ip_hdr->next_proto_id   = IPPROTO_UDP;
-	ip_hdr->packet_id       = 0;
-	ip_hdr->src_addr        = rte_cpu_to_be_32(cfg_ip_src);
-	ip_hdr->dst_addr        = rte_cpu_to_be_32(cfg_ip_dst + *next_flow);
-	ip_hdr->total_length    = rte_cpu_to_be_16(gen_pkt_size -
-						   sizeof(*eth_hdr));
-	ip_hdr->hdr_checksum    = ip_sum((unaligned_uint16_t *)ip_hdr,
-					 sizeof(*ip_hdr));
-
-	/* Initialize UDP header. */
-	udp_hdr = (struct rte_udp_hdr *)(ip_hdr + 1);
-	udp_hdr->src_port       = rte_cpu_to_be_16(cfg_udp_src);
-	udp_hdr->dst_port       = rte_cpu_to_be_16(cfg_udp_dst);
-	udp_hdr->dgram_cksum    = 0; /* No UDP checksum. */
-	udp_hdr->dgram_len      = rte_cpu_to_be_16(gen_pkt_size -
-						   sizeof(*eth_hdr) -
-						   sizeof(*ip_hdr));
-	pkt->nb_segs            = 1;
-	pkt->pkt_len            = gen_pkt_size;
-	pkt->ol_flags           = ol_flags;
-	//pkt->vlan_tci           = vlan_tci;
-	//pkt->vlan_tci_outer     = vlan_tci_outer;
-	pkt->l2_len             = sizeof(struct rte_ether_hdr);
-	pkt->l3_len             = sizeof(struct rte_ipv4_hdr);
-	*next_flow = (*next_flow + 1) % cfg_n_flows;
-	return pkt;
+	rx_mdata->u64 = 0;
+	if (m->ol_flags & L2FWD_PCIE_EP_RX_IP_CKSUM_GOOD)
+		rx_mdata->s.csum_verified |= SDP_RX_MDATA_L3_CSUM_VERIFIED;
+	if (m->ol_flags & L2FWD_PCIE_EP_RX_L4_CKSUM_GOOD)
+		rx_mdata->s.csum_verified |= SDP_RX_MDATA_L4_CSUM_VERIFIED;
 }
 
 static void
-l2fwd_simple_send(unsigned dst_port, unsigned queue)
+prep_mbuf_tx(uint32_t dst_portid, struct rte_mbuf *mbuf,
+	     unsigned cksum_offload)
 {
-	struct rte_mbuf *m;
-	unsigned lcore_id;
-	int sent;
+	char buf[256];
+	int ret;
 
-	if (!start_gen)
-		return;
-	lcore_id = rte_lcore_id();
-	if (unlikely(dst_port == RTE_MAX_ETHPORTS)) {
-		RTE_LOG(WARNING, L2FWD, "dst-port not found  %u \n", dst_port);
-		return;
+	if (cksum_offload) {
+		fast_set_lens_flags(mbuf);
+		if (unlikely(!mbuf->l3_len))
+			slow_set_lens_flags(mbuf);
 	}
-	m = generate_pkt(&gen_next_flow[lcore_id]);
-	if (m == NULL) {
-		//printf("Can't allocate pkt\n");
-		return;
-	}
-	prep_mbuf_for_port(dst_port, m);
 	if (unlikely(dump_pkt)) {
-		RTE_LOG(INFO, L2FWD, "\nSend pkt to port %u"
-			" l2_len %u, l3_len %u, packet_type 0x%x\n",
-			dst_port, m->l2_len, m->l3_len,
-			m->packet_type);
-		rte_pktmbuf_dump(stdout, m, 64);
-		printf("\n");
+		if (mbuf->packet_type) {
+			rte_get_ptype_name(mbuf->packet_type, buf, sizeof(buf));
+			RTE_LOG(INFO, L2FWD, "pkt type at tx %s\n", buf);
+		}
+		RTE_LOG(INFO, L2FWD, "pkt ol flags  0x%lx\n", mbuf->ol_flags);
+		RTE_LOG(INFO, L2FWD, "l2_len:%d l3_len:%d l4_len:%d\n",
+			mbuf->l2_len, mbuf->l3_len, mbuf->l4_len);
 	}
-	sent = rte_eth_tx_buffer(dst_port, queue, tx_buffer[dst_port][queue], m);
-	if (sent)
-		port_stats[dst_port][queue].tx += sent;
-
-	return;
+	if (port_map_info[dst_portid].port_mode == PORT_MODE_NPU_NIC)
+		set_rx_mdata(mbuf);
 }
 
 static void
 l2fwd_simple_forward(struct rte_mbuf *m, unsigned portid, unsigned tx_q)
 {
 	unsigned dst_port = RTE_MAX_ETHPORTS;
-	unsigned lcore_id;
+	unsigned cksum_offload = 0;
 	unsigned src_port;
+	unsigned lcore_id;
+	char buf[256];
 	int sent;
 
 	if (unlikely(dump_pkt)) {
-		RTE_LOG(INFO, L2FWD,
-			"\nRcvd from port-%u; l2_len %u, l3_len %u, packet_type 0x%x\n",
-			portid, m->l2_len, m->l3_len, m->packet_type);
+		RTE_LOG(INFO, L2FWD, "\nRcvd from port-%u\n", portid);
+		if (m->packet_type) {
+			rte_get_ptype_name(m->packet_type, buf, sizeof(buf));
+			RTE_LOG(INFO, L2FWD, "pkt type at rx %s\n", buf);
+		}
+		RTE_LOG(INFO, L2FWD, "pkt ol flags  0x%lx\n", m->ol_flags);
 		rte_pktmbuf_dump(stdout, m, 64);
 		printf("\n");
 	}
 	src_port = portid;
-	prep_mbuf_for_app(src_port, m);
-	if (unlikely(dump_pkt)) {
-		RTE_LOG(INFO, L2FWD,
-			"\nafter prep_mbuf_for_app: Rcvd from port-%u; l2_len %u, l3_len %u, packet_type 0x%x\n",
-			portid, m->l2_len, m->l3_len, m->packet_type);
-		rte_pktmbuf_dump(stdout, m, 64);
-		printf("\n");
-	}
-	dst_port = port_map[src_port];
-	if (generator_mode) {
-		if (m)
-			rte_pktmbuf_free(m);
-		if (!start_gen)
-			return;
-		if (!(gen_port_mask & (1U << portid)))
-			return;
-		m = NULL;
-		lcore_id = rte_lcore_id();
-		dst_port = portid;
-		m = generate_pkt(&gen_next_flow[lcore_id]);
-		if (m == NULL) {
-			//printf("Can't allocate pkt\n");
-			return;
-		}
-	} else if (reflector_mode) {
-		dst_port =  portid;
-	}
+	prep_mbuf_rx(src_port, m, &cksum_offload);
 	/* process packet */
+	dst_port = port_map_info[src_port].dst_port_id;
 	if (unlikely(dst_port == RTE_MAX_ETHPORTS)) {
-		RTE_LOG(WARNING, L2FWD, "dst-port not found for src-port %u \n", portid);
+		RTE_LOG(WARNING, L2FWD, "dst-port not found for src-port %u \n",
+			portid);
 		goto drop_pkt;
 	}
-	prep_mbuf_for_port(dst_port, m);
-	if (unlikely(dump_pkt)) {
-		RTE_LOG(INFO, L2FWD, "\nSend pkt to port %u"
-			" l2_len %u, l3_len %u, packet_type 0x%x\n",
-			dst_port, m->l2_len, m->l3_len,
-			m->packet_type);
-		rte_pktmbuf_dump(stdout, m, 64);
-		printf("\n");
-	}
+	if (unlikely(dump_pkt))
+		RTE_LOG(INFO, L2FWD, "Send to port-%u\n", dst_port);
+	prep_mbuf_tx(dst_port, m, cksum_offload);
 	sent = rte_eth_tx_buffer(dst_port, tx_q, tx_buffer[dst_port][tx_q], m);
 	if (sent)
 		port_stats[dst_port][tx_q].tx += sent;
@@ -429,7 +341,30 @@ drop_pkt:
 	return;
 }
 
-int cvmcs_nic_process_pkt(struct rte_mbuf * pkt);
+static void
+l2fwd_set_ptypes(uint16_t portid)
+{
+	uint32_t ptype_mask = (RTE_PTYPE_L2_MASK | RTE_PTYPE_L3_MASK |
+			       RTE_PTYPE_L4_MASK);
+	int i, ret;
+
+	ret = rte_eth_dev_get_supported_ptypes(portid, RTE_PTYPE_ALL_MASK,
+					       NULL, 0);
+	if (ret <= 0)  {
+		RTE_LOG(INFO, L2FWD, "no ptypes supported\n");
+		return;
+	}
+	ret++;
+
+	uint32_t ptypes[ret];
+
+	ret = rte_eth_dev_set_ptypes(portid, ptype_mask, ptypes, ret);
+	if (ret < 0) {
+		RTE_LOG(INFO, L2FWD, "Unable to set requested ptypes for Port %d\n", portid);
+		return;
+	}
+}
+
 
 /* main processing loop */
 static void
@@ -442,8 +377,9 @@ l2fwd_main_loop(void)
 	uint64_t prev_tsc, diff_tsc, cur_tsc, timer_tsc;
 	unsigned i, j, portid, nb_rx;
 	struct lcore_queue_conf *qconf;
-	const uint64_t drain_tsc = (rte_get_tsc_hz() + US_PER_S - 1) / US_PER_S *
-			BURST_TX_DRAIN_US;
+	const uint64_t drain_tsc =
+		(rte_get_tsc_hz() + US_PER_S - 1) / US_PER_S *
+		BURST_TX_DRAIN_US;
 	struct rte_eth_dev_tx_buffer *buffer;
 
 	prev_tsc = 0;
@@ -463,8 +399,8 @@ l2fwd_main_loop(void)
 	for (i = 0; i < qconf->n_rx_port; i++) {
 
 		portid = qconf->rx_port_list[i];
-		RTE_LOG(INFO, L2FWD, " -- lcoreid=%u portid=%u queue=%u\n", lcore_id,
-			portid, queue);
+		RTE_LOG(INFO, L2FWD, " -- lcoreid=%u portid=%u queue=%u\n",
+			lcore_id, portid, queue);
 
 	}
 
@@ -479,14 +415,14 @@ l2fwd_main_loop(void)
 		if (unlikely(diff_tsc > drain_tsc)) {
 
 			for (i = 0; i < qconf->n_rx_port; i++) {
-
-				portid = port_map[qconf->rx_port_list[i]];
+				portid =
+				port_map_info[qconf->rx_port_list[i]].port_id;
 				buffer = tx_buffer[portid][queue];
 
-				sent = rte_eth_tx_buffer_flush(portid, queue, buffer);
+				sent = rte_eth_tx_buffer_flush(portid, queue,
+							       buffer);
 				if (sent)
 					port_stats[portid][queue].tx += sent;
-
 			}
 
 			/* if timer is enabled */
@@ -503,14 +439,6 @@ l2fwd_main_loop(void)
 						print_stats();
 						/* reset the timer */
 						timer_tsc = 0;
-						if (!start_gen &&
-						     access(GEN_SEND_FNAME, R_OK) != -1) {
-							if (parse_gen_file(GEN_SEND_FNAME))
-								start_gen = 1;
-						}
-						if (start_gen &&
-						    access(GEN_SEND_FNAME, R_OK) == -1)
-							start_gen = 0;
 					}
 				}
 			}
@@ -533,15 +461,7 @@ l2fwd_main_loop(void)
 			for (j = 0; j < nb_rx; j++) {
 				m = pkts_burst[j];
 				rte_prefetch0(rte_pktmbuf_mtod(m, void *));
-// 				if (cvmcs_nic_process_pkt(m) != 99)
-//                      		continue;
 				l2fwd_simple_forward(m, portid, queue);
-			}
-			if (nb_rx == 0 && generator_mode == 1) {
-				if (gen_port_mask & (1U << portid)) {
-					for (j = 0; j < 32; j++)
-						l2fwd_simple_send(portid, queue);
-				}
 			}
 		}
 	}
@@ -559,11 +479,13 @@ static void dump_port_mapping(void)
 	int i = 0;
 
 	printf("\nPort mapping:\n");
-	printf("%-12s%-12s\n", "Src-Port", "Dst-Port");
-	while (port_map[i] != RTE_MAX_ETHPORTS) {
-		printf("%-12d%-12d\n",
-		       i,
-		       port_map[i]);
+	printf("%-12s%-12s%-12s%-12s\n", "Src-Port", "type", "mode", "Dst-Port");
+	while (port_map_info[i].port_id != RTE_MAX_ETHPORTS) {
+		printf("%-12d%-12s%-12s%-12d\n",
+		       port_map_info[i].port_id,
+		       port_type_str_arr[port_map_info[i].port_type],
+		       port_mode_str_arr[port_map_info[i].port_mode],
+		       port_map_info[i].dst_port_id);
 		i++;
 	}
 	printf("\n");
@@ -573,17 +495,10 @@ static void dump_port_mapping(void)
 static void
 l2fwd_usage(const char *prgname)
 {
-	printf("%s [EAL options] -- -p PORTMASK [-q NQ]\n"
+	printf("%s [EAL options] --\n"
 	       "  -d: enable debug prints (default disable)\n"
-	       "  -g: enable generator mode in this mode file /tmp/gen_send\n"
-	       "      will provide pkt size and dpdk port mask for traffic generation\n"
-	       "      for ex\n"
-	       "      256 0x4\n"
-	       "      (packet size 256 and send on port 2)\n"
-	       "      received packets are dropped in this mode\n"
-	       "  -j: enable jumbo mbufs(for generator)\n"
-	       "  -f: configuration map file for sdp to cgx ports\n"
-	       "  -r: reflector mode, sends back packets  received on the same port\n"
+	       "  -f: configuration map [(0,1)(2,3)]\n"
+	       "  -g: port mode for pci ports [(0,loop)(2,nic)]\n"
 	       "  -T PERIOD: statistics will be refreshed each PERIOD seconds (0 to disable, 10 default, 86400 maximum)\n",
 	       prgname);
 }
@@ -605,8 +520,9 @@ l2fwd_parse_timer_period(const char *q_arg)
 }
 
 static const char short_options[] =
-	"dgjr"  /* debug */
-	"f:"  /* config file */
+	"d"  /* debug */
+	"f:"  /* port pair map  */
+	"g:"  /* pci port mode map  */
 	"T:"  /* timer period */
 	;
 
@@ -623,6 +539,122 @@ static const struct option lgopts[] = {
 	{NULL, 0, 0, 0}
 };
 
+static int
+l2fwd_parse_port_mode_config(const char *q_arg)
+{
+	enum fieldnames {
+		FLD_PORT1 = 0,
+		FLD_PORT_MODE,
+		_NUM_FLD
+	};
+	const char *p, *p0 = q_arg;
+	char *str_fld[_NUM_FLD];
+	unsigned long int_fld1;
+	uint16_t port_mode;
+	unsigned int size;
+	uint16_t port_id;
+	int nb_ports = 0;
+	char s[256];
+	char *end;
+	int i;
+
+	while ((p = strchr(p0, '(')) != NULL) {
+		++p;
+		p0 = strchr(p, ')');
+		if (p0 == NULL)
+			return -1;
+
+		size = p0 - p;
+		if (size >= sizeof(s))
+			return -1;
+
+		memcpy(s, p, size);
+		s[size] = '\0';
+		if (rte_strsplit(s, sizeof(s), str_fld,
+				 _NUM_FLD, ',') != _NUM_FLD)
+			return -1;
+			errno = 0;
+		int_fld1 = strtoul(str_fld[0], &end, 0);
+		if (errno != 0 || end == str_fld[0] ||
+		    int_fld1 >= RTE_MAX_ETHPORTS)
+			return -1;
+		port_id = int_fld1;
+		if (!strncmp(str_fld[1], "loop", strlen("loop"))) {
+			port_mode = PORT_MODE_NPU_LOOP;
+		} else if (!strncmp(str_fld[1], "nic", strlen("nic"))) {
+			port_mode = PORT_MODE_NPU_NIC;
+		} else {
+			printf("invalid port mode\n");
+			return -1;
+		}
+		if (nb_ports > RTE_MAX_ETHPORTS) {
+			printf("exceeded max number of ports: %hu\n",
+				nb_ports);
+			return -1;
+		}
+		port_map_info[port_id].port_mode = port_mode;
+		++nb_ports;
+	}
+	return 0;
+}
+
+static int
+l2fwd_parse_port_pair_config(const char *q_arg)
+{
+	enum fieldnames {
+		FLD_PORT1 = 0,
+		FLD_PORT2,
+		_NUM_FLD
+	};
+	unsigned long int_fld[_NUM_FLD];
+	int nb_port_pair_params = 0;
+	const char *p, *p0 = q_arg;
+	char *str_fld[_NUM_FLD];
+	uint16_t port1, port2;
+	unsigned int size;
+	int nb_ports = 0;
+	char s[256];
+	char *end;
+	int i, j;
+
+	while ((p = strchr(p0, '(')) != NULL) {
+		++p;
+		p0 = strchr(p, ')');
+		if (p0 == NULL)
+			return -1;
+
+		size = p0 - p;
+		if (size >= sizeof(s))
+			return -1;
+
+		memcpy(s, p, size);
+		s[size] = '\0';
+		if (rte_strsplit(s, sizeof(s), str_fld,
+				 _NUM_FLD, ',') != _NUM_FLD)
+			return -1;
+		for (i = 0; i < _NUM_FLD; i++) {
+			errno = 0;
+			int_fld[i] = strtoul(str_fld[i], &end, 0);
+			if (errno != 0 || end == str_fld[i] ||
+			    int_fld[i] >= RTE_MAX_ETHPORTS)
+				return -1;
+		}
+		if (nb_port_pair_params >= RTE_MAX_ETHPORTS/2) {
+			printf("exceeded max number of port pair params: %hu\n",
+				nb_port_pair_params);
+			return -1;
+		}
+		port1 = (uint16_t)int_fld[FLD_PORT1];
+		port2 = (uint16_t)int_fld[FLD_PORT2];
+		port_map_info[port1].port_id = port1;
+		port_map_info[port1].dst_port_id = port2;
+
+		port_map_info[port2].port_id = port2;
+		port_map_info[port2].dst_port_id = port1;
+		++nb_port_pair_params;
+	}
+	return 0;
+}
 /* Parse the argument given in the command line of the application */
 static int
 l2fwd_parse_args(int argc, char **argv)
@@ -638,24 +670,10 @@ l2fwd_parse_args(int argc, char **argv)
 				  lgopts, &option_index)) != EOF) {
 
 		switch (opt) {
-		case 'r':
-			reflector_mode = 1;
-			printf("reflector mode enabled\n");
-			break;
-
 		/* debug */
 		case 'd':
 			dump_pkt = 1;
 			break;
-		case 'g':
-			generator_mode = 1;
-			printf("generator mode enabled\n");
-			break;
-		case 'j':
-			gen_mbuf_jumbo = 1;
-			printf("jumbo mbufs enabled\n");
-			break;
-
 		/* timer period */
 		case 'T':
 			timer_secs = l2fwd_parse_timer_period(optarg);
@@ -667,8 +685,10 @@ l2fwd_parse_args(int argc, char **argv)
 			timer_period_sec = timer_secs;
 			break;
 		case 'f':
-			strcpy(conf_file, optarg);
-			printf("Conf file %s Selected\n", conf_file);
+			l2fwd_parse_port_pair_config(optarg);
+			break;
+		case 'g':
+			l2fwd_parse_port_mode_config(optarg);
 			break;
 		/* long options */
 
@@ -764,97 +784,27 @@ signal_handler(int signum)
 }
 
 static void
-prepare_port_mapping(const char *filename)
-{
-	int row_count = 0, j, field_count = 0, numLines = 0;
-	int nb_ports = rte_eth_dev_count_avail();
-	char buf[1024], *field;
-	FILE *fp;
-	unsigned sdp_port = 0;
-	unsigned cgx_port = 0;
-
-	for (j = 0; j < nb_ports; j++) {
-		port_map[j] = j;
-	}
-	port_map[j] = RTE_MAX_ETHPORTS;
-
-	fp = fopen(filename, "r");
-	if (!fp) {
-		printf("Cannot open mapping file %s fall into default mode\n",
-			filename);
-		goto print_exit;
-	}
-
-	while (fgets(buf, 1024, fp))
-		numLines++;
-
-	printf("total lines in file: %d\n", numLines);
-	if ((numLines < 2) || (numLines > RTE_MAX_ETHPORTS)) {
-		printf("not enough maps specified, fall into default mode\n");
-		goto print_exit;
-	}
-	rewind(fp);
-
-	printf("Input Port Map Table\n");
-	printf("====================\n");
-	while (fgets(buf, 1024, fp)) {
-		field_count = 0;
-		row_count++;
-		cgx_port = 0;
-		sdp_port = 0;
-
-		if (row_count == 1)
-			continue;
-
-		field = strtok(buf, ",");
-		while (field) {
-			if (field_count == 0)
-				cgx_port =
-					 (uint32_t)strtol(field, NULL, 16);
-			if (field_count == 1)
-				sdp_port =
-					 (uint32_t)strtol(field, NULL, 16);
-			field = strtok(NULL, ",");
-			field_count++;
-		}
-		port_map[cgx_port] = sdp_port;
-		port_map[sdp_port] = cgx_port;
-		printf("Index %d ", row_count-1);
-		printf("Sdp Port: %d\t", sdp_port);
-		printf("cgx Port: %d\n", port_map[sdp_port]);
-	}
-	fclose(fp);
-print_exit:
-	printf("====================\n\n");
-	printf("Final Port Map Table\n");
-	printf("====================\n");
-	for (j = 0; j < nb_ports; j++) {
-		printf("Source Port:%d dst port %d\n", j, port_map[j]);
-	}
-	printf("====================\n");
-}
-
-static void
 init_port_type(void)
 {
 	struct rte_pci_device *pci_dev;
 	uint16_t port;
 
 	RTE_ETH_FOREACH_DEV(port) {
-		struct rte_eth_dev *eth_dev = &rte_eth_devices[port];
 
-		pci_dev = RTE_ETH_DEV_TO_PCI(eth_dev);
+		pci_dev = l2fwd_pcie_ep_get_pci_dev(port);
+		if (pci_dev == NULL)
+			continue;
 		printf("port %d: device (%x:%x) %u:%u:%u:%u\n",
 			port, pci_dev->id.vendor_id, pci_dev->id.device_id,
 			pci_dev->addr.domain, pci_dev->addr.bus,
 			pci_dev->addr.devid, pci_dev->addr.function);
-		if (pci_dev->id.device_id == 0xa063) {
-			port_type[port] = PORT_TYPE_NPU_NET;
+		if (pci_dev->id.device_id == 0xa063 ||
+		    pci_dev->id.device_id == 0xa061) {
+			port_map_info[port].port_type = PORT_TYPE_NPU_NET_LBK;
+			/* ethernet/lbk ports should not have nic/loop mode */
+			port_map_info[port].port_mode = PORT_MODE_NPU_NONE;
 		} else if (pci_dev->id.device_id == 0xa0f7) {
-			if (pci_dev->addr.function == 1)
-				port_type[port] = PORT_TYPE_NPU_PCI_PF;
-			else
-				port_type[port] = PORT_TYPE_NPU_PCI_VF;
+			port_map_info[port].port_type = PORT_TYPE_NPU_PCI;
 		} else {
 			printf("Unknown port %d; device (%x:%x) %u:%u:%u:%u\n",
 				port,
@@ -868,16 +818,18 @@ init_port_type(void)
 int
 main(int argc, char **argv)
 {
-	struct lcore_queue_conf *qconf;
-	int ret;
+	uint16_t nb_min_segs = MAX_NUM_SEG_PER_PKT;
 	uint16_t nb_ports, core_cnt = 0;
-	uint16_t portid;
-	unsigned lcore_id;
+	struct lcore_queue_conf *qconf;
+	uint32_t max_pktlen = 0, bufsz;
 	unsigned int nb_lcores = 0;
 	unsigned int nb_mbufs;
+	unsigned lcore_id;
 	unsigned i, j, k;
-	uint16_t nb_min_segs = MAX_NUM_SEG_PER_PKT;
-	uint32_t max_pktlen = 0, bufsz;
+	int socket_id;
+	uint16_t portid;
+	int ret;
+
 	uint8_t default_key[] = {
 		0xFE, 0xED, 0x0B, 0xAD, 0xFE, 0xED, 0x0B, 0xAD,
 		0xAD, 0x0B, 0xED, 0xFE, 0xAD, 0x0B, 0xED, 0xFE,
@@ -890,11 +842,11 @@ main(int argc, char **argv)
 	struct rte_eth_conf port_conf = {
 		.rxmode = {
 			.mq_mode = ETH_MQ_RX_RSS,
-			.max_rx_pkt_len = RTE_ETHER_MAX_LEN,
 			.split_hdr_size = 0,
 			.offloads = (DEV_RX_OFFLOAD_TCP_CKSUM |
-					DEV_RX_OFFLOAD_IPV4_CKSUM |
-					DEV_RX_OFFLOAD_UDP_CKSUM),
+				     DEV_RX_OFFLOAD_IPV4_CKSUM |
+				     DEV_RX_OFFLOAD_UDP_CKSUM |
+				     DEV_RX_OFFLOAD_JUMBO_FRAME),
 		},
 		.rx_adv_conf = {
 			.rss_conf = {
@@ -906,8 +858,8 @@ main(int argc, char **argv)
 		.txmode = {
 			.mq_mode = ETH_MQ_TX_NONE,
 			.offloads = (DEV_TX_OFFLOAD_TCP_CKSUM |
-					DEV_TX_OFFLOAD_IPV4_CKSUM |
-					DEV_TX_OFFLOAD_UDP_CKSUM),
+				     DEV_TX_OFFLOAD_IPV4_CKSUM |
+				     DEV_TX_OFFLOAD_UDP_CKSUM),
 		},
 	};
 
@@ -953,17 +905,6 @@ main(int argc, char **argv)
 		((max_pktlen % nb_min_segs) != 0) +
 		RTE_PKTMBUF_HEADROOM;
 
-	if (generator_mode) {
-		if (gen_mbuf_jumbo)
-			max_mbuf_size = MBUF_JUMBO_SIZE;
-		else
-			max_mbuf_size = RTE_MBUF_DEFAULT_BUF_SIZE;
-		gen_pktmbuf_pool = rte_pktmbuf_pool_create("gen_mbuf_pool",
-				8192U, 0, 0,
-				max_mbuf_size, rte_socket_id());
-		if (gen_pktmbuf_pool == NULL)
-			rte_panic("Cannot init mbuf pool\n");
-	}
 	/* convert to number of cycles */
 	timer_period_hz = timer_period_sec * rte_get_timer_hz();
 
@@ -984,8 +925,10 @@ main(int argc, char **argv)
 			core_cnt++;
 	}
 	l2fwd_queues_per_port = core_cnt;
-	if (l2fwd_queues_per_port == 0 || l2fwd_queues_per_port > MAX_QUEUE_PER_PORT)
-		rte_exit(EXIT_FAILURE, "wrong queue per port %u - bye\n", l2fwd_queues_per_port);
+	if (l2fwd_queues_per_port == 0 || l2fwd_queues_per_port >
+	    MAX_QUEUE_PER_PORT)
+		rte_exit(EXIT_FAILURE, "wrong queue per port %u - bye\n",
+			 l2fwd_queues_per_port);
 	printf("queues per port %u\n",  l2fwd_queues_per_port);
 	for (i = 0, j = 0; i < nb_lcores; i++) {
 		if (rte_lcore_is_enabled(i) == 0)
@@ -1012,7 +955,6 @@ main(int argc, char **argv)
 
 
 	init_port_type();
-	prepare_port_mapping(conf_file);
 	dump_port_mapping();
 
 	/* Initialise each port */
@@ -1026,10 +968,12 @@ main(int argc, char **argv)
 		/* init port */
 		ret = rte_eth_dev_get_name_by_port(portid, if_name);
 		if (ret < 0) {
-			printf("Error: ifname not found for portid-%d\n", portid);
+			printf("Error: ifname not found for portid-%d\n",
+			       portid);
 			continue;
 		}
-		printf("Initializing port %u; ifname = %s... ", portid, if_name);
+		printf("Initializing port %u; ifname = %s... ", portid,
+		       if_name);
 
 		ret = rte_eth_dev_info_get(portid, &dev_info);
 		if (ret != 0)
@@ -1072,22 +1016,19 @@ main(int argc, char **argv)
 		/* local_port_conf.link_speeds =
 			rte_eth_devices[portid].data->dev_conf.link_speeds;
 		*/
-		ret = rte_eth_dev_configure(portid, l2fwd_queues_per_port, l2fwd_queues_per_port, &local_port_conf);
+		l2fwd_configure_pkt_len(&local_port_conf, &dev_info);
+
+		ret = rte_eth_dev_configure(portid, l2fwd_queues_per_port,
+					    l2fwd_queues_per_port,
+					    &local_port_conf);
 		if (ret < 0)
 			rte_exit(EXIT_FAILURE, "Cannot configure device: err=%d, port=%u\n",
 				  ret, portid);
 
-
-		if ((port_type[portid] == PORT_TYPE_NPU_PCI_PF) ||
-		    (port_type[portid] == PORT_TYPE_NPU_PCI_VF)) {
-			/* fix MTU for jumbo frames */
-			ret = rte_eth_dev_set_mtu(portid,
-						  RTE_MIN(dev_info.max_mtu,
-							  MAX_MTU));
-			if (ret < 0)
-				 rte_exit(EXIT_FAILURE, "Cannot set mtu to 1500\n");
-		}
-
+		ret = rte_eth_dev_set_mtu(portid, dev_info.max_mtu);
+		if (ret < 0)
+			rte_exit(EXIT_FAILURE, "Can't set mtu to %d\n",
+				 dev_info.max_mtu);
 		ret = rte_eth_dev_adjust_nb_rx_tx_desc(portid, &nb_rxd,
 						       &nb_txd);
 		if (ret < 0)
@@ -1112,9 +1053,9 @@ main(int argc, char **argv)
 			rxq_conf = dev_info.default_rxconf;
 			rxq_conf.offloads = local_port_conf.rxmode.offloads;
 			ret = rte_eth_rx_queue_setup(portid, i, nb_rxd,
-						     rte_eth_dev_socket_id(portid),
-						     &rxq_conf,
-						     l2fwd_pktmbuf_pool);
+						rte_eth_dev_socket_id(portid),
+						&rxq_conf,
+						l2fwd_pktmbuf_pool);
 			if (ret < 0)
 				rte_exit(EXIT_FAILURE, "rte_eth_rx_queue_setup:err=%d, port=%u\n",
 					  ret, portid);
@@ -1130,26 +1071,30 @@ main(int argc, char **argv)
 					ret, portid);
 			/* Initialize TX buffers */
 			tx_buffer[portid][i] = rte_zmalloc_socket("tx_buffer",
-					RTE_ETH_TX_BUFFER_SIZE(MAX_PKT_BURST), 0,
-					rte_eth_dev_socket_id(portid));
+					RTE_ETH_TX_BUFFER_SIZE(MAX_PKT_BURST),
+					0, rte_eth_dev_socket_id(portid));
 			if (tx_buffer[portid][i] == NULL)
 				rte_exit(EXIT_FAILURE, "Cannot allocate buffer for tx on port %u\n",
-						portid);
+					 portid);
 
-			ret = rte_eth_tx_buffer_set_err_callback(tx_buffer[portid][i],
+			ret = rte_eth_tx_buffer_set_err_callback(
+					tx_buffer[portid][i],
 					rte_eth_tx_buffer_count_callback,
 					&port_stats[portid][i].dropped);
 			if (ret < 0)
 				rte_exit(EXIT_FAILURE,
-				"Cannot set error callback for tx buffer on port %u\n",
+					 "Cannot set error callback for tx buffer on port %u\n",
 					 portid);
 		}
+
+		/* set ptypes */
+		l2fwd_set_ptypes(portid);
 
 		/* Start device */
 		ret = rte_eth_dev_start(portid);
 		if (ret < 0)
 			rte_exit(EXIT_FAILURE, "rte_eth_dev_start:err=%d, port=%u\n",
-				  ret, portid);
+				 ret, portid);
 		printf("done: \n");
 
 		ret = rte_eth_promiscuous_enable(portid);
@@ -1159,18 +1104,16 @@ main(int argc, char **argv)
 				 rte_strerror(-ret), portid);
 
 		printf("Port %u, MAC address: %02X:%02X:%02X:%02X:%02X:%02X\n\n",
-				portid,
-				l2fwd_ports_eth_addr[portid].addr_bytes[0],
-				l2fwd_ports_eth_addr[portid].addr_bytes[1],
-				l2fwd_ports_eth_addr[portid].addr_bytes[2],
-				l2fwd_ports_eth_addr[portid].addr_bytes[3],
-				l2fwd_ports_eth_addr[portid].addr_bytes[4],
-				l2fwd_ports_eth_addr[portid].addr_bytes[5]);
+		       portid, l2fwd_ports_eth_addr[portid].addr_bytes[0],
+		       l2fwd_ports_eth_addr[portid].addr_bytes[1],
+		       l2fwd_ports_eth_addr[portid].addr_bytes[2],
+		       l2fwd_ports_eth_addr[portid].addr_bytes[3],
+		       l2fwd_ports_eth_addr[portid].addr_bytes[4],
+		       l2fwd_ports_eth_addr[portid].addr_bytes[5]);
 
 		/* initialize port stats */
 		memset(&port_stats, 0, sizeof(port_stats));
 	}
-
 	check_all_ports_link_status();
 
 	ret = 0;
