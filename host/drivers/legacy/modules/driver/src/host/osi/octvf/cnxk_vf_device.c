@@ -129,6 +129,7 @@ retry:
 	cavium_spin_lock_irqsave(&oct_dev->vf_mbox_lock, flags);
 	if (count == OTX_VF_MBOX_TIMEOUT_MS ||
 	    retry_count == OTX_VF_MBOX_MAX_RETRIES) {
+		mbox->state = OTX_VF_MBOX_STATE_IDLE;
 		cavium_error("%s Timeout count:%d retry_count:%d\n", __func__, count, retry_count);
 		spin_unlock_irqrestore(&oct_dev->vf_mbox_lock, flags);
 		return -ETIMEDOUT;
