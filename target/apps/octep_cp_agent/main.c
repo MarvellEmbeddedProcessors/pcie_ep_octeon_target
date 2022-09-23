@@ -29,6 +29,24 @@ void sigint_handler(int sig_num) {
 	}
 }
 
+static int set_fw_ready(int ready)
+{
+	struct octep_cp_event_info info;
+	int i, j;
+
+	info.e = OCTEP_CP_EVENT_TYPE_FW_READY;
+	info.u.fw_ready.ready = ready;
+	for (i=0; i<cp_lib_cfg.ndoms; i++) {
+		info.u.fw_ready.dom_idx = cp_lib_cfg.doms[i].idx;
+		for (j=0; j<cp_lib_cfg.doms[i].npfs; j++) {
+			info.u.fw_ready.pf_idx = cp_lib_cfg.doms[i].pfs[j].idx;
+			octep_cp_lib_send_event(&info);
+		}
+	}
+
+	return 0;
+}
+
 int main(int argc, char *argv[])
 {
 	int err = 0, i, j;
@@ -72,10 +90,12 @@ init:
 		return err;
 	}
 
+	set_fw_ready(1);
 	while (!force_quit && !perst) {
 		loop_process_msgs();
 		sleep(1);
 	}
+	set_fw_ready(0);
 
 	octep_cp_lib_uninit();
 	loop_uninit();
