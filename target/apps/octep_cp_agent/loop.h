@@ -8,16 +8,13 @@
  *
  * return value: 0 on success, -errno on failure.
  */
-int loop_init(char *cfg_file_path);
+int loop_init();
 
-/* Poll for interrupts and host messages.
- *
- * @param user_ctx: User context.
- * @param msg: Message buffer.
+/* Process interrupts and host messages.
  *
  * return value: size of response in words on success, -errno on failure.
  */
-int loop_process_msg(void *user_ctx, void *msg);
+int loop_process_msgs();
 
 /* Process user interrupt signal.
  *

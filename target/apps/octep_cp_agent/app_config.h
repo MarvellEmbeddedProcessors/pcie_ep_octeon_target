@@ -83,7 +83,7 @@ struct app_cfg {
 	struct pem_cfg *pems;
 };
 
-extern struct app_cfg app_cfg;
+extern struct app_cfg cfg;
 
 /* Parse file and populate configuration.
  *
@@ -92,6 +92,15 @@ extern struct app_cfg app_cfg;
  * return value: 0 on success, -errno on failure.
  */
 int app_config_init(const char *cfg_file_path);
+
+/* Get interface based on information in essage header.
+ *
+ *
+ * return value: 0 on success, -errno on failure.
+ */
+int app_config_get_if_from_msg_info(union octep_cp_msg_info *info,
+				    struct if_cfg **iface,
+				    struct if_stats **ifstats);
 
 /* Free allocated configuration artifacts.
  *

@@ -1,10 +1,12 @@
 #include <stdlib.h>
 #include <errno.h>
+#include <stdint.h>
 #include <libconfig.h>
 
+#include "octep_cp_lib.h"
 #include "app_config.h"
 
-struct app_cfg app_cfg;
+struct app_cfg cfg;
 
 /**
  * Object heirarchy
@@ -56,7 +58,7 @@ static void print_config()
 	struct pf_cfg *pf;
 	struct vf_cfg *vf;
 
-	pem = app_cfg.pems;
+	pem = cfg.pems;
 	while (pem) {
 		pf = pem->pfs;
 		while (pf) {
@@ -84,16 +86,16 @@ static struct pem_cfg *create_pem(int idx)
 		return NULL;
 
 	pem->idx = idx;
-	if(app_cfg.pems) {
-		p = app_cfg.pems;
+	if(cfg.pems) {
+		p = cfg.pems;
 		while (p->next)
 			p = p->next;
 
 		p->next = pem;
 	} else {
-		app_cfg.pems = pem;
+		cfg.pems = pem;
 	}
-	app_cfg.npem++;
+	cfg.npem++;
 
 	return pem;
 }
@@ -102,10 +104,10 @@ static struct pem_cfg *get_pem(int idx)
 {
 	struct pem_cfg *pem;
 
-	if (!app_cfg.pems)
+	if (!cfg.pems)
 		return NULL;
 
-	pem = app_cfg.pems;
+	pem = cfg.pems;
 	while (pem) {
 		if (pem->idx == idx)
 			return pem;
@@ -419,6 +421,44 @@ int app_config_init(const char *cfg_file_path)
 	return 0;
 }
 
+int app_config_get_if_from_msg_info(union octep_cp_msg_info *info,
+				    struct if_cfg **iface,
+				    struct if_stats **ifstats)
+{
+	struct pem_cfg *pem = cfg.pems;
+	struct pf_cfg *pf;
+	struct vf_cfg *vf;
+
+	while (pem) {
+		if (pem->idx == info->s.pem_idx) {
+			pf = pem->pfs;
+			while (pf) {
+				if (pf->idx == info->s.pf_idx) {
+					if (!info->s.is_vf) {
+						*iface = &pf->iface;
+						*ifstats = &pf->ifstats;
+						return 0;
+					}
+					vf = pf->vfs;
+					while (vf) {
+						if (vf->idx == info->s.vf_idx) {
+							*iface = &vf->iface;
+							*ifstats = &vf->ifstats;
+							return 0;
+						}
+						vf = vf->next;
+					}
+				}
+				pf = pf->next;
+			}
+
+		}
+		pem = pem->next;
+	}
+
+	return -ENOENT;
+}
+
 int app_config_uninit()
 {
 	struct pem_cfg *pem, *pp;
@@ -426,7 +466,7 @@ int app_config_uninit()
 	struct vf_cfg *vf, *vfp;
 
 	printf("config uninit\n");
-	pem = app_cfg.pems;
+	pem = cfg.pems;
 	while (pem) {
 		pf = pem->pfs;
 		while (pf) {
