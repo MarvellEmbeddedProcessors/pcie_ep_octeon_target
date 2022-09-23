@@ -14,31 +14,19 @@ LD = $(CROSS_COMPILE)ld
 
 LIB = liboctep_cp
 
-LIBCONFIG_PKGCONF = PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config
-
-ifneq ($(shell $(LIBCONFIG_PKGCONF) --exists libconfig && echo 1),1)
-$(info Could not find libconfig.pc in $(PKG_CONFIG_PATH))
-$(info Use PKG_CONFIG_PATH to provide correct path to libconfig.pc)
-$(error Aborting...)
-endif
-
-LIBCONFIG_CFLAGS = $(shell $(LIBCONFIG_PKGCONF) --cflags libconfig)
-LIBCONFIG_SHARED_LIB_FLAGS = $(shell $(LIBCONFIG_PKGCONF) --libs libconfig)
-
 CFLAGS = -O3 -Werror -Wall -fPIC -g \
 	-I$(CURDIR) \
 	-I$(CURDIR)/include \
 	-I$(CURDIR)/soc \
-	-I$(CURDIR)/compat/$(PLAT) \
-	$(LIBCONFIG_CFLAGS)
+	-I$(CURDIR)/compat/$(PLAT)
 
-LDFLAGS = -shared -fvisibility=hidden $(LIBCONFIG_SHARED_LIB_FLAGS)
+LDFLAGS = -shared -fvisibility=hidden
 
-SRCS = main.c config.c
+SRCS = main.c
 SRCS += soc/soc.c soc/cnxk.c
 SRCS += soc/octep_ctrl_mbox.c
 
-OBJS = main.o config.o
+OBJS = main.o
 OBJS += soc.o cnxk.o octep_ctrl_mbox.o
 
 STATIC_BIN = $(LIB).a

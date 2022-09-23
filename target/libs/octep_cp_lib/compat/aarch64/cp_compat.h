@@ -15,6 +15,8 @@
 #define cp_wmb()	asm volatile("dmb oshst" : : : "memory")
 #define cp_io_wmb()	cp_wmb()
 
+#define cp_min(x, y)	((x) <= (y) ? (x) : (y))
+
 static __cp_always_inline uint32_t
 cp_read32_relaxed(const volatile void *addr)
 {

@@ -24,27 +24,26 @@
  * |-------------------------------------------|
  * |producer index (4 bytes)                   |
  * |consumer index (4 bytes)                   |
- * |element size (4 bytes)                     |
- * |element count (4 bytes)                    |
+ * |max msg size (4 bytes)                     |
+ * |reserved (4 bytes)                         |
  * |===========================================|
  * |Fw to Host Queue info (16 bytes)           |
  * |-------------------------------------------|
  * |producer index (4 bytes)                   |
  * |consumer index (4 bytes)                   |
- * |element size (4 bytes)                     |
- * |element count (4 bytes)                    |
+ * |max msg size (4 bytes)                     |
+ * |reserved (4 bytes)                         |
  * |===========================================|
- * |Host to Fw Queue                           |
+ * |Host to Fw Queue ((total size-288/2) bytes)|
  * |-------------------------------------------|
- * |((elem_sz + hdr(8 bytes)) * elem_cnt) bytes|
+ * |                                           |
  * |===========================================|
  * |===========================================|
- * |Fw to Host Queue                           |
+ * |Fw to Host Queue ((total size-288/2) bytes)|
  * |-------------------------------------------|
- * |((elem_sz + hdr(8 bytes)) * elem_cnt) bytes|
+ * |                                           |
  * |===========================================|
  */
-#include <pthread.h>
 
 #ifndef BIT
 #define BIT(a)	(1ULL << (a))
@@ -58,6 +57,10 @@
 #define OCTEP_CTRL_MBOX_MSG_HDR_FLAG_RESP		BIT(1)
 /* Valid notification, no response required */
 #define OCTEP_CTRL_MBOX_MSG_HDR_FLAG_NOTIFY		BIT(2)
+/* Valid custom message */
+#define OCTEP_CTRL_MBOX_MSG_HDR_FLAG_CUSTOM		BIT(3)
+
+#define OCTEP_CTRL_MBOX_MSG_DESC_MAX			4
 
 enum octep_ctrl_mbox_status {
 	OCTEP_CTRL_MBOX_STATUS_INVALID = 0,
@@ -68,58 +71,66 @@ enum octep_ctrl_mbox_status {
 
 /* mbox message */
 union octep_ctrl_mbox_msg_hdr {
-	uint64_t word0;
+	uint64_t words[2];
 	struct {
+		uint16_t pem_idx:4;
+		uint16_t pf_idx:9;
+		uint16_t reserved:2;
+		/* vf_idx is valid if 1 */
+		uint16_t is_vf:1;
+		/* sender vf index 0-(n-1), 0 if (is_vf==0) */
+		uint16_t vf_idx;
+		/* total size of message excluding header */
+		uint32_t sz;
 		/* OCTEP_CTRL_MBOX_MSG_HDR_FLAG_* */
 		uint32_t flags;
-		/* size of message in words excluding header */
-		uint32_t sizew;
-	};
+		/* identifier to match responses */
+		uint16_t msg_id;
+		uint16_t reserved2;
+	} s;
+};
+
+/* mbox message buffer */
+struct octep_ctrl_mbox_msg_buf {
+	uint32_t reserved1;
+	uint16_t reserved2;
+	/* size of buffer */
+	uint16_t sz;
+	/* pointer to message buffer */
+	void *msg;
 };
 
 /* mbox message */
 struct octep_ctrl_mbox_msg {
 	/* mbox transaction header */
 	union octep_ctrl_mbox_msg_hdr hdr;
-	/* pointer to message buffer */
-	void *msg;
+	/* number of sg buffer's */
+	int sg_num;
+	/* message buffer's */
+	struct octep_ctrl_mbox_msg_buf sg_list[OCTEP_CTRL_MBOX_MSG_DESC_MAX];
 };
 
 /* Mbox queue */
 struct octep_ctrl_mbox_q {
-	/* q element size, should be aligned to unsigned long */
-	uint16_t elem_sz;
-	/* q element count, should be power of 2 */
-	uint16_t elem_cnt;
-	/* q mask */
-	uint16_t mask;
+	/* size of queue buffer */
+	uint32_t sz;
 	/* producer address in bar mem */
 	void *hw_prod;
 	/* consumer address in bar mem */
 	void *hw_cons;
-	/* q base adddress in bar mem */ 
+	/* q base adddress in bar mem */
 	void *hw_q;
 };
 
 struct octep_ctrl_mbox {
-	/* host driver version */
-	uint64_t version;
 	/* size of bar memory */
 	uint32_t barmem_sz;
 	/* pointer to BAR memory */
 	void *barmem;
-	/* user context for callback, can be null */
-	void *user_ctx;
-	/* callback handler for processing request, called from octep_ctrl_mbox_recv */
-	int (*process_req)(void *user_ctx, struct octep_ctrl_mbox_msg *msg);
 	/* host-to-fw queue */
 	struct octep_ctrl_mbox_q h2fq;
 	/* fw-to-host queue */
 	struct octep_ctrl_mbox_q f2hq;
-	/* lock for h2fq */
-	pthread_mutex_t h2fq_lock;
-	/* lock for f2hq */
-	pthread_mutex_t f2hq_lock;
 };
 
 /* Initialize control mbox.
@@ -130,33 +141,35 @@ struct octep_ctrl_mbox {
  */
 int octep_ctrl_mbox_init(struct octep_ctrl_mbox *mbox);
 
-/* Check if host driver is initialized and ready.
- *
- * @param mbox: non-null pointer to struct octep_ctrl_mbox.
- *
- * return value: 0 on success, -errno on failure.
- */
-int octep_ctrl_mbox_is_host_ready(struct octep_ctrl_mbox *mbox);
-
 /* Send mbox message.
  *
  * @param mbox: non-null pointer to struct octep_ctrl_mbox.
+ * @param msgs: Array of non-null pointers to struct octep_ctrl_mbox_msg.
+ *             Caller should fill msg.sz and msg.desc.sz for each message.
+ * @param num: Size of msg array.
  *
- * return value: 0 on success, -errno on failure.
+ * return value: number of messages sent on success, -errno on failure.
  */
-int octep_ctrl_mbox_send(struct octep_ctrl_mbox *mbox, struct octep_ctrl_mbox_msg *msg);
+int octep_ctrl_mbox_send(struct octep_ctrl_mbox *mbox,
+			 struct octep_ctrl_mbox_msg *msgs,
+			 int num);
 
 /* Retrieve mbox message.
  *
  * @param mbox: non-null pointer to struct octep_ctrl_mbox.
+ * @param msgs: Array of non-null pointers to struct octep_ctrl_mbox_msg.
+ *             Caller should fill msg.sz and msg.desc.sz for each message.
+ * @param num: Size of msg array.
  *
- * return value: 0 on success, -errno on failure.
+ * return value: number of messages received on success, -errno on failure.
  */
-int octep_ctrl_mbox_recv(struct octep_ctrl_mbox *mbox, struct octep_ctrl_mbox_msg *msg);
+int octep_ctrl_mbox_recv(struct octep_ctrl_mbox *mbox,
+			 struct octep_ctrl_mbox_msg *msgs,
+			 int num);
 
 /* Uninitialize control mbox.
  *
- * @param ep: non-null pointer to struct octep_ctrl_mbox.
+ * @param mbox: non-null pointer to struct octep_ctrl_mbox.
  *
  * return value: 0 on success, -errno on failure.
  */

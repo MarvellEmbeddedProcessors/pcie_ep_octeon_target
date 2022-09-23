@@ -8,6 +8,8 @@
 #define ETH_ALEN	6
 #endif
 
+#define IS_SOC_CN10K	(soc == CP_LIB_SOC_CNXK)
+
 /* Supported soc's */
 enum cp_lib_soc {
         CP_LIB_SOC_OTX2,
@@ -55,17 +57,23 @@ struct cp_lib_cfg {
 struct cp_lib_soc_ops {
 	/* initialize */
 	int (*init)(struct octep_cp_lib_cfg *p_cfg);
-	/* poll for mbox messages and events */
-	int (*poll)();
-	/* send heartbeat to host */
-	int (*send_heartbeat)();
+	/* send message responses to host */
+	int (*send_msg_resp)(uint64_t *ctx, struct octep_cp_msg *msg, int num);
+	/* send notification to host */
+	int (*send_notification)(struct octep_cp_msg* msg);
+	/* receive messages from host*/
+	int (*recv_msg)(uint64_t *ctx, struct octep_cp_msg *msg, int num);
+	/* send event to host */
+	int (*send_event)(struct octep_cp_event_info *info);
+	/* receive soc events */
+	int (*recv_event)(struct octep_cp_event_info *info, int num);
 	/* uninitialize */
-	int (*uninit)();
+	int (*uninit)(void);
 };
 
 extern volatile enum cp_lib_state state;
 extern struct octep_cp_lib_cfg user_cfg;
-extern struct cp_lib_cfg lib_cfg;
+extern enum cp_lib_soc soc;
 
 /* Get soc ops.
  *

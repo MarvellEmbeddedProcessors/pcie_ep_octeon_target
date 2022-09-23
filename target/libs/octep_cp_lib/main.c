@@ -16,13 +16,11 @@
 volatile enum cp_lib_state state = CP_LIB_STATE_INVALID;
 /* user configuration */
 struct octep_cp_lib_cfg user_cfg = {0};
-/* library configuration */
-struct cp_lib_cfg lib_cfg = {0};
 /* soc operations */
 static struct cp_lib_soc_ops *sops = NULL;
 
 __attribute__((visibility("default")))
-int octep_cp_lib_init(struct octep_cp_lib_cfg *p_cfg)
+int octep_cp_lib_init(struct octep_cp_lib_cfg *cfg)
 {
 	int err;
 
@@ -34,48 +32,88 @@ int octep_cp_lib_init(struct octep_cp_lib_cfg *p_cfg)
 	if (err || !sops)
 		return -ENAVAIL;
 
-	memset(&lib_cfg, 0, sizeof(struct cp_lib_cfg));
-	err = lib_config_init(p_cfg->cfg_file_path);
-	if (err) {
-		memset(&lib_cfg, 0, sizeof(struct cp_lib_cfg));
-		return -EINVAL;
-	}
-
-	user_cfg = *p_cfg;
+	memset(&user_cfg, 0, sizeof(struct octep_cp_lib_cfg));
 	state = CP_LIB_STATE_INIT;
-	err = sops->init(p_cfg);
+	err = sops->init(cfg);
 	if (err) {
-		lib_config_uninit();
-		memset(&user_cfg, 0, sizeof(struct octep_cp_lib_cfg));
-		memset(&lib_cfg, 0, sizeof(struct cp_lib_cfg));
 		state = CP_LIB_STATE_INVALID;
 		return err;
 	}
 	state = CP_LIB_STATE_READY;
+	user_cfg = *cfg;
 
 	return 0;
 }
 
 __attribute__((visibility("default")))
-int octep_cp_lib_poll()
+int octep_cp_lib_send_msg_resp(uint64_t *ctx, struct octep_cp_msg *msgs,
+			       int num)
 {
-	//CP_LIB_LOG(INFO, LIB, "poll\n");
+	//CP_LIB_LOG(INFO, LIB, "send message response\n");
 
 	if (state != CP_LIB_STATE_READY)
 		return -EAGAIN;
 
-	return sops->poll();
+	if (!ctx || !msgs || num <= 0)
+		return -EINVAL;
+
+	return sops->send_msg_resp(ctx, msgs, num);
 }
 
 __attribute__((visibility("default")))
-int octep_cp_lib_send_heartbeat()
+int octep_cp_lib_send_notification(struct octep_cp_msg* msg)
 {
-	CP_LIB_LOG(INFO, LIB, "sigusr1\n");
+	CP_LIB_LOG(INFO, LIB, "send notification\n");
 
 	if (state != CP_LIB_STATE_READY)
 		return -EAGAIN;
 
-	return sops->send_heartbeat();
+	if (!msg)
+		return -EINVAL;
+
+	return sops->send_notification(msg);
+}
+
+__attribute__((visibility("default")))
+int octep_cp_lib_recv_msg(uint64_t *ctx, struct octep_cp_msg *msgs, int num)
+{
+	//CP_LIB_LOG(INFO, LIB, "receive message\n");
+
+	if (state != CP_LIB_STATE_READY)
+		return -EAGAIN;
+
+	if (!ctx || !msgs || num <= 0)
+		return -EINVAL;
+
+	return sops->recv_msg(ctx, msgs, num);
+}
+
+__attribute__((visibility("default")))
+int octep_cp_lib_send_event(struct octep_cp_event_info *info)
+{
+	CP_LIB_LOG(INFO, LIB, "send event\n");
+
+	if (state != CP_LIB_STATE_READY)
+		return -EAGAIN;
+
+	if (!info)
+		return -EINVAL;
+
+	return sops->send_event(info);
+}
+
+__attribute__((visibility("default")))
+int octep_cp_lib_recv_event(struct octep_cp_event_info *info, int num)
+{
+	CP_LIB_LOG(INFO, LIB, "receive event\n");
+
+	if (state != CP_LIB_STATE_READY)
+		return -EAGAIN;
+
+	if (!info || num <= 0)
+		return -EINVAL;
+
+	return sops->recv_event(info, num);
 }
 
 __attribute__((visibility("default")))
@@ -88,9 +126,7 @@ int octep_cp_lib_uninit()
 
 	state = CP_LIB_STATE_UNINIT;
 	sops->uninit();
-	lib_config_uninit();
 	memset(&user_cfg, 0, sizeof(struct octep_cp_lib_cfg));
-	memset(&lib_cfg, 0, sizeof(struct cp_lib_cfg));
 	sops = NULL;
 	state = CP_LIB_STATE_INVALID;
 

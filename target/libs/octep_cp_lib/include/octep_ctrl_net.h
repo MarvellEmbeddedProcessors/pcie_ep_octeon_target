@@ -46,15 +46,18 @@ enum octep_ctrl_net_f2h_cmd {
 	OCTEP_CTRL_NET_F2H_CMD_LINK_STATUS,
 };
 
-struct octep_ctrl_net_req_hdr {
-	/* sender id */
-	uint16_t sender;
-	/* receiver id */
-	uint16_t receiver;
-	/* octep_ctrl_net_h2t_cmd */
-	uint16_t cmd;
-	/* reserved */
-	uint16_t rsvd0;
+union octep_ctrl_net_req_hdr {
+	uint64_t words[1];
+	struct {
+		/* sender id */
+		uint16_t sender;
+		/* receiver id */
+		uint16_t receiver;
+		/* octep_ctrl_net_h2t_cmd */
+		uint16_t cmd;
+		/* reserved */
+		uint16_t rsvd0;
+	} s;
 };
 
 /* get/set mtu request */
@@ -111,7 +114,7 @@ struct octep_ctrl_net_h2f_req_cmd_link_info {
 
 /* Host to fw request data */
 struct octep_ctrl_net_h2f_req {
-	struct octep_ctrl_net_req_hdr hdr;
+	union octep_ctrl_net_req_hdr hdr;
 	union {
 		struct octep_ctrl_net_h2f_req_cmd_mtu mtu;
 		struct octep_ctrl_net_h2f_req_cmd_mac mac;
@@ -122,15 +125,18 @@ struct octep_ctrl_net_h2f_req {
 	};
 } __attribute__((__packed__));
 
-struct octep_ctrl_net_resp_hdr {
-	/* sender id */
-	uint16_t sender;
-	/* receiver id */
-	uint16_t receiver;
-	/* octep_ctrl_net_h2t_cmd */
-	uint16_t cmd;
-	/* octep_ctrl_net_reply */
-	uint16_t reply;
+union octep_ctrl_net_resp_hdr {
+	uint64_t words[1];
+	struct {
+		/* sender id */
+		uint16_t sender;
+		/* receiver id */
+		uint16_t receiver;
+		/* octep_ctrl_net_h2t_cmd */
+		uint16_t cmd;
+		/* octep_ctrl_net_reply */
+		uint16_t reply;
+	} s;
 };
 
 /* get mtu response */
@@ -153,7 +159,7 @@ struct octep_ctrl_net_h2f_resp_cmd_state {
 
 /* Host to fw response data */
 struct octep_ctrl_net_h2f_resp {
-	struct octep_ctrl_net_resp_hdr hdr;
+	union octep_ctrl_net_resp_hdr hdr;
 	union {
 		struct octep_ctrl_net_h2f_resp_cmd_mtu mtu;
 		struct octep_ctrl_net_h2f_resp_cmd_mac mac;
@@ -171,7 +177,7 @@ struct octep_ctrl_net_f2h_req_cmd_state {
 
 /* Fw to host request data */
 struct octep_ctrl_net_f2h_req {
-	struct octep_ctrl_net_req_hdr hdr;
+	union octep_ctrl_net_req_hdr hdr;
 	union {
 		struct octep_ctrl_net_f2h_req_cmd_state link;
 	};
@@ -179,58 +185,15 @@ struct octep_ctrl_net_f2h_req {
 
 /* Fw to host response data */
 struct octep_ctrl_net_f2h_resp {
-	struct octep_ctrl_net_resp_hdr hdr;
+	union octep_ctrl_net_resp_hdr hdr;
 };
 
-/* Size of host to fw octep_ctrl_mbox queue element */
-union octep_ctrl_net_h2f_data_sz {
+/* Max data size to be transferred over mbox */
+union octep_ctrl_net_max_data {
 	struct octep_ctrl_net_h2f_req h2f_req;
 	struct octep_ctrl_net_h2f_resp h2f_resp;
-};
-
-/* Size of fw to host octep_ctrl_mbox queue element */
-union octep_ctrl_net_f2h_data_sz {
 	struct octep_ctrl_net_f2h_req f2h_req;
 	struct octep_ctrl_net_f2h_resp f2h_resp;
 };
-
-/* size of host to fw data in words */
-#define OCTEP_CTRL_NET_H2F_DATA_SZW		((sizeof(union octep_ctrl_net_h2f_data_sz)) / \
-						 (sizeof(unsigned long)))
-
-/* size of fw to host data in words */
-#define OCTEP_CTRL_NET_F2H_DATA_SZW		((sizeof(union octep_ctrl_net_f2h_data_sz)) / \
-						 (sizeof(unsigned long)))
-
-/* size in words of get/set mtu request */
-#define OCTEP_CTRL_NET_H2F_MTU_REQ_SZW			2
-/* size in words of get/set mac request */
-#define OCTEP_CTRL_NET_H2F_MAC_REQ_SZW			2
-/* size in words of get stats request */
-#define OCTEP_CTRL_NET_H2F_GET_STATS_REQ_SZW		2
-/* size in words of get/set state request */
-#define OCTEP_CTRL_NET_H2F_STATE_REQ_SZW		2
-/* size in words of get/set link info request */
-#define OCTEP_CTRL_NET_H2F_LINK_INFO_REQ_SZW		4
-
-/* size in words of get mtu response */
-#define OCTEP_CTRL_NET_H2F_GET_MTU_RESP_SZW		2
-/* size in words of set mtu response */
-#define OCTEP_CTRL_NET_H2F_SET_MTU_RESP_SZW		1
-/* size in words of get mac response */
-#define OCTEP_CTRL_NET_H2F_GET_MAC_RESP_SZW		2
-/* size in words of set mac response */
-#define OCTEP_CTRL_NET_H2F_SET_MAC_RESP_SZW		1
-/* size in words of get state request */
-#define OCTEP_CTRL_NET_H2F_GET_STATE_RESP_SZW		2
-/* size in words of set state request */
-#define OCTEP_CTRL_NET_H2F_SET_STATE_RESP_SZW		1
-/* size in words of get link info request */
-#define OCTEP_CTRL_NET_H2F_GET_LINK_INFO_RESP_SZW	4
-/* size in words of set link info request */
-#define OCTEP_CTRL_NET_H2F_SET_LINK_INFO_RESP_SZW	1
-
-/* size in words of get/set state request */
-#define OCTEP_CTRL_NET_F2H_STATE_REQ_SZW		2
 
 #endif /* __OCTEP_CTRL_NET_H__ */

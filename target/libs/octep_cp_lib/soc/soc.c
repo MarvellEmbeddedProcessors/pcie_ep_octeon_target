@@ -157,6 +157,9 @@ static struct soc_model model;
 #define PCI_DEVID_CNXK_RVU_NPA_PF	0xA0FB
 #define PCI_DEVID_CNXK_RVU_NPA_VF	0xA0FC
 
+/* Detected SOC */
+enum cp_lib_soc soc;
+
 /* Detect if RVU device */
 static bool is_rvu_device(unsigned long val)
 {
@@ -406,15 +409,21 @@ static struct cp_lib_soc_ops ops[CP_LIB_SOC_MAX] = {
 	/* otx2 */
 	{
 		cnxk_init,
-		cnxk_msg_poll,
-		cnxk_send_heartbeat,
+		cnxk_send_msg_resp,
+		cnxk_send_notification,
+		cnxk_recv_msg,
+		cnxk_send_event,
+		cnxk_recv_event,
 		cnxk_uninit
 	},
 	/* cnxk */
 	{
 		cnxk_init,
-		cnxk_msg_poll,
-		cnxk_send_heartbeat,
+		cnxk_send_msg_resp,
+		cnxk_send_notification,
+		cnxk_recv_msg,
+		cnxk_send_event,
+		cnxk_recv_event,
 		cnxk_uninit
 	}
 };
@@ -427,13 +436,13 @@ int soc_get_ops(struct cp_lib_soc_ops **p_ops)
 	if (err)
 		return err;
 
-	lib_cfg.soc = (model.flag & (SOC_MODEL_CN10K)) ?
-		   CP_LIB_SOC_CNXK : CP_LIB_SOC_OTX2;
+	soc = (model.flag & (SOC_MODEL_CN10K)) ?
+	       CP_LIB_SOC_CNXK : CP_LIB_SOC_OTX2;
 	if (!p_ops) {
 		CP_LIB_LOG(INFO, SOC, "Invalid param: p_ops:%p\n", p_ops);
 		return -EINVAL;
 	}
-	*p_ops = &ops[lib_cfg.soc];
+	*p_ops = &ops[soc];
 
 	return 0;
 }
