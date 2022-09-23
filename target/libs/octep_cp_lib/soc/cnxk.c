@@ -19,9 +19,6 @@
 #include "cnxk.h"
 #include "cnxk_hw.h"
 
-#define FW_STATUS_READY			0x1ul
-#define FW_STATUS_INVALID		0x0ul
-
 /* library defines OCTEP_CP_PF_PER_DOM_MAX pf's per pem,
  * there are 16 4mb slots in bar4, we assign 1 slot per pem,
  * so each pf will get 4mb/OCTEP_CP_PF_PER_DOM_MAX = 32768 bytes for mbox.
@@ -160,12 +157,12 @@ static int open_perst_uio()
 	return 0;
 }
 
-static int set_fw_ready(struct cnxk_pem *pem, unsigned long long status)
+static int set_fw_ready(struct cnxk_pem *pem, struct cnxk_pf *pf,
+			unsigned long long status)
 {
 	uint64_t val;
 	void* addr;
 	off_t reg;
-	int i;
 
 	/* for cn10k we map into pf0 only */
 	reg = (IS_SOC_CN10K) ?
@@ -188,15 +185,12 @@ static int set_fw_ready(struct cnxk_pem *pem, unsigned long long status)
 		       (1 << 15) |
 		       (PCIEEP_VSECST_CTL << PEMX_CFG_WR_REG));
 
-		for (i=0; i<pem->npfs; i++) {
-			cp_write64((val | (pem->pfs[i].idx << PEMX_CFG_WR_PF)),
-				   addr);
-			cp_read64(addr);
-			CP_LIB_LOG(INFO, CNXK,
-				   "pem[%d] pf[%d] fw ready %lx addr %p\n",
-				   pem->idx, pem->pfs[i].idx,
-				   val, addr + PEMX_CFG_WR_OFFSET);
-		}
+		cp_write64((val | (pf->idx << PEMX_CFG_WR_PF)), addr);
+		cp_read64(addr);
+		CP_LIB_LOG(INFO, CNXK,
+			   "pem[%d] pf[%d] fw ready %lx addr %p\n",
+			   pem->idx, pf->idx,
+			   val, addr + PEMX_CFG_WR_OFFSET);
 	}
 	munmap(addr, 8);
 
@@ -289,18 +283,8 @@ int cnxk_init(struct octep_cp_lib_cfg *cfg)
 	if (err)
 		goto perst_uio_fail;
 
-	/* Set fw_ready for each pem */
-	for (i=0; i<npems; i++) {
-		err = set_fw_ready(&pems[i], FW_STATUS_READY);
-		if (err)
-			goto fw_ready_fail;
-	}
-
 	return 0;
 
-fw_ready_fail:
-	for (i=0; i<npems; i++)
-		set_fw_ready(&pems[i], FW_STATUS_INVALID);
 perst_uio_fail:
 	//close uio
 init_pf_fail:
@@ -473,16 +457,29 @@ int cnxk_send_event(struct octep_cp_event_info *info)
 	struct cnxk_pem *pem;
 	struct cnxk_pf *pf;
 
-	if (info->u.hbeat.dom_idx >= npems ||
-	    info->e != OCTEP_CP_EVENT_TYPE_HEARTBEAT)
-		return -EINVAL;
+	if (info->e == OCTEP_CP_EVENT_TYPE_FW_READY) {
+		if (info->u.fw_ready.dom_idx >= npems)
+			return -EINVAL;
 
-	pem = &pems[info->u.hbeat.dom_idx];
-	pf = get_pf(pem, info->u.hbeat.pf_idx);
-	if (!pf)
-		return -EINVAL;
+		pem = &pems[info->u.fw_ready.dom_idx];
+		pf = get_pf(pem, info->u.fw_ready.pf_idx);
+		if (!pf)
+			return -EINVAL;
 
-	return raise_oei_trig_int(pf, SDP_EPF_OEI_TRIG_BIT_HEARTBEAT);
+		return set_fw_ready(pem, pf, (info->u.fw_ready.ready != 0));
+	} else if (info->e == OCTEP_CP_EVENT_TYPE_HEARTBEAT) {
+		if (info->u.hbeat.dom_idx >= npems)
+			return -EINVAL;
+
+		pem = &pems[info->u.hbeat.dom_idx];
+		pf = get_pf(pem, info->u.hbeat.pf_idx);
+		if (!pf)
+			return -EINVAL;
+
+		return raise_oei_trig_int(pf, SDP_EPF_OEI_TRIG_BIT_HEARTBEAT);
+	}
+
+	return -EINVAL;
 }
 
 int cnxk_recv_event(struct octep_cp_event_info *info, int num)
@@ -498,7 +495,6 @@ int cnxk_uninit()
 	CP_LIB_LOG(INFO, CNXK, "uninit\n");
 
 	for (i=0; i<npems; i++) {
-		set_fw_ready(&pems[i], FW_STATUS_INVALID);
 		if (pems[i].pfs) {
 			for (j=0; j<pems[i].npfs; j++) {
 				uninit_pf(&pems[i], &(pems[i].pfs[j]));

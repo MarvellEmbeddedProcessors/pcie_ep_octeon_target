@@ -32,6 +32,15 @@ struct octep_cp_event_info_flr {
 	uint64_t vf_mask[2];
 };
 
+struct octep_cp_event_info_fw_ready {
+	/* index of pcie mac domain */
+	int dom_idx;
+	/* index of pf in pcie mac domain */
+	int pf_idx;
+	/* firmware ready true/false */
+	int ready;
+};
+
 struct octep_cp_event_info_heartbeat {
 	/* index of pcie mac domain */
 	int dom_idx;
@@ -45,6 +54,7 @@ struct octep_cp_event_info {
 	union {
 		struct octep_cp_event_info_perst perst;
 		struct octep_cp_event_info_flr flr;
+		struct octep_cp_event_info_fw_ready fw_ready;
 		struct octep_cp_event_info_heartbeat hbeat;
 	} u;
 };
