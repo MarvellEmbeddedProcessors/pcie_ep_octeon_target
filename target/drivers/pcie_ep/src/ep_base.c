@@ -133,17 +133,24 @@ void send_oei_trigger(struct otx_pcie_ep *pcie_ep_dev, int type)
 {
 	union sdp_epf_oei_trig trig;
 	uint64_t *addr;
+	int i;
 
 	/* Don't send interrupts until OEI enabled by host */
-	addr = (uint64_t*)pcie_ep_dev->oei_rint_ena_remap_addr;
-	if (!READ_ONCE(*addr))
-		return;
+	for (i = 0; i < pcie_ep_dev->num_pfs; i++) {
+		addr = (uint64_t*)pcie_ep_dev->oei_rint_ena_remap_addr[i];
+		if (!READ_ONCE(*addr))
+			return;
 
-	trig.u64 = 0;
-	trig.s.set = 1;
-	trig.s.bit_num = type;
-	addr = (uint64_t*)pcie_ep_dev->oei_trig_remap_addr;
-	WRITE_ONCE(*addr, trig.u64);
+		trig.u64 = 0;
+		trig.s.set = 1;
+		trig.s.bit_num = type;
+		addr = (uint64_t*)pcie_ep_dev->oei_trig_remap_addr[i];
+		WRITE_ONCE(*addr, trig.u64);
+
+		/* if not keepalive then skip for rest of the PFs */
+		if (type != KEEPALIVE_OEI_TRIG_BIT)
+			break;
+	}
 }
 
 static int ep_keepalive_thread(void *arg)
@@ -299,28 +306,50 @@ static int npu_base_setup(struct otx_pcie_ep *pcie_ep_dev)
 	       bar_idx_addr, bar_idx_val);
 	npu_csr_write(bar_idx_addr, bar_idx_val);
 
-	pcie_ep_dev->oei_trig_remap_addr =
-		(uint64_t)ioremap(pcie_ep_dev->oei_trig_addr | (epf_num[instance] << 25), 8);
-	if (pcie_ep_dev->oei_trig_remap_addr == (uint64_t)NULL) {
-		printk("Failed to ioremap oei_trig space\n");
-		return -1;
+	{
+		struct device_node *dev;
+		const void *ptr;
+		int len;
+
+		dev = of_find_node_by_name(NULL, "rvu-sdp");
+		if (dev == NULL) {
+			printk("can't find FDT dev %s\n", "rvu-sdp");
+			return -EINVAL;
+		}
+
+		ptr = of_get_property(dev, "num-sdp-pfs", &len);
+		if (ptr == NULL) {
+			printk("SDP DTS: Failed to get num-sdp-pfs\n");
+			pcie_ep_dev->num_pfs = 1;
+		} else {
+			pcie_ep_dev->num_pfs = be32_to_cpup((u32 *)ptr);
+		}
 	}
 
+	for (i = 0; i < pcie_ep_dev->num_pfs; i++) {
+		pcie_ep_dev->oei_trig_remap_addr[i] =
+			(uint64_t)ioremap(pcie_ep_dev->oei_trig_addr | i << 25, 8);
+		if (pcie_ep_dev->oei_trig_remap_addr[i] == (uint64_t)NULL) {
+			printk("Failed to ioremap oei_trig space\n");
+			return -1;
+		}
+
 #define SDPX_EPFX_OEI_RINT_ENA_W1S(A,B)	(0x86E080020390 | \
-					(((A)&1)<<36) | (((B)&0xF)<<25))
+					 (((A)&1)<<36) | (((B)&0xF)<<25))
 #define SDPX_EPFX_OEI_RINT_ENA_W1SX(A,B,C)	(0x86e080020700 | \
-					(((A)&1)<<36) | (((B)&0x3)<<25)\
-					| (((C)&0xf)<<4))
-	if (pcie_ep_dev->plat_model == OTX3_CN10K) {
-		pcie_ep_dev->oei_rint_ena_remap_addr =
-			(uint64_t)ioremap(SDPX_EPFX_OEI_RINT_ENA_W1SX(sdp_num[instance], epf_num[instance], 0), 8);
-	} else {
-		pcie_ep_dev->oei_rint_ena_remap_addr =
-			(uint64_t)ioremap(SDPX_EPFX_OEI_RINT_ENA_W1S(sdp_num[instance], epf_num[instance]), 8);
-	}
-	if (pcie_ep_dev->oei_rint_ena_remap_addr == (uint64_t)NULL) {
-		printk("Failed to ioremap oei_rint_ena space\n");
-		return -1;
+						 (((A)&1)<<36) | (((B)&0x3)<<25)\
+						 | (((C)&0xf)<<4))
+		if (pcie_ep_dev->plat_model == OTX3_CN10K) {
+			pcie_ep_dev->oei_rint_ena_remap_addr[i] =
+				(uint64_t)ioremap(SDPX_EPFX_OEI_RINT_ENA_W1SX(sdp_num[instance], i, 0), 8);
+		} else {
+			pcie_ep_dev->oei_rint_ena_remap_addr[i] =
+				(uint64_t)ioremap(SDPX_EPFX_OEI_RINT_ENA_W1S(sdp_num[instance], i), 8);
+		}
+		if (pcie_ep_dev->oei_rint_ena_remap_addr[i] == (uint64_t)NULL) {
+			printk("Failed to ioremap oei_rint_ena space\n");
+			return -1;
+		}
 	}
 	if (pcie_ep_dev->plat_model == OTX2_CN9XXX ||
 	    pcie_ep_dev->plat_model == OTX3_CN10K) {
@@ -393,8 +422,6 @@ static int npu_base_probe(struct platform_device *pdev)
 	struct otx_pcie_ep *pcie_ep_dev;
 	struct device *dev = &pdev->dev;
 	int i, irq, first_irq, irq_count, ret = 0;
-	struct device *smmu_dev;
-	struct iommu_domain *host_domain;
 	int instance = 0;
 	unsigned int plat;
 

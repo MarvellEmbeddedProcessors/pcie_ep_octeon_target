@@ -5,11 +5,12 @@ struct otx_pcie_ep {
 	uint64_t	pem_base;
 	uint64_t	sdp_base;
 	uint64_t	oei_trig_addr;
-	uint64_t	oei_trig_remap_addr;
-	uint64_t	oei_rint_ena_remap_addr;
+	uint64_t	oei_trig_remap_addr[16];
+	uint64_t	oei_rint_ena_remap_addr[16];
 	struct task_struct *ka_thread;
 	unsigned int	instance;
 	unsigned int	plat_model;
+	unsigned int	num_pfs;
 	struct device *plat_dev;
 	struct npu_bar_map bar_map;
 	struct npu_irq_info irq_info[MAX_INTERRUPTS];
