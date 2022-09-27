@@ -636,6 +636,22 @@ static u8 oct_get_fw_ready_status(octeon_device_t * oct)
 	return 0;
 }
 
+static int pf_has_link_dependency(octeon_device_t *oct)
+{
+	int pos;
+	u8 link;
+
+	pos = pci_find_ext_capability(oct->pci_dev, PCI_EXT_CAP_ID_SRIOV);
+	if (!pos) {
+		printk("failed to find SRIOV capability in device\n");
+		return -ENODEV;
+	}
+
+	pci_read_config_byte(oct->pci_dev, pos + PCI_SRIOV_FUNC_LINK, &link);
+
+	return link;
+}
+
 static void octeon_device_init_work(struct work_struct *work)
 {
 	octeon_device_t *oct_dev;
@@ -646,6 +662,10 @@ static void octeon_device_init_work(struct work_struct *work)
 	oct_dev = (octeon_device_t *)wq->wk.ctxptr;
 
 	cavium_atomic_set(&oct_dev->status, OCT_DEV_CHECK_FW);
+
+	if (pf_has_link_dependency(oct_dev))
+		goto skip_fw_status_check;
+
 	while (true) {
 		status = oct_get_fw_ready_status(oct_dev);
 		if (status == FW_STATUS_READY)
@@ -659,6 +679,7 @@ static void octeon_device_init_work(struct work_struct *work)
 		}
 	}
 
+skip_fw_status_check:
 	if (octeon_device_init(oct_dev)) {
 		cavium_print_msg("OCTEON[%d]: ERROR: Octeon driver failed to load.\n",
 				 oct_dev->octeon_id);
