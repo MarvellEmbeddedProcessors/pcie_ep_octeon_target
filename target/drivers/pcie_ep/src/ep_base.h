@@ -17,6 +17,7 @@ struct otx_pcie_ep {
 	void *npu_barmap_mem;
 	mv_facility_conf_t facility_conf[MV_FACILITY_COUNT];
 	mv_facility_event_cb_t facility_handler[MV_FACILITY_COUNT];
+	struct work_struct	perst_wrk;
 };
 
 void send_oei_trigger(struct otx_pcie_ep *pcie_ep_dev, int type);

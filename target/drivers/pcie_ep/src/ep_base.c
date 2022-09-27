@@ -17,6 +17,7 @@
 #include <linux/kthread.h>
 #include <linux/delay.h>
 #include <linux/sched/signal.h>
+#include <linux/workqueue.h>
 #include "barmap.h"
 #include "ep_base.h"
 
@@ -34,6 +35,9 @@ module_param_array(epf_num, uint, &epf_num_arr_cnt, 0644);
 MODULE_PARM_DESC(epf_num, "epf number to use");
 
 static uint64_t sdp_num[2] = {0,1};
+
+static void npu_perst_handler(struct work_struct *w);
+static struct workqueue_struct *npu_perst_wq = NULL;
 
 enum supported_plat {
 	OTX_CN83XX,
@@ -53,7 +57,17 @@ union sdp_epf_oei_trig {
 };
 
 #define PEMX_BASE(a, b)		((a) | ((uint64_t)b << 36))
+#define PEM_CFG_WR		0x18ull
+#define PEM_CFG_RD		0x20ull
 #define PEM_DIS_PORT_OFFSET	0x50ull
+#define PEM_ON_OFFSET		0xE0ull
+#define PEM_RST_INT		0x300ull
+#define PEM_RST_INT_ENA_W1C	0x310ull
+#define PEM_RST_INT_ENA_W1S	0x318ull
+
+#define FW_STATUS_READY		0x1ul
+
+#define PCIEEP_VSECST_CTL	0x4d0
 
 #define SDP_SCRATCH_OFFSET(x) ({			\
 	u64 offset = 0;					\
@@ -168,6 +182,53 @@ static int ep_keepalive_thread(void *arg)
 
 	return 0;
 }
+
+static void npu_perst_handler(struct work_struct *w)
+{
+	struct otx_pcie_ep *pcie_ep;
+	uint64_t addr, val;
+
+	pcie_ep = container_of(w, struct otx_pcie_ep, perst_wrk);
+
+	addr = PEMX_BASE(pcie_ep->pem_base, 0) + PEM_RST_INT;
+	npu_csr_write(addr, 0x1);
+
+	/* Sleep for few seconds until host is ready */
+	msleep(10*1000);
+
+	addr = PEMX_BASE(pcie_ep->pem_base, 0) + PEM_ON_OFFSET;
+	val = npu_csr_read(addr);
+
+	/* Wait until PEMOOR is set */
+	do {
+		msleep(1000);
+		val = npu_csr_read(addr);
+	} while (!(val & 0x2));
+
+	addr = PEMX_BASE(pcie_ep->pem_base, 0) + PEM_CFG_WR;
+	val = ((FW_STATUS_READY << 32) |
+	       (1 << 18) |
+	       (1 << 15) |
+	       (PCIEEP_VSECST_CTL));
+	npu_csr_write(addr, val);
+
+	msleep(2000);
+	addr = PEMX_BASE(pcie_ep->pem_base, 0) + PEM_DIS_PORT_OFFSET;
+	npu_csr_write(addr, 1);
+}
+
+static irqreturn_t npu_perst_interrupt(int irq, void *arg)
+{
+	struct otx_pcie_ep *pcie_ep = (struct otx_pcie_ep *)arg;
+
+	printk("Received %d PERST interrupt\n", irq);
+
+	if (npu_perst_wq)
+		queue_work(npu_perst_wq, &pcie_ep->perst_wrk);
+
+	return IRQ_HANDLED;
+}
+
 
 static irqreturn_t npu_base_interrupt(int irq, void *arg)
 {
@@ -424,6 +485,7 @@ static int npu_base_probe(struct platform_device *pdev)
 	int i, irq, first_irq, irq_count, ret = 0;
 	int instance = 0;
 	unsigned int plat;
+	uint64_t addr, val;
 
 	pcie_ep_dev = devm_kzalloc(dev, sizeof(*pcie_ep_dev), GFP_KERNEL);
 	if (!pcie_ep_dev)
@@ -460,10 +522,39 @@ static int npu_base_probe(struct platform_device *pdev)
 		return -1;
 	}
 
+	if (!instance && (irq_count == 9))
+		irq_count --;
+
 	for (i = 0; i < irq_count; i++) {
 		pcie_ep_dev->irq_info[i].irq = platform_get_irq(pdev, i);
 		pcie_ep_dev->irq_info[i].cpumask = NULL;
 	}
+
+	/* register for PERST */
+	irq = platform_get_irq(pdev, i);
+	if (irq < 0) {
+		dev_warn(dev, "No PERST interrupt available\n");
+	} else {
+		/* clear PEM_RST_INT */
+		addr = PEMX_BASE(pcie_ep_dev->pem_base, 0) + PEM_RST_INT_ENA_W1C;
+		npu_csr_write(addr, 0x7);
+
+		addr = PEMX_BASE(pcie_ep_dev->pem_base, 0) + PEM_RST_INT;
+		val = npu_csr_read(addr);
+		npu_csr_write(addr, val);
+
+		/* enable PERST bit for interrupt */
+		addr = PEMX_BASE(pcie_ep_dev->pem_base, 0) + PEM_RST_INT_ENA_W1S;
+		npu_csr_write(addr, 0x1);
+
+		printk("PERST IRQ no = %d\n", irq);
+		if (devm_request_irq(dev, irq, npu_perst_interrupt, 0,
+				     pdev->name, pcie_ep_dev)) {
+			dev_warn(dev, "unable to request NPU PERST IRQ %d.\n",
+				 irq);
+		}
+	}
+
 
 	if (npu_bar_map_init(&pcie_ep_dev->bar_map, pem_num[instance], first_irq, irq_count)) {
 		printk("bar map int failed\n");
@@ -489,6 +580,15 @@ static int npu_base_probe(struct platform_device *pdev)
 	kthread_bind(pcie_ep_dev->ka_thread, cpumask_first(cpu_online_mask));
 	wake_up_process(pcie_ep_dev->ka_thread);
 
+	if (!instance) {
+		npu_perst_wq = alloc_workqueue("npu_perst_workq", WQ_UNBOUND | WQ_HIGHPRI | WQ_MEM_RECLAIM, 1);
+		if (!npu_perst_wq) {
+			dev_err(dev, "Alloc workqueue for PERST handler failed\n");
+			goto exit;
+		}
+		INIT_WORK(&pcie_ep_dev->perst_wrk, npu_perst_handler);
+	}
+
 	return 0;
 
 exit:
@@ -509,6 +609,9 @@ static int npu_base_remove(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 
 	printk("%s: called\n", __func__);
+
+	if ((!pcie_ep_dev->instance) && npu_perst_wq)
+		destroy_workqueue(npu_perst_wq);
 
 	/* remove device from domain */
 	if (smmu_ops)
