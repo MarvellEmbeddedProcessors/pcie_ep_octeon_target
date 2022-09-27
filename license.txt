@@ -4,7 +4,7 @@ Pcie_ep_octeontx License Summary
 Pcie_ep_octeontx project contains linux kernel drivers and applications developed by Marvell and
 other open source projects to enable using Octeon in endpoint mode.This file gives a short overview of
 the various components and pointers to their exact license information.In the event of a conflict,
-the license header of a specific file takes precedence over this file.  This files is a summary only.
+the license header of a specific file takes precedence over this file.  This is just a summary file.
 
 Pcie_ep_octeontx components
 ===========================
