@@ -4,7 +4,9 @@
 PLAT ?= aarch64
 
 ifeq ($(PLAT), aarch64)
-CROSS_COMPILE=aarch64-marvell-linux-gnu-
+ifeq ($(CROSS_COMPILE),)
+$(error "Please provide CROSS_COMPILE for platform $(PLAT)")
+endif
 endif
 
 CC = $(CROSS_COMPILE)gcc

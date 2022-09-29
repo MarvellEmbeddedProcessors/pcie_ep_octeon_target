@@ -21,36 +21,38 @@ packages:
 Libconfig {#section3}
 ---------
 
-Application uses configuration files that are being read and parsed by the libconfig library so
-the cross-compiler needs to have access to it.  To cross-compile libconfig download its sources
-from [Github](https://hyperrealm.github.io/libconfig/dist/libconfig-1.7.2.tar.gz) then unpack
-and compile it via:
+Application uses configuration files that are being read and parsed by the libconfig library.
+To cross-compile libconfig download its sources from
+[Github](https://hyperrealm.github.io/libconfig/dist/libconfig-1.7.2.tar.gz)
+then unpack, compile and install it.
 
-LIBCONFIG_DIR is directory where libconfig tarball is extracted
-BUILD_DIR is directory where extracted libconfig code will be built
-PREFIX_DIR is directory where libconfig artifacts will be installed
-
+eg.
 ```bash
-    mkdir -p $BUILD_DIR/libconfig
-    cd $BUILD_DIR/libconfig
-    $LIBCONFIG_DIR/configure --host=aarch64-marvell-linux-gnu \
-                             --prefix=$PREFIX_DIR
+    export CROSS_COMPILE=<path to cross compiler>
+    mkdir libconfig-dep
+    cd libconfig-dep
+    mkdir bin
+    wget --no-check-certificate https://hyperrealm.github.io/libconfig/dist/libconfig-1.7.2.tar.gz
+    tar xf libconfig-1.7.2.tar.gz
+    cd libconfig-1.7.2
+    ./configure --host=aarch64-marvell-linux-gnu --prefix=`pwd`/../bin
     make all
     make install
 ```
+
+libconfig artifacts should be available in bin folder.
 
 
 Application {#section4}
 -----------
 
 APP_DIR is location of application source code
-PREFIX_DIR is the location of installed dependencies
-CP_LIB_DIR is the location of octep_cp_lib library binaries (liboctep_cp.so, liboctep_cp.a)
+PREFIX_DIR is the
 
 ```bash
 
   cd $APP_DIR
-  make PKG_CONFIG_PATH=$PREFIX_DIR/lib CP_LIB_DIR=<path to liboctep_cp.*>
+  make PKG_CONFIG_PATH=<path to libconfig binaries> CP_LIB_DIR=<path to liboctep_cp.*>
 ```
 
 Optional parameters for make are
