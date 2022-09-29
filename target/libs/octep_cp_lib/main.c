@@ -91,7 +91,7 @@ int octep_cp_lib_recv_msg(uint64_t *ctx, struct octep_cp_msg *msgs, int num)
 __attribute__((visibility("default")))
 int octep_cp_lib_send_event(struct octep_cp_event_info *info)
 {
-	CP_LIB_LOG(INFO, LIB, "send event\n");
+	//CP_LIB_LOG(INFO, LIB, "send event\n");
 
 	if (state != CP_LIB_STATE_READY)
 		return -EAGAIN;

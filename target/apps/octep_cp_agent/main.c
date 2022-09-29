@@ -7,25 +7,47 @@
 #include <unistd.h>
 #include <errno.h>
 #include <string.h>
+#include <sys/time.h>
 
 #include "octep_cp_lib.h"
 #include "loop.h"
 #include "app_config.h"
+
+#define PF_HEARTBEAT_INTERVAL_SECS	1
 
 static volatile int force_quit = 0;
 static volatile int perst = 0;
 
 struct octep_cp_lib_cfg cp_lib_cfg = { 0 };
 
+static int send_heartbeat()
+{
+	struct octep_cp_event_info info;
+	int i, j;
+
+	info.e = OCTEP_CP_EVENT_TYPE_HEARTBEAT;
+	for (i=0; i<cp_lib_cfg.ndoms; i++) {
+		info.u.hbeat.dom_idx = cp_lib_cfg.doms[i].idx;
+		for (j=0; j<cp_lib_cfg.doms[i].npfs; j++) {
+			info.u.hbeat.pf_idx = cp_lib_cfg.doms[i].pfs[j].idx;
+			octep_cp_lib_send_event(&info);
+		}
+	}
+
+	return 0;
+}
+
 void sigint_handler(int sig_num) {
 
 	if (sig_num == SIGINT) {
 		printf("Program quitting.\n");
 		force_quit = 1;
-	} else if (sig_num == SIGUSR1) {
-		struct octep_cp_event_info info;
-		printf("Handling sigusr1.\n");
-		octep_cp_lib_send_event(&info);
+	} else if (sig_num == SIGALRM) {
+		if (force_quit || perst)
+			return;
+
+		send_heartbeat();
+		alarm(PF_HEARTBEAT_INTERVAL_SECS);
 	}
 }
 
@@ -62,7 +84,7 @@ int main(int argc, char *argv[])
 		return err;
 
 	signal(SIGINT, sigint_handler);
-	signal(SIGUSR1, sigint_handler);
+	signal(SIGALRM, sigint_handler);
 
 init:
 	cp_lib_cfg.ndoms = cfg.npem;
@@ -91,6 +113,7 @@ init:
 	}
 
 	set_fw_ready(1);
+	alarm(PF_HEARTBEAT_INTERVAL_SECS);
 	while (!force_quit && !perst) {
 		loop_process_msgs();
 		sleep(1);
