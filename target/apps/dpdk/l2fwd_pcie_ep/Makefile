@@ -43,7 +43,10 @@ build:
 clean:
 	rm -f build/$(APP) build/$(APP)-static build/$(APP)-shared
 	test -d build && rmdir -p build || true
+	rm -f .l2fwd_pcie_ep_not_built
 
 else
-$(error "Only meson based build is supported")
+all:
+	$(error "Only meson based build is supported")
+	touch .l2fwd_pcie_ep_not_built
 endif
