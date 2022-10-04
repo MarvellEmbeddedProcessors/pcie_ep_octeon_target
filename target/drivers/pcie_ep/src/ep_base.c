@@ -104,8 +104,6 @@ PCIE_EP_MATCH_DATA(otx_cn83xx, OTX_CN83XX);
 PCIE_EP_MATCH_DATA(otx2_cn9xxx, OTX2_CN9XXX);
 PCIE_EP_MATCH_DATA(otx3_cn10k, OTX3_CN10K);
 
-const struct iommu_ops *smmu_ops;
-
 //TODO: fix the names npu_barmap_mem and npu_bar_map
 /* NPU BAR map structure */
 #define MAX_SDP_PF 2
@@ -612,10 +610,6 @@ static int npu_base_remove(struct platform_device *pdev)
 
 	if ((!pcie_ep_dev->instance) && npu_perst_wq)
 		destroy_workqueue(npu_perst_wq);
-
-	/* remove device from domain */
-	if (smmu_ops)
-		smmu_ops->remove_device(dev);
 
 	if (pcie_ep_dev->ka_thread)
 		kthread_stop(pcie_ep_dev->ka_thread);
