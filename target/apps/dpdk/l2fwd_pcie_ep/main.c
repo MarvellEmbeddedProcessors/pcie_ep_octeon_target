@@ -799,6 +799,7 @@ init_port_type(void)
 			pci_dev->addr.domain, pci_dev->addr.bus,
 			pci_dev->addr.devid, pci_dev->addr.function);
 		if (pci_dev->id.device_id == 0xa063 ||
+		    pci_dev->id.device_id == 0xa064 ||
 		    pci_dev->id.device_id == 0xa061) {
 			port_map_info[port].port_type = PORT_TYPE_NPU_NET_LBK;
 			/* ethernet/lbk ports should not have nic/loop mode */
