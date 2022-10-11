@@ -11,6 +11,7 @@
 #define __CNXK_PF_REGS_H__
 /*############################ RST #########################*/
 #define    CNXK_RST_BOOT               0x000087E006001600ULL
+#define    CNXK_RST_CHIP_DOMAIN_W1S    0x000087E006001810ULL
 #define    CNXK_RST_CORE_DOMAIN_W1S    0x000087E006001820ULL
 #define    CNXK_RST_CORE_DOMAIN_W1C    0x000087E006001828ULL
 

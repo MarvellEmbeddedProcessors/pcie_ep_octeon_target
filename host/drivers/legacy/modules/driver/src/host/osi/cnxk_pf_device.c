@@ -112,12 +112,10 @@ static int cnxk_pf_soft_reset(octeon_device_t * oct)
 	OCTEON_PCI_WIN_WRITE(oct, CNXK_PEMX_PFX_CSX_PFCFGX(0, 0, CNXK_PCIEEP_VSECST_CTL),
 			   FW_STATUS_RUNNING);
 
-	/* Set core domain reset bit */
-	OCTEON_PCI_WIN_WRITE(oct, CNXK_RST_CORE_DOMAIN_W1S, 1);
-	/* Wait for 100ms as Octeon resets. */
-	cavium_mdelay(100);
-	/* TBD: Is it required to clear core domain reset bit */
-	OCTEON_PCI_WIN_WRITE(oct, CNXK_RST_CORE_DOMAIN_W1C, 1);
+	/* Set chip domain reset bit */
+	OCTEON_PCI_WIN_WRITE(oct, CNXK_RST_CHIP_DOMAIN_W1S, 1);
+	/* Wait till Octeon resets. */
+	cavium_mdelay(10);
 
 	cavium_print_msg("OCTEON[%d]: Reset completed\n", oct->octeon_id);
 
