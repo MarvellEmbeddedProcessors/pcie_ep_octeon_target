@@ -18,10 +18,12 @@ module_param(dif, charp, S_IRUGO);
 MODULE_PARM_DESC(dif, "Debug Interface Name");
 
 #if !defined(HAS_SKB_FRAG_OFF) && LINUX_VERSION_CODE < KERNEL_VERSION(5,4,0)
-static inline unsigned int skb_frag_off(const skb_frag_t *frag)
+static inline unsigned int skb_frag_off_local(const skb_frag_t *frag)
 {
 	return frag->page_offset;
 }
+#else
+#define skb_frag_off_local	skb_frag_off
 #endif
 
 static void oct_skb_dump(const char *level, const struct sk_buff *skb,
@@ -92,7 +94,7 @@ static void oct_skb_dump(const char *level, const struct sk_buff *skb,
 		struct page *p;
 		u8 *vaddr;
 
-		skb_frag_foreach_page(frag, skb_frag_off(frag),
+		skb_frag_foreach_page(frag, skb_frag_off_local(frag),
 				      skb_frag_size(frag), p, p_off, p_len,
 				      copied) {
 			seg_len = min_t(int, p_len, len);
