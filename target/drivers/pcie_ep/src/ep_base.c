@@ -21,6 +21,10 @@
 #include "barmap.h"
 #include "ep_base.h"
 
+int keepalive_period_ms = 1000;
+module_param(keepalive_period_ms, int, 0);
+MODULE_PARM_DESC(keepalive_period_ms, "Period of keepalive checks in ms.");
+
 #define NPU_BASE_DRV_NAME  "npu_base"
 #define NPU_BASE_DEVICE_ID "NPU base driver"
 
@@ -92,7 +96,6 @@ union sdp_epf_oei_trig {
 
 #define NPU_HANDSHAKE_SIGNATURE 0xABCDABCD
 #define KEEPALIVE_OEI_TRIG_BIT	5
-#define KEEPALIVE_INTERVAL_MS	500
 
 void __iomem *nwa_internal_addr;
 EXPORT_SYMBOL(nwa_internal_addr);
@@ -171,11 +174,12 @@ static int ep_keepalive_thread(void *arg)
 
 	pcie_ep_dev = (struct otx_pcie_ep *)arg;
 
-	msleep_interruptible(KEEPALIVE_INTERVAL_MS);
-
+	/* We send the interrupt at twice the frequency that the host
+	 * polls.
+	 */
 	while (!kthread_should_stop()) {
 		send_oei_trigger(pcie_ep_dev, KEEPALIVE_OEI_TRIG_BIT);
-		msleep_interruptible(KEEPALIVE_INTERVAL_MS);
+		msleep_interruptible(keepalive_period_ms/2);
 	}
 
 	return 0;

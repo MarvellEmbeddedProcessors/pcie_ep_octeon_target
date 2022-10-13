@@ -22,6 +22,9 @@ int keepalive_miss_limit = 20;
 module_param(keepalive_miss_limit, int, 0600);
 MODULE_PARM_DESC(keepalive_miss_limit, "Number of missed keepalive IRQS required to bring link down");
 #define MIN_STARTUP_KEEPALIVE_MISS_CNT	15
+int keepalive_period_ms = 1000;
+module_param(keepalive_period_ms, int, 0);
+MODULE_PARM_DESC(keepalive_period_ms, "Period of keepalive checks in ms.");
 
 extern void octnet_napi_drv_callback(int oct_id, int oq_no, int event);
 extern void octnet_napi_callback(void *);
@@ -1259,7 +1262,7 @@ int octnet_init_nic_module(int octeon_id, void *octeon_dev)
 	/* register a poll fn to check if octeon is alive */
 	poll_ops.fn = octnet_check_alive;
 	poll_ops.fn_arg = (unsigned long)octprops[octeon_id];
-	poll_ops.ticks = CAVIUM_TICKS_PER_SEC;
+	poll_ops.ticks = msecs_to_jiffies(keepalive_period_ms);
 	strcpy(poll_ops.name, "Octeon Alive Status");
 	octeon_register_poll_fn(octeon_id, &poll_ops);
 
