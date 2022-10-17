@@ -107,7 +107,7 @@ static int cn93xx_pf_soft_reset(octeon_device_t * oct)
 	 * the OcteonTX is unexpectedly reset, reboots, and then
 	 * the module is removed.
 	 */
-	OCTEON_PCI_WIN_WRITE(oct, CN93XX_PEMX_CFG_WR((u64)oct->pcie_port),
+	OCTEON_PCI_WIN_WRITE(oct, CN93XX_PEMX_CFG_WR((u64)oct->pem_num),
 			     0x84d0ull | (FW_STATUS_RUNNING << 32));
 
 	/* Set core domain reset bit */
@@ -133,7 +133,7 @@ static int cn98xx_pf_soft_reset(octeon_device_t * oct)
 	 * Set firmware status to READY, as after module removal the
 	 * device is ready for the driver to be loaded again.
 	 */
-	OCTEON_PCI_WIN_WRITE(oct, CN93XX_PEMX_CFG_WR((u64)oct->pcie_port),
+	OCTEON_PCI_WIN_WRITE(oct, CN93XX_PEMX_CFG_WR((u64)oct->pem_num),
 			     0x84d0ull | (FW_STATUS_READY << 32));
 
 	/* restore the  reset value */
@@ -870,15 +870,15 @@ cn93xx_bar1_idx_setup(octeon_device_t * oct,
 	if (valid == 0) {
 		bar1 = OCTEON_PCI_WIN_READ(oct,
 					   CN93XX_PEM_BAR1_INDEX_REG
-					   (oct->pcie_port, idx));
+					   (oct->pem_num, idx));
 		OCTEON_PCI_WIN_WRITE(oct,
-				     CN93XX_PEM_BAR1_INDEX_REG(oct->pcie_port,
+				     CN93XX_PEM_BAR1_INDEX_REG(oct->pem_num,
 							       idx),
 				     (bar1 & 0xFFFFFFFEULL));
 		bar1 =
 		    OCTEON_PCI_WIN_READ(oct,
 					CN93XX_PEM_BAR1_INDEX_REG
-					(oct->pcie_port, idx));
+					(oct->pem_num, idx));
 		return;
 	}
 
@@ -886,25 +886,25 @@ cn93xx_bar1_idx_setup(octeon_device_t * oct,
 	 *  bits <41:22> of the Core Addr 
 	 */
 	OCTEON_PCI_WIN_WRITE(oct,
-			     CN93XX_PEM_BAR1_INDEX_REG(oct->pcie_port, idx),
+			     CN93XX_PEM_BAR1_INDEX_REG(oct->pem_num, idx),
 			     (((core_addr >> 22) << 4) | PCI_BAR1_MASK));
 
 	bar1 = OCTEON_PCI_WIN_READ(oct,
-				   CN93XX_PEM_BAR1_INDEX_REG(oct->pcie_port,
+				   CN93XX_PEM_BAR1_INDEX_REG(oct->pem_num,
 							     idx));
 }
 
 static void cn93xx_bar1_idx_write(octeon_device_t * oct, int idx, uint32_t mask)
 {
 	OCTEON_PCI_WIN_WRITE(oct,
-			     CN93XX_PEM_BAR1_INDEX_REG(oct->pcie_port, idx),
+			     CN93XX_PEM_BAR1_INDEX_REG(oct->pem_num, idx),
 			     mask);
 }
 
 static uint32_t cn93xx_bar1_idx_read(octeon_device_t * oct, int idx)
 {
 	return OCTEON_PCI_WIN_READ(oct,
-				   CN93XX_PEM_BAR1_INDEX_REG(oct->pcie_port,
+				   CN93XX_PEM_BAR1_INDEX_REG(oct->pem_num,
 							     idx));
 }
 
@@ -1046,10 +1046,19 @@ static void cn93xx_disable_pf_interrupt(void *chip, uint8_t intr_flag)
 
 static int cn93xx_get_pcie_qlmport(octeon_device_t * oct)
 {
+	int pos;
+	u8 buf;
+
+	pos = pci_find_ext_capability(oct->pci_dev, PCI_EXT_CAP_ID_DSN);
+	if (pos) {
+		pos += 4;
+		pci_read_config_byte(oct->pci_dev, pos, &buf);
+	}
+	oct->pem_num = (uint16_t)buf;
 	oct->pcie_port = octeon_read_csr64(oct, CN93XX_SDP_MAC_NUMBER) & 0xff;
 
-	cavium_print_msg("OCTEON[%d]: CN9xxx uses PCIE Port %d\n",
-			 oct->octeon_id, oct->pcie_port);
+	cavium_print_msg("OCTEON[%d]: CN9xxx uses PCIE Port %d and PEM %d\n",
+			 oct->octeon_id, oct->pcie_port, oct->pem_num);
 	/* If port is 0xff, PCIe read failed, return error */
 	return (oct->pcie_port == 0xff);
 }
@@ -1284,7 +1293,7 @@ int setup_cn98xx_octeon_pf_device(octeon_device_t * oct)
 	 * leave it in a state that is not READY (1).
 	 * TODO: support 2nd PEM on CN98XX
 	 */
-	OCTEON_PCI_WIN_WRITE(oct, CN93XX_PEMX_CFG_WR((u64)oct->pcie_port),
+	OCTEON_PCI_WIN_WRITE(oct, CN93XX_PEMX_CFG_WR((u64)oct->pem_num),
 			     0x84d0ull | (FW_STATUS_RUNNING << 32));
 
 	ret = octeon_get_fw_info(oct);
@@ -1378,7 +1387,7 @@ int setup_cn93xx_octeon_pf_device(octeon_device_t * oct)
 	 * Set it to RUNNING early in boot, so that unexpected resets
 	 * leave it in a state that is not READY (1).
 	 */
-	OCTEON_PCI_WIN_WRITE(oct, CN93XX_PEMX_CFG_WR((u64)oct->pcie_port),
+	OCTEON_PCI_WIN_WRITE(oct, CN93XX_PEMX_CFG_WR((u64)oct->pem_num),
 			     0x84d0ull | (FW_STATUS_RUNNING << 32));
 
 	ret = octeon_get_fw_info(oct);

@@ -565,6 +565,9 @@ struct _OCTEON_DEVICE {
    /** This device's id - set by the driver. */
 	uint16_t octeon_id;
 
+   /** This device's PEM num used for traffic. */
+	uint16_t pem_num;
+
    /** This device's PCIe port used for traffic. */
 	uint16_t pcie_port;
 
