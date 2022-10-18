@@ -421,7 +421,8 @@ int app_config_init(const char *cfg_file_path)
 	return 0;
 }
 
-int app_config_get_if_from_msg_info(union octep_cp_msg_info *info,
+int app_config_get_if_from_msg_info(union octep_cp_msg_info *ctx_info,
+				    union octep_cp_msg_info *msg_info,
 				    struct if_cfg **iface,
 				    struct if_stats **ifstats)
 {
@@ -430,18 +431,22 @@ int app_config_get_if_from_msg_info(union octep_cp_msg_info *info,
 	struct vf_cfg *vf;
 
 	while (pem) {
-		if (pem->idx == info->s.pem_idx) {
+		if (pem->idx == ctx_info->s.pem_idx) {
 			pf = pem->pfs;
 			while (pf) {
-				if (pf->idx == info->s.pf_idx) {
-					if (!info->s.is_vf) {
+				if (pf->idx == ctx_info->s.pf_idx) {
+					if (!msg_info->s.is_vf) {
+						printf("pem[%u] pf[%u]\n",
+						       pem->idx, pf->idx);
 						*iface = &pf->iface;
 						*ifstats = &pf->ifstats;
 						return 0;
 					}
 					vf = pf->vfs;
 					while (vf) {
-						if (vf->idx == info->s.vf_idx) {
+						if (vf->idx == msg_info->s.vf_idx) {
+							printf("pem[%u] pf[%u] vf[%u]\n",
+							       pem->idx, pf->idx, vf->idx);
 							*iface = &vf->iface;
 							*ifstats = &vf->ifstats;
 							return 0;
@@ -451,7 +456,6 @@ int app_config_get_if_from_msg_info(union octep_cp_msg_info *info,
 				}
 				pf = pf->next;
 			}
-
 		}
 		pem = pem->next;
 	}

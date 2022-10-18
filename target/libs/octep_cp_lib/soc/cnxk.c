@@ -318,46 +318,30 @@ static struct cnxk_pf *get_pf(struct cnxk_pem *pem, int idx)
 	return NULL;
 }
 
-int cnxk_send_msg_resp(uint64_t *ctx, struct octep_cp_msg *msgs, int num)
+int cnxk_send_msg_resp(union octep_cp_msg_info *ctx,
+		       struct octep_cp_msg *msgs,
+		       int num)
 {
 	union octep_ctrl_mbox_msg_hdr *hdr;
-	union octep_cp_msg_info *info;
 	struct octep_cp_msg *msg;
-	struct cnxk_pem *pem;
 	struct cnxk_pf *pf;
 	int i, ret;
 
+	if (ctx->s.pem_idx >= npems || !num)
+		return -EINVAL;
+
+	pf = get_pf(&pems[ctx->s.pem_idx], ctx->s.pf_idx);
+	if (!pf)
+		return -EINVAL;
+
 	for (i=0; i<num; i++) {
 		msg = &msgs[i];
-		info = &msg->info;
-		if (info->s.pem_idx >= npems) {
-			/* this is first msg */
-			if (i == 0)
-				return -EINVAL;
-
-			/* we have sent some msgs successfully so break */
-			break;
-		}
-
-		pem = &pems[info->s.pem_idx];
-		pf = get_pf(pem, info->s.pf_idx);
-		if (!pf) {
-			/* this is first msg */
-			if (i == 0)
-				return -EINVAL;
-
-			/* we have sent some msgs successfully so break */
-			break;
-		}
-
-		hdr = (union octep_ctrl_mbox_msg_hdr *)info;
+		hdr = (union octep_ctrl_mbox_msg_hdr *)&msg->info;
 		hdr->s.flags = OCTEP_CTRL_MBOX_MSG_HDR_FLAG_RESP;
 		ret = octep_ctrl_mbox_send(&pf->mbox,
 					   (struct octep_ctrl_mbox_msg *)msg,
 					   1);
-		if (ret == 1)
-			continue;
-		else if (ret < 0) {
+		if (ret < 0) {
 			/* error while sending first msg */
 			if (i == 0)
 				return ret;
@@ -372,19 +356,17 @@ int cnxk_send_msg_resp(uint64_t *ctx, struct octep_cp_msg *msgs, int num)
 	return i;
 }
 
-int cnxk_send_notification(struct octep_cp_msg* msg)
+int cnxk_send_notification(union octep_cp_msg_info *ctx,
+			   struct octep_cp_msg* msg)
 {
 	union octep_ctrl_mbox_msg_hdr *hdr;
-	struct cnxk_pem *pem;
 	struct cnxk_pf *pf;
 	int ret;
 
-	/* Assume all messages are going to same pf/vf */
-	if (msg->info.s.pem_idx >= npems)
+	if (ctx->s.pem_idx >= npems)
 		return -EINVAL;
 
-	pem = &pems[msg->info.s.pem_idx];
-	pf = get_pf(pem, msg->info.s.pf_idx);
+	pf = get_pf(&pems[ctx->s.pem_idx], ctx->s.pf_idx);
 	if (!pf)
 		return -EINVAL;
 
@@ -401,55 +383,22 @@ int cnxk_send_notification(struct octep_cp_msg* msg)
 	return 0;
 }
 
-int cnxk_recv_msg(uint64_t *ctx, struct octep_cp_msg *msgs, int num)
+int cnxk_recv_msg(union octep_cp_msg_info *ctx,
+		  struct octep_cp_msg *msgs,
+		  int num)
 {
-	union octep_cp_msg_info *info;
-	struct octep_cp_msg *msg;
-	struct cnxk_pem *pem;
 	struct cnxk_pf *pf;
-	int i, ret;
 
-	for (i=0; i<num; i++) {
-		msg = &msgs[i];
-		info = &msg->info;
-		if (info->s.pem_idx >= npems) {
-			/* this is first msg */
-			if (i == 0)
-				return -EINVAL;
+	if (ctx->s.pem_idx >= npems || !num)
+		return -EINVAL;
 
-			/* we have received some msgs successfully so break */
-			break;
-		}
+	pf = get_pf(&pems[ctx->s.pem_idx], ctx->s.pf_idx);
+	if (!pf)
+		return -EINVAL;
 
-		pem = &pems[info->s.pem_idx];
-		pf = get_pf(pem, info->s.pf_idx);
-		if (!pf) {
-			/* this is first msg */
-			if (i == 0)
-				return -EINVAL;
-
-			/* we have received some msgs successfully so break */
-			break;
-		}
-
-		ret = octep_ctrl_mbox_recv(&pf->mbox,
-					   (struct octep_ctrl_mbox_msg *)msg,
-					   1);
-		if (ret < 0) {
-			/* error while sending first msg */
-			if (i == 0)
-				return ret;
-
-			/* we have received some msgs successfully so break */
-			break;
-		}
-		if (ret == 0)
-			break;
-
-		ctx[i] = info->words[1];
-	}
-
-	return i;
+	return octep_ctrl_mbox_recv(&pf->mbox,
+				    (struct octep_ctrl_mbox_msg *)msgs,
+				    num);
 }
 
 int cnxk_send_event(struct octep_cp_event_info *info)

@@ -138,14 +138,16 @@ int octep_cp_lib_init(struct octep_cp_lib_cfg *cfg);
  *
  * Total buffer size cannot exceed max_msg_sz in library configuration.
  *
- * @param ctx: [IN] Array of context handles received from a previous
- *             octep_cp_lib_recv_msg call.
+ * @param ctx: [IN] non-null pointer to union octep_cp_msg_info. This will
+ *             provide the pem, pf indices on which the message should be
+ *             sent.
  * @param msg: [IN] Array of non-null pointer to message.
- * @param num: [IN] Size of context and message array's.
+ * @param num: [IN] Number of elements in @msg.
  *
  * return value: number of messages sent on success, -errno on failure.
  */
-int octep_cp_lib_send_msg_resp(uint64_t *ctx, struct octep_cp_msg *msg,
+int octep_cp_lib_send_msg_resp(union octep_cp_msg_info *ctx,
+			       struct octep_cp_msg *msg,
 			       int num);
 
 /* Send a new notification.
@@ -153,26 +155,32 @@ int octep_cp_lib_send_msg_resp(uint64_t *ctx, struct octep_cp_msg *msg,
  * Reply is not expected for this message.
  * Buffer size cannot exceed max_msg_sz in library configuration.
  *
+ * @param ctx: [IN] non-null pointer to union octep_cp_msg_info. This will
+ *             provide the pem, pf indices on which the message should be
+ *             sent.
  * @param msg: [IN] Message buffer.
  *
  * return value: 0 on success, -errno on failure.
  */
-int octep_cp_lib_send_notification(struct octep_cp_msg* msg);
+int octep_cp_lib_send_notification(union octep_cp_msg_info *ctx,
+				   struct octep_cp_msg* msg);
 
 /* Receive a new message on given pem/pf.
  *
  * ctx received with the message should be used to send a response.
  *
- * @param ctx: [OUT] Array of context handles.
- *             Returned by library. Can be NULL for a notification.
+ * @param ctx: [IN] non-null pointer to union octep_cp_msg_info. This will
+ *             provide the pem, pf indices on which the message should be
+ *             sent.
  * @param msg: [IN/OUT] Array of non-null pointer to message.
- *             Caller should provide msg.sz, msg.sg_list[*].sz,
- *             msg.info.pem_idx and msg.info.pf_idx.
- * @param num: Size of context and message array's.
+ *             Caller should provide msg.sz, msg.sg_list[*].sz.
+ * @param num: Number of elements in @msg.
  *
  * return value: number of messages received on success, -errno on failure.
  */
-int octep_cp_lib_recv_msg(uint64_t *ctx, struct octep_cp_msg *msg, int num);
+int octep_cp_lib_recv_msg(union octep_cp_msg_info *ctx,
+			  struct octep_cp_msg *msg,
+			  int num);
 
 /* Send event to host.
  *

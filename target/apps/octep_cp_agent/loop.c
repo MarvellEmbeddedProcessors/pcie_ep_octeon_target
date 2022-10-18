@@ -17,7 +17,6 @@
 
 #define LOOP_RX_BUF_CNT			6
 
-static uint64_t rx_ctx[LOOP_RX_BUF_CNT];
 static struct octep_cp_msg rx_msg[LOOP_RX_BUF_CNT];
 static int rx_num = LOOP_RX_BUF_CNT;
 static int max_msg_sz = sizeof(union octep_ctrl_net_max_data);
@@ -68,45 +67,6 @@ mem_alloc_fail:
 	}
 
 	return -ENOMEM;
-}
-
-static void copy_if_stats(struct if_stats *iface, uint32_t offset)
-{
-	struct if_stats dummy;
-	uint64_t *addr = (uint64_t *)&dummy; //(mbox.barmem + offset);
-
-	cp_write64(iface->rx_stats.pkts, addr++);
-	cp_write64(iface->rx_stats.octets, addr++);
-	cp_write64(iface->rx_stats.pause_pkts, addr++);
-	cp_write64(iface->rx_stats.pause_octets, addr++);
-	cp_write64(iface->rx_stats.dmac0_pkts, addr++);
-	cp_write64(iface->rx_stats.dmac0_octets, addr++);
-	cp_write64(iface->rx_stats.dropped_pkts_fifo_full, addr++);
-	cp_write64(iface->rx_stats.dropped_octets_fifo_full, addr++);
-	cp_write64(iface->rx_stats.err_pkts, addr++);
-	cp_write64(iface->rx_stats.dmac1_pkts, addr++);
-	cp_write64(iface->rx_stats.dmac1_octets, addr++);
-	cp_write64(iface->rx_stats.ncsi_dropped_pkts, addr++);
-	cp_write64(iface->rx_stats.ncsi_dropped_octets, addr++);
-
-	cp_write64(iface->tx_stats.xscol, addr++);
-	cp_write64(iface->tx_stats.xsdef, addr++);
-	cp_write64(iface->tx_stats.mcol, addr++);
-	cp_write64(iface->tx_stats.scol, addr++);
-	cp_write64(iface->tx_stats.octs, addr++);
-	cp_write64(iface->tx_stats.pkts, addr++);
-	cp_write64(iface->tx_stats.hist_lt64, addr++);
-	cp_write64(iface->tx_stats.hist_eq64, addr++);
-	cp_write64(iface->tx_stats.hist_65to127, addr++);
-	cp_write64(iface->tx_stats.hist_128to255, addr++);
-	cp_write64(iface->tx_stats.hist_256to511, addr++);
-	cp_write64(iface->tx_stats.hist_512to1023, addr++);
-	cp_write64(iface->tx_stats.hist_1024to1518, addr++);
-	cp_write64(iface->tx_stats.hist_gt1518, addr++);
-	cp_write64(iface->tx_stats.bcst, addr++);
-	cp_write64(iface->tx_stats.mcst, addr++);
-	cp_write64(iface->tx_stats.undflw, addr++);
-	cp_write64(iface->tx_stats.ctl, addr);
 }
 
 static int process_mtu(struct if_cfg *iface,
@@ -161,19 +121,14 @@ static int process_mac(struct if_cfg *iface,
 	return ret;
 }
 
-static int process_get_if_stats(struct if_stats *iface,
+static int process_get_if_stats(struct if_stats *ifstats,
 				struct octep_ctrl_net_h2f_req *req,
 				struct octep_ctrl_net_h2f_resp *resp)
 {
-	if (req->get_stats.offset) {
-		copy_if_stats(iface, req->get_stats.offset);
-		resp->hdr.s.reply = OCTEP_CTRL_NET_REPLY_OK;
-		printf("Cmd: get if stats : %x\n", req->get_stats.offset);
-	} else {
-		resp->hdr.s.reply = OCTEP_CTRL_NET_REPLY_INVALID_PARAM;
-		printf("Cmd: Invalid get if stats : %x\n",
-		       req->get_stats.offset);
-	}
+	/* struct if_stats = struct octep_ctrl_net_h2f_resp_cmd_get_stats */
+	memcpy(&resp->if_stats, ifstats, sizeof(struct if_stats));
+	resp->hdr.s.reply = OCTEP_CTRL_NET_REPLY_OK;
+	printf("Cmd: get if stats\n");
 
 	return 0;
 }
@@ -249,7 +204,7 @@ static int process_link_info(struct if_cfg *iface,
 	return ret;
 }
 
-static int process_msg(uint64_t ctx, struct octep_cp_msg* msg)
+static int process_msg(union octep_cp_msg_info *ctx, struct octep_cp_msg* msg)
 {
 	struct octep_ctrl_net_h2f_req *req;
 	struct octep_ctrl_net_h2f_resp resp = { 0 };
@@ -258,7 +213,8 @@ static int process_msg(uint64_t ctx, struct octep_cp_msg* msg)
 	struct if_stats *ifdata;
 	int err, resp_sz;
 
-	err = app_config_get_if_from_msg_info(&msg->info,
+	err = app_config_get_if_from_msg_info(ctx,
+					      &msg->info,
 					      &iface,
 					      &ifdata);
 	if (err) {
@@ -300,27 +256,35 @@ static int process_msg(uint64_t ctx, struct octep_cp_msg* msg)
 		resp_msg.sg_num = 1;
 		resp_msg.sg_list[0].sz = resp_sz;
 		resp_msg.sg_list[0].msg = &resp;
-		octep_cp_lib_send_msg_resp((uint64_t *)&ctx,
-					   (struct octep_cp_msg *)&resp_msg,
-					   1);
+		octep_cp_lib_send_msg_resp(ctx, &resp_msg, 1);
+		ifdata->tx_stats.pkts++;
+		ifdata->tx_stats.octs += resp_sz;
 	}
+
+	ifdata->rx_stats.pkts++;
+	ifdata->rx_stats.octets += msg->info.s.sz;
 
 	return 0;
 }
 
 int loop_process_msgs()
 {
+	union octep_cp_msg_info ctx;
 	struct octep_cp_msg* msg;
-	int ret, i;
+	int ret, i, j, m;
 
-	ret = octep_cp_lib_recv_msg(rx_ctx,
-				    rx_msg,
-				    rx_num);
-	for (i=0; i<ret; i++) {
-		msg = &rx_msg[i];
-		process_msg(rx_ctx[i], msg);
-		/* library will overwrite msg size in header so reset it */
-		msg->info.s.sz = max_msg_sz;
+	for (i=0; i<cp_lib_cfg.ndoms; i++) {
+		ctx.s.pem_idx = cp_lib_cfg.doms[i].idx;
+		for (j=0; j<cp_lib_cfg.doms[i].npfs; j++) {
+			ctx.s.pf_idx = cp_lib_cfg.doms[i].pfs[j].idx;
+			ret = octep_cp_lib_recv_msg(&ctx, rx_msg, rx_num);
+			for (m=0; m<ret; m++) {
+				msg = &rx_msg[m];
+				process_msg(&ctx, msg);
+				/* library will overwrite msg size in header so reset it */
+				msg->info.s.sz = max_msg_sz;
+			}
+		}
 	}
 
 	return 0;

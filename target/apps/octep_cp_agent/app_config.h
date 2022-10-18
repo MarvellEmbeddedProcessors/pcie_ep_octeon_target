@@ -95,10 +95,17 @@ int app_config_init(const char *cfg_file_path);
 
 /* Get interface based on information in essage header.
  *
+ * @param ctx_info: non-null pointer to message context info. This is the
+ *                  pem->pf context used to poll for messages.
+ * @param msg_info: non-null pointer to message info. This is the info from
+ *                  received message.
+ * @param iface: non-null pointer to struct if_cfg *.
+ * @param ifstats: non-null pointer to struct if_stats *.
  *
  * return value: 0 on success, -errno on failure.
  */
-int app_config_get_if_from_msg_info(union octep_cp_msg_info *info,
+int app_config_get_if_from_msg_info(union octep_cp_msg_info *ctx_info,
+				    union octep_cp_msg_info *msg_info,
 				    struct if_cfg **iface,
 				    struct if_stats **ifstats);
 

@@ -46,7 +46,8 @@ int octep_cp_lib_init(struct octep_cp_lib_cfg *cfg)
 }
 
 __attribute__((visibility("default")))
-int octep_cp_lib_send_msg_resp(uint64_t *ctx, struct octep_cp_msg *msgs,
+int octep_cp_lib_send_msg_resp(union octep_cp_msg_info *ctx,
+			       struct octep_cp_msg *msgs,
 			       int num)
 {
 	//CP_LIB_LOG(INFO, LIB, "send message response\n");
@@ -61,7 +62,8 @@ int octep_cp_lib_send_msg_resp(uint64_t *ctx, struct octep_cp_msg *msgs,
 }
 
 __attribute__((visibility("default")))
-int octep_cp_lib_send_notification(struct octep_cp_msg* msg)
+int octep_cp_lib_send_notification(union octep_cp_msg_info *ctx,
+				   struct octep_cp_msg* msg)
 {
 	CP_LIB_LOG(INFO, LIB, "send notification\n");
 
@@ -71,11 +73,13 @@ int octep_cp_lib_send_notification(struct octep_cp_msg* msg)
 	if (!msg)
 		return -EINVAL;
 
-	return sops->send_notification(msg);
+	return sops->send_notification(ctx, msg);
 }
 
 __attribute__((visibility("default")))
-int octep_cp_lib_recv_msg(uint64_t *ctx, struct octep_cp_msg *msgs, int num)
+int octep_cp_lib_recv_msg(union octep_cp_msg_info *ctx,
+			  struct octep_cp_msg *msgs,
+			  int num)
 {
 	//CP_LIB_LOG(INFO, LIB, "receive message\n");
 

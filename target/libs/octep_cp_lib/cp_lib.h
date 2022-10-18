@@ -58,11 +58,14 @@ struct cp_lib_soc_ops {
 	/* initialize */
 	int (*init)(struct octep_cp_lib_cfg *p_cfg);
 	/* send message responses to host */
-	int (*send_msg_resp)(uint64_t *ctx, struct octep_cp_msg *msg, int num);
+	int (*send_msg_resp)(union octep_cp_msg_info *ctx,
+			     struct octep_cp_msg *msg, int num);
 	/* send notification to host */
-	int (*send_notification)(struct octep_cp_msg* msg);
+	int (*send_notification)(union octep_cp_msg_info *ctx,
+				 struct octep_cp_msg* msg);
 	/* receive messages from host*/
-	int (*recv_msg)(uint64_t *ctx, struct octep_cp_msg *msg, int num);
+	int (*recv_msg)(union octep_cp_msg_info *ctx,
+			struct octep_cp_msg *msg, int num);
 	/* send event to host */
 	int (*send_event)(struct octep_cp_event_info *info);
 	/* receive soc events */
