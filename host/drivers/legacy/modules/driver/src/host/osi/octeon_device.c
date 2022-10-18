@@ -459,7 +459,8 @@ int octeon_setup_mbox(octeon_device_t * oct)
 	int i = 0, num_vfs = 0, rings_per_vf = 0;
 	int vf_srn, ring;
 
-	num_vfs = oct->sriov_info.num_vfs;
+	/* Setup Mbox for all VF's */
+	num_vfs = oct->sriov_info.max_vfs;
 	vf_srn = 0;
 	rings_per_vf = oct->sriov_info.rings_per_vf;
 
@@ -481,6 +482,7 @@ int octeon_setup_mbox(octeon_device_t * oct)
 		oct->fn_list.setup_mbox_regs(oct, ring);
 	}
 	memset(oct->vf_info, 0, (MAX_OCTEON_DEVICES*sizeof(struct octep_vf_info)));
+	cavium_print_msg("OCTEON[%d]: Setup Mbox for %d VF's\n", oct->octeon_id, num_vfs);
 	return 0;
 
 free_mbox:
@@ -488,6 +490,7 @@ free_mbox:
 		i--;
 		ring  = vf_srn + rings_per_vf * i;
 		cancel_work_sync(&oct->mbox[ring]->wk.work);
+		cavium_mutex_destroy(&oct->mbox[ring]->lock);
 		cavium_free_virt(oct->mbox[ring]);
 		oct->mbox[ring] = NULL;
 	}
@@ -497,7 +500,7 @@ free_mbox:
 int octeon_delete_mbox(octeon_device_t * oct)
 {
 	int i = 0, ring;
-	int num_vfs = oct->sriov_info.num_vfs;
+	int num_vfs = oct->sriov_info.max_vfs;
 	int vf_srn = 0;
 	int rings_per_vf = oct->sriov_info.rings_per_vf;
 
@@ -505,6 +508,7 @@ int octeon_delete_mbox(octeon_device_t * oct)
 		ring  = vf_srn + rings_per_vf * i;
 		if (work_pending(&oct->mbox[ring]->wk.work))
 			cancel_work_sync(&oct->mbox[ring]->wk.work);
+		cavium_mutex_destroy(&oct->mbox[ring]->lock);
 		cavium_free_virt(oct->mbox[ring]);
 		oct->mbox[ring] = NULL;
 	}
