@@ -28,6 +28,7 @@ static const uint32_t mtu_sz = sizeof(struct octep_ctrl_net_h2f_resp_cmd_mtu);
 static const uint32_t mac_sz = sizeof(struct octep_ctrl_net_h2f_resp_cmd_mac);
 static const uint32_t state_sz = sizeof(struct octep_ctrl_net_h2f_resp_cmd_state);
 static const uint32_t link_info_sz = sizeof(struct octep_ctrl_net_link_info);
+static const uint32_t if_stats_sz = sizeof(struct octep_ctrl_net_h2f_resp_cmd_get_stats);
 
 int loop_init()
 {
@@ -126,11 +127,11 @@ static int process_get_if_stats(struct if_stats *ifstats,
 				struct octep_ctrl_net_h2f_resp *resp)
 {
 	/* struct if_stats = struct octep_ctrl_net_h2f_resp_cmd_get_stats */
-	memcpy(&resp->if_stats, ifstats, sizeof(struct if_stats));
+	memcpy(&resp->if_stats, ifstats, if_stats_sz);
 	resp->hdr.s.reply = OCTEP_CTRL_NET_REPLY_OK;
 	printf("Cmd: get if stats\n");
 
-	return 0;
+	return if_stats_sz;
 }
 
 static int process_link_status(struct if_cfg *iface,
