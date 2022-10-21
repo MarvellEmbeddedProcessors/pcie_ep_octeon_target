@@ -44,10 +44,28 @@ struct octep_iface_rx_stats {
 
 	/* NCSI-bound octets dropped */
 	uint64_t ncsi_dropped_octets;
+
+	/* Multicast packets received. */
+	uint64_t mcast_pkts;
+
+	/* Broadcast packets received. */
+	uint64_t bcast_pkts;
 };
 
 /* Hardware interface Tx statistics */
 struct octep_iface_tx_stats {
+	/* Total frames sent on the interface */
+	uint64_t pkts;
+
+	/* Total octets sent on the interface */
+	uint64_t octs;
+
+	/* Packets sent to a broadcast DMAC */
+	uint64_t bcst;
+
+	/* Packets sent to the multicast DMAC */
+	uint64_t mcst;
+
 	/* Packets dropped due to excessive collisions */
 	uint64_t xscol;
 
@@ -63,12 +81,6 @@ struct octep_iface_tx_stats {
 	 * transmission
 	 */
 	uint64_t scol;
-
-	/* Total octets sent on the interface */
-	uint64_t octs;
-
-	/* Total frames sent on the interface */
-	uint64_t pkts;
 
 	/* Packets sent with an octet count < 64 */
 	uint64_t hist_lt64;
@@ -93,12 +105,6 @@ struct octep_iface_tx_stats {
 
 	/* Packets sent with an octet count of > 1518 */
 	uint64_t hist_gt1518;
-
-	/* Packets sent to a broadcast DMAC */
-	uint64_t bcst;
-
-	/* Packets sent to the multicast DMAC */
-	uint64_t mcst;
 
 	/* Packets sent that experienced a transmit underflow and were
 	 * truncated
