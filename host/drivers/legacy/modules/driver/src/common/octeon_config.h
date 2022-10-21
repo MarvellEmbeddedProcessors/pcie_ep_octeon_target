@@ -188,8 +188,8 @@
  * chips will use CSR accesses.
  * CN9XXX and CNXK support ISM
  */
-#define   OCT_DROQ_ISM		1
-#define   OCT_IQ_ISM		1
+#define   OCT_DROQ_ISM		0
+#define   OCT_IQ_ISM		0
 
 /* ----------------- Host Firmware Handshake Details ----------------- */
 /* ----------------- Host Firmware Handshake Details ----------------- */
