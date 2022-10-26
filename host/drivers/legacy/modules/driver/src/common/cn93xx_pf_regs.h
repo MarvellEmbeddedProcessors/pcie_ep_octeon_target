@@ -26,6 +26,7 @@
 #define    CN93XX_MIO_PTP_CLOCK_CFG_OFFSET          0xf00
 #define    CN93XX_MIO_PTP_CLOCK_HI_OFFSET           0xf10
 #define    CN93XX_MIO_PTP_CKOUT_THRESH_HI_OFFSET    0xf38
+#define    CN93XX_MIO_PTP_CLOCK_SEC_OFFSET          0xfd0
 
 #define     CN93XX_CONFIG_XPANSION_BAR             0x38
 
