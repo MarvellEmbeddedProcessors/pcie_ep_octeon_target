@@ -21,7 +21,6 @@ MODULE_LICENSE("GPL");
 int keepalive_miss_limit = 20;
 module_param(keepalive_miss_limit, int, 0600);
 MODULE_PARM_DESC(keepalive_miss_limit, "Number of missed keepalive IRQS required to bring link down");
-#define MIN_STARTUP_KEEPALIVE_MISS_CNT	15
 int keepalive_period_ms = 1000;
 module_param(keepalive_period_ms, int, 0);
 MODULE_PARM_DESC(keepalive_period_ms, "Period of keepalive checks in ms.");
@@ -1536,13 +1535,6 @@ int init_module()
 		cavium_print_msg("OCTNIC: Driver compile options: NONE\n");
 
 	cavium_memset(octprops, 0, sizeof(void *) * MAX_OCTEON_DEVICES);
-
-	if (keepalive_miss_limit < MIN_STARTUP_KEEPALIVE_MISS_CNT) {
-	    cavium_error("OCTNIC: keepalive_miss_limit parameter must be at least %d, setting to %d\n",
-			 MIN_STARTUP_KEEPALIVE_MISS_CNT,
-			 MIN_STARTUP_KEEPALIVE_MISS_CNT);
-	    keepalive_miss_limit = MIN_STARTUP_KEEPALIVE_MISS_CNT;
-	}
 
 #if defined(OCTEON_EXCLUDE_BASE_LOAD)
 	if (octeon_base_init_module()) {
