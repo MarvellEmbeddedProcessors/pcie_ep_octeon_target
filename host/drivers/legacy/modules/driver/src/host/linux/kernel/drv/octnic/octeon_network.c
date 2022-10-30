@@ -594,6 +594,21 @@ int __octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 	priv = GET_NETDEV_PRIV(pndev);
 	oct_dev = priv->oct_dev;
 
+#ifndef OCT_NIC_LOOPBACK
+#ifdef CONFIG_PPORT
+	if (unlikely(*(u32 *)(&skb->cb[SKB_CB_PPORT_MAGIC_OFFSET]) !=
+		     SKB_CB_PPORT_MAGIC_U32)) {
+		/* Only tagged pport's packets supported.
+		 * Ignore others (broadcast from external-net, DHCP, NetManager...),
+		 * don't account them in instr_dropped.
+		 */
+		cavium_print(PRINT_ERROR,
+			     "pport mode - can't send packets from Linux stack\n");
+		return OCT_NIC_TX_OK;
+	}
+#endif
+#endif
+
 	if (netif_is_multiqueue(pndev)) {
 		q_no = priv->txq + (skb->queue_mapping %
 				    priv->linfo.num_txpciq);
@@ -608,17 +623,6 @@ int __octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 	} else {
 		q_no = priv->txq;
 	}
-
-#ifndef OCT_NIC_LOOPBACK
-#ifdef CONFIG_PPORT
-	if (unlikely(*(u32 *)(&skb->cb[SKB_CB_PPORT_MAGIC_OFFSET]) !=
-		     SKB_CB_PPORT_MAGIC_U32)) {
-		cavium_print(PRINT_ERROR,
-			     "pport mode - can't send packets from Linux stack\n");
-		goto oct_xmit_failed;
-	}
-#endif
-#endif
 
 	if (skb_put_padto(skb, ETH_ZLEN)) {
 		oct_dev->instr_queue[q_no]->stats.instr_dropped++;
