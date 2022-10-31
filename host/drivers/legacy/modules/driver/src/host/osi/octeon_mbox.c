@@ -6,6 +6,16 @@
 #include "octeon_mbox.h"
 #include "octeon_config.h"
 #include "octeon_macros.h"
+#include "octeon_model.h"
+
+static int
+get_max_pkt_len(octeon_device_t *oct)
+{
+	octeon_model_info(&octeon_model, oct);
+	if (octeon_errata_sdp_mtu_size_16k())
+		return OCTEON_SDP_16K_HW_FRS;
+	return OCTEON_SDP_64K_HW_FRS;
+}
 
 static void
 handle_vf_get_link_status(octeon_device_t *oct, int vf_id,
@@ -28,8 +38,19 @@ handle_vf_set_mtu(octeon_device_t *oct, int vf_id, union otx_vf_mbox_word cmd,
 {
 	rsp->s_set_mtu.id = cmd.s_set_mtu.id;
 	rsp->s_set_mtu.type = OTX_VF_MBOX_TYPE_RSP_ACK;
-	cavium_print_msg("mbox handle mtu cmd vf %d id %d mtu is %d\n",
+	cavium_print_msg("mbox handle set mtu cmd vf %d id %d mtu is %d\n",
 			 vf_id, cmd.s_set_mtu.id, (int)cmd.s_set_mtu.mtu);
+}
+
+static void
+handle_vf_get_mtu(octeon_device_t *oct, int vf_id, union otx_vf_mbox_word cmd,
+		 union otx_vf_mbox_word *rsp)
+{
+	rsp->s_get_mtu.id = cmd.s_get_mtu.id;
+	rsp->s_get_mtu.type = OTX_VF_MBOX_TYPE_RSP_ACK;
+	rsp->s_get_mtu.mtu = get_max_pkt_len(oct);
+	cavium_print_msg("mbox handle get mtu cmd vf %d id %d mtu is %d\n",
+			 vf_id, cmd.s_get_mtu.id, get_max_pkt_len(oct));
 }
 
 static void
@@ -183,6 +204,9 @@ void handle_mbox_work(struct work_struct *work)
 		break;
 	case OTX_VF_MBOX_CMD_BULK_GET:
 		handle_vf_pf_get_data(oct, mbox, vf_id, cmd, &rsp);
+		break;
+	case OTX_VF_MBOX_CMD_GET_MTU:
+		handle_vf_get_mtu(oct, vf_id, cmd, &rsp);
 		break;
 	default:
 		cavium_print_msg("handle_mbox_work is called OTX_VF_MBOX_TYPE_RSP_NACK\n");

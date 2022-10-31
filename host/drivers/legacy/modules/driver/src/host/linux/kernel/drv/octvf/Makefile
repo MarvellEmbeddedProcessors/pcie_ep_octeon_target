@@ -92,7 +92,8 @@ OBJS += octeon_vf_linux.o            	\
 	../../../../osi/octeon_mem_ops.o   \
 	../../../../osi/request_manager.o   		\
 	../../../../osi/octvf/octeon_vf_droq.o	\
-	../../../../osi/octeon_mbox.o
+	../../../../osi/octeon_mbox.o	\
+	../../../../osi/octeon_model.o
 
 OBJNAME := octeon_vf_drv
 

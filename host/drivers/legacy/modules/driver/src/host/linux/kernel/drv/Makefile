@@ -86,7 +86,8 @@ OBJS += octeon_linux.o            	\
 	../../../osi/octeon_errata.o    \
 	../../../osi/octeon_mem_ops.o   \
 	../../../osi/octeon_droq.o	\
-	../../../osi/octeon_mbox.o
+	../../../osi/octeon_mbox.o	\
+	../../../osi/octeon_model.o
 
 ifeq ($(findstring DEBUG,$(COMPILEFOR)), DEBUG)
 # Creates debug levels.
