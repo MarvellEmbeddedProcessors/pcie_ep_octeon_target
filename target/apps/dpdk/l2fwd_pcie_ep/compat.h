@@ -5,6 +5,15 @@
 #ifndef __L2FWD_PCIE_EP_COMPAT_H__
 #define __L2FWD_PCIE_EP_COMPAT_H__
 
+#include <rte_version.h>
+#include <rte_log.h>
+#include <rte_ethdev.h>
+#include <rte_ether.h>
+#include <rte_pci.h>
+#include <rte_bus_pci.h>
+#include <rte_malloc.h>
+#include <rte_lcore.h>
+
 #define L2FWD_PCIE_EP_RTE_VERSION  RTE_VERSION_NUM(RTE_VER_YEAR, RTE_VER_MONTH, \
                                                 RTE_VER_MINOR, RTE_VER_RELEASE)
 
@@ -44,8 +53,11 @@
 #define L2FWD_PCIE_EP_ETH_LINK_DOWN	   ETH_LINK_DOWN
 #define L2FWD_PCIE_EP_ETH_LINK_FULL_DUPLEX ETH_LINK_FULL_DUPLEX
 
-static inline struct rte_pci_device *
-l2fwd_pcie_ep_get_pci_dev(uint16_t port)
+#define L2FWD_PCIE_EP_ETHER_ADDR_PRT_FMT     "%02X:%02X:%02X:%02X:%02X:%02X"
+
+
+static inline
+struct rte_pci_device *l2fwd_pcie_ep_get_pci_dev(uint16_t port)
 {
 	return RTE_ETH_DEV_TO_PCI(&rte_eth_devices[port]);
 }
@@ -96,8 +108,10 @@ static void l2fwd_configure_pkt_len(struct rte_eth_conf *port_conf,
 #define L2FWD_PCIE_EP_ETH_LINK_DOWN	   RTE_ETH_LINK_DOWN
 #define L2FWD_PCIE_EP_ETH_LINK_FULL_DUPLEX RTE_ETH_LINK_FULL_DUPLEX
 
-static inline struct rte_pci_device *
-l2fwd_pcie_ep_get_pci_dev(uint16_t port)
+#define L2FWD_PCIE_EP_ETHER_ADDR_PRT_FMT    RTE_ETHER_ADDR_PRT_FMT
+
+static inline
+struct rte_pci_device *l2fwd_pcie_ep_get_pci_dev(uint16_t port)
 {
 #if L2FWD_PCIE_EP_RTE_VERSION < RTE_VERSION_NUM(22, 11, 0, 0)
 	struct rte_eth_dev_info dev_info;
