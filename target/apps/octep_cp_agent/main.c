@@ -116,7 +116,6 @@ init:
 	alarm(PF_HEARTBEAT_INTERVAL_SECS);
 	while (!force_quit && !perst) {
 		loop_process_msgs();
-		sleep(1);
 	}
 	set_fw_ready(0);
 
