@@ -1123,22 +1123,6 @@ static inline int lowerpow2roundup(int x)
 static void cn93xx_configure_sriov_vfs(octeon_device_t *oct)
 {
 	octeon_cn93xx_pf_t *cn93xx = (octeon_cn93xx_pf_t *) oct->chip;
-	uint64_t rpvf, srn;
-	uint64_t regval, i, j;
-
-	rpvf = oct->sriov_info.rings_per_vf;
-
-	for (j = 0; j < oct->sriov_info.num_vfs; j++) {
-		srn = oct->sriov_info.vf_srn + (j * rpvf);
-		for (i = 0; i < rpvf; i++) {
-			regval = 0;
-			if (oct->pcie_port == 2)
-				regval |= (8ULL << CN93XX_SDP_FUNC_SEL_EPF_BIT_POS);
-			regval |= (uint64_t)((j+1) << CN93XX_SDP_FUNC_SEL_FUNC_BIT_POS);
-
-			octeon_write_csr64(oct, CN93XX_SDP_EPVF_RING(srn + i), regval);
-		}
-	}
 
 	CFG_GET_NUM_VFS(cn93xx->conf, oct->pf_num) = oct->sriov_info.num_vfs;
 	CFG_GET_RINGS_PER_VF(cn93xx->conf, oct->pf_num) = oct->sriov_info.rings_per_vf;
