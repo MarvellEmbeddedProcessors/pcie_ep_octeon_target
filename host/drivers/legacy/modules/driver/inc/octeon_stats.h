@@ -66,6 +66,7 @@ typedef struct {
 	uint64_t sgentry_sent;/**< Gather entries sent through this queue. */
 	uint64_t lastbytes_sent;
 			     /**< Bytes sent through this queue at last proc stats display */
+	uint64_t tx_busy_retransmit; /* TX is busy, re-queue packet to re-transmit */
 } ____cacheline_aligned_in_smp oct_iq_stats_t;
 
 #define OCT_IQ_STATS_SIZE   (sizeof(oct_iq_stats_t))

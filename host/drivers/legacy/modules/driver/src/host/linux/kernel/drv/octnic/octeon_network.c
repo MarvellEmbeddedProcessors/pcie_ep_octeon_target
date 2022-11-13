@@ -27,7 +27,8 @@ static struct {
 	"rx_bytes"}, {
 	"tx_errors"}, {
 	"tx_dropped"}, {
-"rx_dropped"},};
+	"rx_dropped"}, {
+	"tx_busy_retransmit"}, };
 
 static const char oct_iq_stats_strings[][ETH_GSTRING_LEN] = {
 	"packets",
@@ -617,7 +618,7 @@ int __octnet_xmit(struct sk_buff *skb, struct net_device *pndev)
 #ifdef OCT_NIC_LOOPBACK
 			free_recv_buffer(skb);
 #endif
-			/* TODO: increment some counter for ethtool stats ?? */
+			oct_dev->instr_queue[q_no]->stats.tx_busy_retransmit++;
 			return OCT_NIC_TX_BUSY;
 		}
 	} else {
@@ -1137,11 +1138,11 @@ oct_get_ethtool_stats(struct net_device *netdev,
 	octeon_droq_t *droq;
 	octeon_instr_queue_t *instr_queue;
 	int i, cnt, total_rings;
-	uint64_t tx_packets, tx_bytes, tx_errors, tx_dropped;
+	uint64_t tx_packets, tx_bytes, tx_errors, tx_dropped, tx_busy_retransmit;
 	uint64_t rx_packets, rx_bytes, rx_dropped;
 
 	cnt = 0;
-	tx_packets = tx_bytes = tx_errors = tx_dropped = 0;
+	tx_packets = tx_bytes = tx_errors = tx_dropped = tx_busy_retransmit = 0;
 	rx_packets = rx_bytes = rx_dropped = 0;
 
 	total_rings = oct_dev->sriov_info.rings_per_pf;
@@ -1152,6 +1153,7 @@ oct_get_ethtool_stats(struct net_device *netdev,
 		tx_packets += instr_queue->stats.instr_posted;
 		tx_bytes += instr_queue->stats.bytes_sent;
 		tx_dropped += instr_queue->stats.instr_dropped;
+		tx_busy_retransmit += instr_queue->stats.tx_busy_retransmit;
 		/* TODO:
 		 * tx_errors not incremented anywhere; fix it or remove it.
 		 */
@@ -1171,6 +1173,7 @@ oct_get_ethtool_stats(struct net_device *netdev,
 	data[cnt++] = tx_errors;
 	data[cnt++] = tx_dropped;
 	data[cnt++] = rx_dropped;
+	data[cnt++] = tx_busy_retransmit;
 
 	for (i = 0; i < total_rings; i++) {
 		instr_queue =  oct_dev->instr_queue[i];

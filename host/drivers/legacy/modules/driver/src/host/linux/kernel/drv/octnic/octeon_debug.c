@@ -151,6 +151,7 @@ static void octeon_debug_dump(struct net_device *dev)
 		netdev_info(dev, "stat.instr_posted = %llu\n", iq->stats.instr_posted);
 		netdev_info(dev, "stat.instr_processed = %llu\n", iq->stats.instr_processed);
 		netdev_info(dev, "stat.instr_dropped = %llu\n", iq->stats.instr_dropped);
+		netdev_info(dev, "stat.tx_busy_retransmit = %llu\n", iq->stats.tx_busy_retransmit);
 		netdev_info(dev, "status = %u\n", iq->status);
 		if ((u32)cavium_atomic_read(&iq->instr_pending) > 0) {
 			netdev_info(dev, "iq command at read_idx %u\n", iq->octeon_read_index);
