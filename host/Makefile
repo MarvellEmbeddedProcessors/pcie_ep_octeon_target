@@ -4,8 +4,8 @@
 
 OCTEONTX_HOST_ROOT = $(shell pwd)
 export OCTEONTX_HOST_ROOT
-export CONFIG_OCTEON_EP=m
-export CONFIG_OCTEON_EP_VF=m
+#export CONFIG_OCTEON_EP=m
+#export CONFIG_OCTEON_EP_VF=m
 
 SUBDIRS=drivers/legacy/modules/driver/src
 SUBDIRS+=drivers/mgmt_net
