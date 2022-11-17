@@ -119,7 +119,12 @@ typedef struct _OCTEON_DEVICE octeon_device_t;
 	(chip_id == OCTEON_CN98XX_ID_PF)
 
 #define OCTEON_CNXK_PF(chip_id) \
-	(chip_id == OCTEON_CN10KA_ID_PF)
+	(chip_id == OCTEON_CN10KA_ID_PF || \
+	 chip_id == OCTEON_CN10KB_ID_PF)
+
+#define OCTEON_CNFXK_PF(chip_id) \
+	(chip_id == OCTEON_CNF10KA_ID_PF || \
+	 chip_id == OCTEON_CNF10KB_ID_PF)
 
 #define OCTEON_CN9XXX_PF(chip_id) \
 	 (OCTEON_CN93XX_PF(chip_id) || \
