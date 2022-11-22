@@ -115,4 +115,14 @@ struct octep_iface_tx_stats {
 	uint64_t ctl;
 };
 
+/* Info from firmware */
+struct octep_fw_info {
+	/* interface pkind */
+	uint16_t pkind;
+	/* pf heartbeat interval in milliseconds */
+	uint16_t hb_interval;
+	/* pf heartbeat miss count */
+	uint16_t hb_miss_count;
+};
+
 #endif /* __OCTEP_HW_H__ */

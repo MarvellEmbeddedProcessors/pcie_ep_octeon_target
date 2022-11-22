@@ -40,6 +40,7 @@ enum octep_ctrl_net_h2f_cmd {
 	OCTEP_CTRL_NET_H2F_CMD_LINK_STATUS,
 	OCTEP_CTRL_NET_H2F_CMD_RX_STATE,
 	OCTEP_CTRL_NET_H2F_CMD_LINK_INFO,
+	OCTEP_CTRL_NET_H2F_CMD_GET_INFO,
 };
 
 /* Supported fw to host commands */
@@ -158,6 +159,11 @@ struct octep_ctrl_net_h2f_resp_cmd_state {
 	uint16_t state;
 };
 
+/* get info request */
+struct octep_ctrl_net_h2f_resp_cmd_get_info {
+	struct octep_fw_info fw_info;
+};
+
 /* Host to fw response data */
 struct octep_ctrl_net_h2f_resp {
 	union octep_ctrl_net_resp_hdr hdr;
@@ -168,6 +174,7 @@ struct octep_ctrl_net_h2f_resp {
 		struct octep_ctrl_net_h2f_resp_cmd_state link;
 		struct octep_ctrl_net_h2f_resp_cmd_state rx;
 		struct octep_ctrl_net_link_info link_info;
+		struct octep_ctrl_net_h2f_resp_cmd_get_info info;
 	};
 }__attribute__((__packed__));
 
