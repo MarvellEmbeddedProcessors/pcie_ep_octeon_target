@@ -13,10 +13,9 @@
 #include "loop.h"
 #include "app_config.h"
 
-#define PF_HEARTBEAT_INTERVAL_SECS	1
-
 static volatile int force_quit = 0;
 static volatile int perst = 0;
+static int hb_interval = 0;
 
 struct octep_cp_lib_cfg cp_lib_cfg = { 0 };
 
@@ -47,7 +46,7 @@ void sigint_handler(int sig_num) {
 			return;
 
 		send_heartbeat();
-		alarm(PF_HEARTBEAT_INTERVAL_SECS);
+		alarm(hb_interval);
 	}
 }
 
@@ -97,6 +96,10 @@ init:
 		j = 0;
 		while (pf) {
 			cp_lib_cfg.doms[i].pfs[j++].idx = pf->idx;
+			if (hb_interval == 0 ||
+			    pf->info.hb_interval < hb_interval)
+				hb_interval = pf->info.hb_interval;
+
 			pf = pf->next;
 		}
 		pem = pem->next;
@@ -113,7 +116,9 @@ init:
 	}
 
 	set_fw_ready(1);
-	alarm(PF_HEARTBEAT_INTERVAL_SECS);
+	printf("Heartbeat interval : %u msecs\n", hb_interval);
+	hb_interval /= 1000;
+	alarm(hb_interval);
 	while (!force_quit && !perst) {
 		loop_process_msgs();
 	}

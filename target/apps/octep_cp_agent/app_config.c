@@ -14,28 +14,32 @@ struct app_cfg cfg;
  *
  * soc = { pem* };
  * pem = { idx, pf* };
- * pf = { idx, if, vf* };
- * vf = { idx, if };
+ * pf = { idx, if, info, vf* };
+ * vf = { idx, if, info };
  * if = { mtu, mac_addr, link_state, rx_state, autoneg, pause_mode, speed,
  *        supported_modes, advertisedd_modes
- * }
+ * };
+ * info = { pkind, hb_interval, hb_miss_count };
  */
 
-#define CFG_TOKEN_SOC		"soc"
-#define CFG_TOKEN_BASE_SOC	"base_soc"
-#define CFG_TOKEN_PEMS		"pems"
-#define CFG_TOKEN_PFS		"pfs"
-#define CFG_TOKEN_VFS		"vfs"
-#define CFG_TOKEN_IDX		"idx"
-#define CFG_TOKEN_IF_MTU	"mtu"
-#define CFG_TOKEN_IF_MAC_ADDR	"mac_addr"
-#define CFG_TOKEN_IF_LSTATE	"link_state"
-#define CFG_TOKEN_IF_RSTATE	"rx_state"
-#define CFG_TOKEN_IF_AUTONEG	"autoneg"
-#define CFG_TOKEN_IF_PMODE	"pause_mode"
-#define CFG_TOKEN_IF_SPEED	"speed"
-#define CFG_TOKEN_IF_SMODES	"supported_modes"
-#define CFG_TOKEN_IF_AMODES	"advertised_modes"
+#define CFG_TOKEN_SOC			"soc"
+#define CFG_TOKEN_BASE_SOC		"base_soc"
+#define CFG_TOKEN_PEMS			"pems"
+#define CFG_TOKEN_PFS			"pfs"
+#define CFG_TOKEN_VFS			"vfs"
+#define CFG_TOKEN_IDX			"idx"
+#define CFG_TOKEN_IF_MTU		"mtu"
+#define CFG_TOKEN_IF_MAC_ADDR		"mac_addr"
+#define CFG_TOKEN_IF_LSTATE		"link_state"
+#define CFG_TOKEN_IF_RSTATE		"rx_state"
+#define CFG_TOKEN_IF_AUTONEG		"autoneg"
+#define CFG_TOKEN_IF_PMODE		"pause_mode"
+#define CFG_TOKEN_IF_SPEED		"speed"
+#define CFG_TOKEN_IF_SMODES		"supported_modes"
+#define CFG_TOKEN_IF_AMODES		"advertised_modes"
+#define CFG_TOKEN_INFO_PKIND		"pkind"
+#define CFG_TOKEN_INFO_HB_INTERVAL	"hb_interval"
+#define CFG_TOKEN_INFO_HB_MISS_COUNT	"hb_miss_count"
 
 static void print_if(struct if_cfg *iface)
 {
@@ -52,6 +56,12 @@ static void print_if(struct if_cfg *iface)
 	       iface->supported_modes, iface->advertised_modes);
 }
 
+static void print_info(struct octep_fw_info *info)
+{
+	printf("pkind: %u, hbi: %u, hbmc: %u\n",
+	       info->pkind, info->hb_interval, info->hb_miss_count);
+}
+
 static void print_config()
 {
 	struct pem_cfg *pem;
@@ -64,11 +74,13 @@ static void print_config()
 		while (pf) {
 			printf("[%d]:[%d]\n", pem->idx, pf->idx);
 			print_if(&pf->iface);
+			print_info(&pf->info);
 			vf = pf->vfs;
 			while (vf) {
 				printf("[%d]:[%d]:[%d]\n",
 				       pem->idx, pf->idx, vf->idx);
 				print_if(&vf->iface);
+				print_info(&vf->info);
 				vf = vf->next;
 			}
 			pf = pf->next;
@@ -232,6 +244,25 @@ static int parse_if(config_setting_t *lcfg, struct if_cfg *iface)
 	return 0;
 }
 
+static int parse_info(config_setting_t *lcfg, struct octep_fw_info *info)
+{
+	int ival, ret;
+
+	ret = config_setting_lookup_int(lcfg, CFG_TOKEN_INFO_PKIND, &ival);
+	info->pkind = (ret == CONFIG_TRUE) ? ival : 0;
+
+	ret = config_setting_lookup_int(lcfg, CFG_TOKEN_INFO_HB_INTERVAL, &ival);
+	info->hb_interval = (ret == CONFIG_TRUE) ?
+			     ival : DEFAULT_HB_INTERVAL_MSECS;
+
+	ret = config_setting_lookup_int(lcfg, CFG_TOKEN_INFO_HB_MISS_COUNT, &ival);
+	info->hb_miss_count = (ret == CONFIG_TRUE) ?
+			       ival : DEFAULT_HB_MISS_COUNT;
+
+	return 0;
+}
+
+
 static int parse_pf(config_setting_t *pf, struct pf_cfg *pfcfg)
 {
 	config_setting_t *vfs, *vf;
@@ -239,6 +270,10 @@ static int parse_pf(config_setting_t *pf, struct pf_cfg *pfcfg)
 	struct vf_cfg *vfcfg;
 
 	err = parse_if(pf, &pfcfg->iface);
+	if (err)
+		return err;
+
+	err = parse_info(pf, &pfcfg->info);
 	if (err)
 		return err;
 
@@ -264,6 +299,9 @@ static int parse_pf(config_setting_t *pf, struct pf_cfg *pfcfg)
 			}
 		}
 		err = parse_if(vf, &vfcfg->iface);
+		if (err)
+			return err;
+		err = parse_info(vf, &vfcfg->info);
 		if (err)
 			return err;
 	}
@@ -424,7 +462,8 @@ int app_config_init(const char *cfg_file_path)
 int app_config_get_if_from_msg_info(union octep_cp_msg_info *ctx_info,
 				    union octep_cp_msg_info *msg_info,
 				    struct if_cfg **iface,
-				    struct if_stats **ifstats)
+				    struct if_stats **ifstats,
+				    struct octep_fw_info **info)
 {
 	struct pem_cfg *pem = cfg.pems;
 	struct pf_cfg *pf;
@@ -440,6 +479,7 @@ int app_config_get_if_from_msg_info(union octep_cp_msg_info *ctx_info,
 						       pem->idx, pf->idx);
 						*iface = &pf->iface;
 						*ifstats = &pf->ifstats;
+						*info = &pf->info;
 						return 0;
 					}
 					vf = pf->vfs;
@@ -449,6 +489,7 @@ int app_config_get_if_from_msg_info(union octep_cp_msg_info *ctx_info,
 							       pem->idx, pf->idx, vf->idx);
 							*iface = &vf->iface;
 							*ifstats = &vf->ifstats;
+							*info = &vf->info;
 							return 0;
 						}
 						vf = vf->next;

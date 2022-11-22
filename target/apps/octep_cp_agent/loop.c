@@ -29,6 +29,7 @@ static const uint32_t mac_sz = sizeof(struct octep_ctrl_net_h2f_resp_cmd_mac);
 static const uint32_t state_sz = sizeof(struct octep_ctrl_net_h2f_resp_cmd_state);
 static const uint32_t link_info_sz = sizeof(struct octep_ctrl_net_link_info);
 static const uint32_t if_stats_sz = sizeof(struct octep_ctrl_net_h2f_resp_cmd_get_stats);
+static const uint32_t info_sz = sizeof(struct octep_ctrl_net_h2f_resp_cmd_get_info);
 
 int loop_init()
 {
@@ -205,6 +206,17 @@ static int process_link_info(struct if_cfg *iface,
 	return ret;
 }
 
+static int process_get_info(struct octep_fw_info *info,
+			    struct octep_ctrl_net_h2f_req *req,
+			    struct octep_ctrl_net_h2f_resp *resp)
+{
+	memcpy(&resp->info.fw_info, info, sizeof(struct octep_fw_info));
+	printf("Cmd: get info\n");
+	resp->hdr.s.reply = OCTEP_CTRL_NET_REPLY_OK;
+
+	return info_sz;
+}
+
 static int process_msg(union octep_cp_msg_info *ctx, struct octep_cp_msg* msg)
 {
 	struct octep_ctrl_net_h2f_req *req;
@@ -212,12 +224,14 @@ static int process_msg(union octep_cp_msg_info *ctx, struct octep_cp_msg* msg)
 	struct octep_cp_msg resp_msg;
 	struct if_cfg *iface;
 	struct if_stats *ifdata;
+	struct octep_fw_info *info;
 	int err, resp_sz;
 
 	err = app_config_get_if_from_msg_info(ctx,
 					      &msg->info,
 					      &iface,
-					      &ifdata);
+					      &ifdata,
+					      &info);
 	if (err) {
 		printf("Invalid msg[%lx]\n", msg->info.words[0]);
 		return err;
@@ -244,6 +258,9 @@ static int process_msg(union octep_cp_msg_info *ctx, struct octep_cp_msg* msg)
 			break;
 		case OCTEP_CTRL_NET_H2F_CMD_LINK_INFO:
 			resp_sz += process_link_info(iface, req, &resp);
+			break;
+		case OCTEP_CTRL_NET_H2F_CMD_GET_INFO:
+			resp_sz += process_get_info(info, req, &resp);
 			break;
 		default:
 			printf("Unhandled Cmd : %u\n", req->hdr.s.cmd);

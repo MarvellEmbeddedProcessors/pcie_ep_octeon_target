@@ -12,6 +12,12 @@
 #define ETH_ALEN	6
 #endif
 
+#define MIN_HB_INTERVAL_MSECS		1000
+#define MAX_HB_INTERVAL_MSECS		15000
+#define DEFAULT_HB_INTERVAL_MSECS	MIN_HB_INTERVAL_MSECS
+
+#define DEFAULT_HB_MISS_COUNT		20
+
 /* Network interface stats */
 struct if_stats {
 	struct octep_iface_rx_stats rx_stats;
@@ -47,6 +53,7 @@ struct vf_cfg {
 	/* network interface data */
 	struct if_cfg iface;
 	struct if_stats ifstats;
+	struct octep_fw_info info;
 	struct vf_cfg *next;
 };
 
@@ -57,6 +64,7 @@ struct pf_cfg {
 	/* network interface data */
 	struct if_cfg iface;
 	struct if_stats ifstats;
+	struct octep_fw_info info;
 	/* number of vf's */
 	int nvf;
 	/* configuration for vf's */
@@ -101,13 +109,15 @@ int app_config_init(const char *cfg_file_path);
  *                  received message.
  * @param iface: non-null pointer to struct if_cfg *.
  * @param ifstats: non-null pointer to struct if_stats *.
+ * @param info: non-null pointer to struct octep_fw_info *.
  *
  * return value: 0 on success, -errno on failure.
  */
 int app_config_get_if_from_msg_info(union octep_cp_msg_info *ctx_info,
 				    union octep_cp_msg_info *msg_info,
 				    struct if_cfg **iface,
-				    struct if_stats **ifstats);
+				    struct if_stats **ifstats,
+				    struct octep_fw_info **info);
 
 /* Free allocated configuration artifacts.
  *
