@@ -807,8 +807,13 @@ static uint32_t cnxk_update_read_index(octeon_instr_queue_t * iq)
 	u32 last_done;
 	u32 pkt_in_done = OCTEON_READ32(iq->inst_cnt_reg);
 
-	last_done = pkt_in_done - iq->pkt_in_done;
-	iq->pkt_in_done = pkt_in_done;
+	/* When there is no response to PCI read */
+	if (pkt_in_done == 0xFFFFFFFF)
+		last_done = 0;
+	else {
+		last_done = pkt_in_done - iq->pkt_in_done;
+		iq->pkt_in_done = pkt_in_done;
+	}
 
 #define OCTEON_PKT_IN_DONE_CNT_MASK (0x00000000FFFFFFFFULL)
 	new_idx = (iq->octeon_read_index +

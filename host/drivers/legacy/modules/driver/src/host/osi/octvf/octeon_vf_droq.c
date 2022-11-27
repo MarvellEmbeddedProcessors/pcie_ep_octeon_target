@@ -29,7 +29,11 @@ int octeon_droq_check_hw_for_pkts(octeon_device_t * oct, octeon_droq_t * droq)
 	uint32_t new_pkts;
 
 	pkt_count = OCTEON_READ32(droq->pkts_sent_reg);
-	new_pkts = pkt_count - droq->last_pkt_count;
+	/* When there is no response to PCI read */
+	if (pkt_count == 0xFFFFFFFF)
+		new_pkts = 0;
+	else
+		new_pkts = pkt_count - droq->last_pkt_count;
 //	printk("%s: Q-%d pkt_count(sent_reg):%u last_cnt:%u pkts_pending:%u\n",
 //		__func__, droq->q_no, pkt_count, droq->last_pkt_count, droq->pkts_pending);
 
