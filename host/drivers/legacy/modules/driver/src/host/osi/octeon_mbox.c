@@ -13,44 +13,39 @@ get_max_pkt_len(octeon_device_t *oct)
 {
 	octeon_model_info(&octeon_model, oct);
 	if (octeon_errata_sdp_mtu_size_16k())
-		return OCTEON_SDP_16K_HW_FRS;
-	return OCTEON_SDP_64K_HW_FRS;
+		return OTX_SDP_16K_HW_FRS;
+	return OTX_SDP_64K_HW_FRS;
 }
 
-static void
-handle_vf_get_link_status(octeon_device_t *oct, int vf_id,
-			 union otx_vf_mbox_word cmd,
-			 union otx_vf_mbox_word *rsp)
+static void handle_vf_validate_version(octeon_device_t *oct,  int vf_id,
+					union otx_vf_mbox_word cmd,
+					union otx_vf_mbox_word *rsp)
 {
-	rsp->s_get_link.id = cmd.s_get_link.id;
-	rsp->s_get_link.type = OTX_VF_MBOX_TYPE_RSP_ACK;
-	rsp->s_get_link.link_status =  OTX_VF_LINK_STATUS_UP;
-	rsp->s_get_link.link_speed = OTX_VF_LINK_SPEED_10000;
-	rsp->s_get_link.duplex = OTX_VF_LINK_FULL_DUPLEX;
-	rsp->s_get_link.autoneg = OTX_VF_LINK_AUTONEG;
-	cavium_print_msg("mbox get link status cmd vf %d cmd_id %d\n",
-			 vf_id, cmd.s_get_link.id);
+	uint32_t vf_version = (uint32_t)cmd.s_version.version;
+
+	if (vf_version <= OTX_PF_MBOX_VERSION)
+		rsp->s_version.type = OTX_VF_MBOX_TYPE_RSP_ACK;
+	else
+		rsp->s_version.type = OTX_VF_MBOX_TYPE_RSP_NACK;
 }
 
 static void
 handle_vf_set_mtu(octeon_device_t *oct, int vf_id, union otx_vf_mbox_word cmd,
 		 union otx_vf_mbox_word *rsp)
 {
-	rsp->s_set_mtu.id = cmd.s_set_mtu.id;
 	rsp->s_set_mtu.type = OTX_VF_MBOX_TYPE_RSP_ACK;
-	cavium_print_msg("mbox handle set mtu cmd vf %d id %d mtu is %d\n",
-			 vf_id, cmd.s_set_mtu.id, (int)cmd.s_set_mtu.mtu);
+	cavium_print_msg("mbox handle set mtu cmd vf %d mtu is %d\n",
+			 vf_id, (int)cmd.s_set_mtu.mtu);
 }
 
 static void
 handle_vf_get_mtu(octeon_device_t *oct, int vf_id, union otx_vf_mbox_word cmd,
 		 union otx_vf_mbox_word *rsp)
 {
-	rsp->s_get_mtu.id = cmd.s_get_mtu.id;
 	rsp->s_get_mtu.type = OTX_VF_MBOX_TYPE_RSP_ACK;
 	rsp->s_get_mtu.mtu = get_max_pkt_len(oct);
-	cavium_print_msg("mbox handle get mtu cmd vf %d id %d mtu is %d\n",
-			 vf_id, cmd.s_get_mtu.id, get_max_pkt_len(oct));
+	cavium_print_msg("mbox handle get mtu cmd vf %d mtu is %d\n",
+			 vf_id, get_max_pkt_len(oct));
 }
 
 static void
@@ -59,8 +54,7 @@ handle_vf_set_mac_addr(octeon_device_t *oct,  int vf_id, union otx_vf_mbox_word 
 {
 	int i;
 
-	rsp->s_set_mac.id = cmd.s_set_mac.id;
-	if (oct->vf_info[vf_id].flags & OCTEON_VF_FLAG_PF_SET_MAC) {
+	if (oct->vf_info[vf_id].flags & OTX_VF_FLAG_PF_SET_MAC) {
 		cavium_print_msg("%s VF%d attempted to override administratively set MAC address\n",
 				  __func__, vf_id);
 		rsp->s_set_mac.type = OTX_VF_MBOX_TYPE_RSP_NACK;
@@ -80,85 +74,64 @@ handle_vf_get_mac_addr(octeon_device_t *oct,  int vf_id, union otx_vf_mbox_word 
 {
 	int i;
 
-	rsp->s_set_mac.id = cmd.s_set_mac.id;
 	rsp->s_set_mac.type = OTX_VF_MBOX_TYPE_RSP_ACK;
 	for (i = 0; i < MBOX_MAX_DATA_SIZE; i++)
 		rsp->s_set_mac.mac_addr[i] = oct->vf_info[vf_id].mac_addr[i];
 	cavium_print_msg("%s vf:%d Mac: %pM\n",  __func__, vf_id, oct->vf_info[vf_id].mac_addr);
 }
 
-static void
-handle_vf_pf_get_data(octeon_device_t *oct,  octeon_mbox_t *mbox, int vf_id,
-		        union otx_vf_mbox_word cmd, union otx_vf_mbox_word *rsp)
+static void handle_vf_pf_get_data(octeon_device_t *oct,
+				   octeon_mbox_t *mbox, int vf_id,
+				   union otx_vf_mbox_word cmd,
+				   union otx_vf_mbox_word *rsp)
 {
-	int i=0;
-	int length=0;
-	rsp->s_data.id = cmd.s_data.id;
+	int length = 0;
+	int i = 0;
+	struct octeon_iface_link_info link_info;
+
 	rsp->s_data.type = OTX_VF_MBOX_TYPE_RSP_ACK;
-	cavium_print_msg("handle_vf_pf_get_data received\n");
+
 	if (cmd.s_data.frag != MBOX_MORE_FRAG_FLAG) {
 		mbox->config_data_index = 0;
-		memset(mbox->config_data,0,MAX_MBOX_DATA_SIZE);
-		/* Call OPCODE specific GET API
-		 * to fetch requested data from PF driver.
-		 * mbox->message_len = get_stats(mbox->config_data);
+		memset(mbox->config_data, 0, MBOX_MAX_DATA_BUF_SIZE);
+		/* Based on the OPCODE CMD the PF driver
+		 * specific API should be called to fetch
+		 * the requested data
 		 */
+		switch (cmd.s.opcode) {
+		case OTX_VF_MBOX_CMD_GET_LINK_INFO:
+			memset(&link_info, 0, sizeof(link_info));
+			link_info.supported_modes = 0;
+			link_info.advertised_modes = 0;
+			link_info.autoneg = OTX_VF_LINK_AUTONEG;
+			link_info.pause = 0;
+			link_info.speed = OTX_VF_LINK_SPEED_10000;
+			link_info.admin_up = OTX_VF_LINK_STATUS_UP;
+			link_info.oper_up = OTX_VF_LINK_STATUS_UP;
+			link_info.mtu = get_max_pkt_len(oct);
+			mbox->message_len = sizeof(link_info);
+			*((int32_t *)rsp->s_data.data) = mbox->message_len;
+			memcpy(mbox->config_data, (uint8_t *)&link_info, sizeof(link_info));
+			break;
+		default:
+			cavium_print_msg("handle_vf_pf_get_data invalid opcode:%d\n",cmd.s.opcode);
+			rsp->s_data.type = OTX_VF_MBOX_TYPE_RSP_NACK;
+			return;
+		}
 		*((int32_t *)rsp->s_data.data) = mbox->message_len;
-		cavium_print_msg("handle_vf_pf_get_data msg len %d:",mbox->message_len);
 		return;
 	}
-	if (mbox->message_len > MBOX_MAX_DATA_SIZE) {
+	if (mbox->message_len > MBOX_MAX_DATA_SIZE)
 		length = MBOX_MAX_DATA_SIZE;
-		cavium_print_msg("handle_vf_pf_get_data more to send data to VF \n");
-	}
-	else {
+	else
 		length = mbox->message_len;
-		cavium_print_msg("handle_vf_pf_get_data last to send data to VF \n");
-	}
+
 	mbox->message_len -= length;
-	for (i=0;i< length;i++) {
-		rsp->s_data.data[i] = mbox->config_data[mbox->config_data_index];
+
+	for (i = 0; i < length; i++) {
+		rsp->s_data.data[i] =
+			mbox->config_data[mbox->config_data_index];
 		mbox->config_data_index++;
-	}
-	return;
-}
-
-static void
-handle_vf_pf_config_data(octeon_device_t *oct,  octeon_mbox_t *mbox, int vf_id,
-		        union otx_vf_mbox_word cmd, union otx_vf_mbox_word *rsp)
-{
-	int i=0;
-	int length;
-
-	rsp->s_data.id = cmd.s_data.id;
-	rsp->s_data.type = OTX_VF_MBOX_TYPE_RSP_ACK;
-	cavium_print_msg("handle_vf_pf_config_data received\n");
-	if ((cmd.s_data.frag == MBOX_MORE_FRAG_FLAG) && (mbox->message_len == 0)) {
-		length = *((int32_t *)cmd.s_data.data);
-		cavium_print_msg("handle_vf_pf_config_data length %d: \n",length);
-		mbox->message_len = length;
-		mbox->config_data_index = 0;
-		memset(mbox->config_data,0,MAX_MBOX_DATA_SIZE);
-		return;
-	}
-	if (cmd.s_data.frag == MBOX_MORE_FRAG_FLAG) {
-		for (i=0;i< MBOX_MAX_DATA_SIZE;i++) {
-			mbox->config_data[mbox->config_data_index] = cmd.s_data.data[i];
-			mbox->config_data_index++;
-		}
-		mbox->message_len -= MBOX_MAX_DATA_SIZE;
-	}
-	else {
-		for (i=0;i< mbox->message_len;i++) {
-			mbox->config_data[mbox->config_data_index] = cmd.s_data.data[i];
-			mbox->config_data_index++;
-		}
-		/* Calls OPCODE specific configuration handler by passing
-		 * received config data as input argument.
-		 */
-		mbox->config_data_index = 0;
-		mbox->message_len = 0;
-		memset(mbox->config_data,0,MAX_MBOX_DATA_SIZE);
 	}
 }
 
@@ -180,15 +153,12 @@ void handle_mbox_work(struct work_struct *work)
 	rsp.u64 = 0;
 
 	cavium_print_msg("handle_mbox_work is called vf_id %d\n",vf_id);
-	if (cmd.s.version != OTX_PF_MBOX_VERSION) {
-		cavium_print_msg("mbox version mis match vf version %d pf version %d\n",
-				cmd.s.version, OTX_PF_MBOX_VERSION);
-		rsp.s.type = OTX_VF_MBOX_TYPE_RSP_NACK;
-		goto done;
-	}
 	switch(cmd.s.opcode) {
-	case OTX_VF_MBOX_CMD_GET_LINK:
-		handle_vf_get_link_status(oct, vf_id, cmd, &rsp);
+	case OTX_VF_MBOX_CMD_VERSION:
+		handle_vf_validate_version(oct, vf_id, cmd, &rsp);
+		break;
+	case OTX_VF_MBOX_CMD_GET_LINK_INFO:
+		handle_vf_pf_get_data(oct, mbox, vf_id, cmd, &rsp);
 		break;
 	case OTX_VF_MBOX_CMD_SET_MTU:
 		handle_vf_set_mtu(oct, vf_id, cmd, &rsp);
@@ -199,12 +169,6 @@ void handle_mbox_work(struct work_struct *work)
 	case OTX_VF_MBOX_CMD_GET_MAC_ADDR:
 		handle_vf_get_mac_addr(oct, vf_id, cmd, &rsp);
 		break;
-	case OTX_VF_MBOX_CMD_BULK_SEND:
-		handle_vf_pf_config_data(oct, mbox, vf_id, cmd, &rsp);
-		break;
-	case OTX_VF_MBOX_CMD_BULK_GET:
-		handle_vf_pf_get_data(oct, mbox, vf_id, cmd, &rsp);
-		break;
 	case OTX_VF_MBOX_CMD_GET_MTU:
 		handle_vf_get_mtu(oct, vf_id, cmd, &rsp);
 		break;
@@ -213,7 +177,6 @@ void handle_mbox_work(struct work_struct *work)
 		rsp.s.type = OTX_VF_MBOX_TYPE_RSP_NACK;
 		break;
 	}
-done:
 	OCTEON_WRITE64(mbox->vf_pf_data_reg, rsp.u64);
 	cavium_mutex_unlock(&mbox->lock);
 }

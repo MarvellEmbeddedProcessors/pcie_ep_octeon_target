@@ -47,35 +47,24 @@ cnxk_vf_send_mbox_cmd_nolock(octeon_device_t *oct_dev, union otx_vf_mbox_word cm
 {
 	volatile uint64_t reg_val = 0ull;
 	volatile u8 __iomem *vf_pf_data_reg;
-	int retry_count = 0;
 	int count = 0;
 	long timeout = OTX_VF_MBOX_WRITE_WAIT_TIME;
 	octeon_mbox_t *mbox = oct_dev->mbox[0];
 
 	cmd.s.type = OTX_VF_MBOX_TYPE_CMD;
-	cmd.s.version = OTX_VF_MBOX_VERSION;
-	oct_dev->mbox_cmd_id = ~oct_dev->mbox_cmd_id;
-	cmd.s.id = oct_dev->mbox_cmd_id;
 	vf_pf_data_reg = mbox->mbox_write_reg;
-retry:
+
 	OCTEON_WRITE64(vf_pf_data_reg, cmd.u64);
 	for (count = 0; count < OTX_VF_MBOX_TIMEOUT_MS; count++) {
 		schedule_timeout_uninterruptible(timeout);
 		reg_val = OCTEON_READ64(vf_pf_data_reg);
 		if (reg_val != cmd.u64) {
 			rsp->u64 = reg_val;
-			if (rsp->s.id == cmd.s.id)
-				break;
-			/* resp for previous cmd. retry */
-			retry_count++;
-			if (retry_count == OTX_VF_MBOX_MAX_RETRIES)
-				break;
-			goto retry;
+			break;
 		}
 	}
-	if (count == OTX_VF_MBOX_TIMEOUT_MS ||
-	    retry_count == OTX_VF_MBOX_MAX_RETRIES) {
-		cavium_error("%s Timeout count:%d retry_count:%d\n", __func__, count, retry_count);
+	if (count == OTX_VF_MBOX_TIMEOUT_MS) {
+		cavium_error("Mbox cmd Timeout\n");
 		return -ETIMEDOUT;
 	}
 	rsp->u64 = reg_val;
@@ -89,7 +78,6 @@ cnxk_vf_send_mbox_cmd(octeon_device_t *oct_dev, union otx_vf_mbox_word cmd,
 	volatile uint64_t reg_val = 0ull;
 	volatile u8 __iomem *vf_pf_data_reg;
 	unsigned long flags;
-	int retry_count = 0;
 	int count = 0;
 	long timeout = OTX_VF_MBOX_WRITE_WAIT_TIME;
 	octeon_mbox_t *mbox = oct_dev->mbox[0];
@@ -104,33 +92,22 @@ cnxk_vf_send_mbox_cmd(octeon_device_t *oct_dev, union otx_vf_mbox_word cmd,
 	cavium_spin_unlock_irqrestore(&oct_dev->vf_mbox_lock, flags);
 
 	cmd.s.type = OTX_VF_MBOX_TYPE_CMD;
-	cmd.s.version = OTX_VF_MBOX_VERSION;
 
-	oct_dev->mbox_cmd_id = ~oct_dev->mbox_cmd_id;
-	cmd.s.id = oct_dev->mbox_cmd_id;
 	vf_pf_data_reg = mbox->mbox_write_reg;
-retry:
 	OCTEON_WRITE64(vf_pf_data_reg, cmd.u64);
 	for (count = 0; count < OTX_VF_MBOX_TIMEOUT_MS; count++) {
 		schedule_timeout_uninterruptible(timeout);
 		reg_val = OCTEON_READ64(vf_pf_data_reg);
 		if (reg_val != cmd.u64) {
 			rsp->u64 = reg_val;
-			if (rsp->s.id == cmd.s.id)
-				break;
-			/* resp for previous cmd. retry */
-			retry_count++;
-			if (retry_count == OTX_VF_MBOX_MAX_RETRIES)
-				break;
-			goto retry;
+			break;
 		}
 		count++;
 	}
 	cavium_spin_lock_irqsave(&oct_dev->vf_mbox_lock, flags);
-	if (count == OTX_VF_MBOX_TIMEOUT_MS ||
-	    retry_count == OTX_VF_MBOX_MAX_RETRIES) {
+	if (count == OTX_VF_MBOX_TIMEOUT_MS) {
 		mbox->state = OTX_VF_MBOX_STATE_IDLE;
-		cavium_error("%s Timeout count:%d retry_count:%d\n", __func__, count, retry_count);
+		cavium_error("Mbox cmd Timeout\n");
 		spin_unlock_irqrestore(&oct_dev->vf_mbox_lock, flags);
 		return -ETIMEDOUT;
 	}

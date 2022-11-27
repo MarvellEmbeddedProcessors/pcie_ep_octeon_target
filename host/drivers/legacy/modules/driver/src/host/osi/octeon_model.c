@@ -117,7 +117,6 @@ get_main_id_register_val(octeon_device_t *oct)
 	addr = (MAIN_ID_REG_ADDRESS | (2ull << 53));
 	OCTEON_WRITE64(oct->reg_list.pci_win_rd_addr, addr);
 	reg_val = OCTEON_READ64(oct->reg_list.pci_win_rd_data);
-	cavium_print_msg("Main Id register addr:0x%016llx val: 0x%016llx\n", addr, reg_val);
 	return reg_val;
 }
 

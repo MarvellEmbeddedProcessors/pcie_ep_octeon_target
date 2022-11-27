@@ -423,7 +423,7 @@ int octnet_set_vf_mac(struct net_device *dev, int vf, u8 *mac)
 			__func__, dev->name, oct_dev->device_name, vf, mac);
 	for (i = 0; i < ETH_ALEN; i++)
 		oct_dev->vf_info[vf].mac_addr[i] = mac[i];
-	oct_dev->vf_info[vf].flags |=  OCTEON_VF_FLAG_PF_SET_MAC;
+	oct_dev->vf_info[vf].flags |=  OTX_VF_FLAG_PF_SET_MAC;
 	return 0;
 }
 

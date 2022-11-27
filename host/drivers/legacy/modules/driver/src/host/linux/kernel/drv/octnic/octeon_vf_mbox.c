@@ -121,7 +121,7 @@ octnet_vf_mbox_send_vf_pf_config_data(octeon_device_t *oct_dev,
 				return -EINVAL;
 			}
 			cmd.u64 = 0;
-			cmd.s_data.opcode = OTX_VF_MBOX_CMD_BULK_SEND;
+			cmd.s_data.opcode = opcode;
 			cmd.s_data.frag = 0;
 		}
 	}

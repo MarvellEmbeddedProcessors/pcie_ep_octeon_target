@@ -470,8 +470,6 @@ typedef struct octeon_mbox_data {
 
 } octeon_mbox_data_t;
 
-#define MAX_MBOX_DATA_SIZE	256
-
 typedef struct cvm_mbox_info {
 	uint32_t q_no;
 	uint32_t state;
@@ -492,7 +490,7 @@ typedef struct cvm_mbox_info {
 	uint64_t *vf_pf_data_reg;
 	int32_t config_data_index;
 	int32_t message_len;
-	uint8_t config_data[MAX_MBOX_DATA_SIZE];
+	uint8_t config_data[MBOX_MAX_DATA_BUF_SIZE];
 } octeon_mbox_t;
 
 typedef struct cvm_ioq_vector {
