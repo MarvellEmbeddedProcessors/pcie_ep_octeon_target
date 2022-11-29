@@ -29,11 +29,7 @@ int octeon_droq_check_hw_for_pkts(octeon_device_t * oct, octeon_droq_t * droq)
 	uint32_t new_pkts;
 
 	pkt_count = OCTEON_READ32(droq->pkts_sent_reg);
-	/* When there is no response to PCI read */
-	if (pkt_count == 0xFFFFFFFF)
-		new_pkts = 0;
-	else
-		new_pkts = pkt_count - droq->last_pkt_count;
+	new_pkts = pkt_count - droq->last_pkt_count;
 //	printk("%s: Q-%d pkt_count(sent_reg):%u last_cnt:%u pkts_pending:%u\n",
 //		__func__, droq->q_no, pkt_count, droq->last_pkt_count, droq->pkts_pending);
 
@@ -41,6 +37,13 @@ int octeon_droq_check_hw_for_pkts(octeon_device_t * oct, octeon_droq_t * droq)
 		/* TODO: should be handled differently for OCT_TX2_ISM_INT ?? */
 		OCTEON_WRITE32(droq->pkts_sent_reg, pkt_count);
 		pkt_count = OCTEON_READ32(droq->pkts_sent_reg);
+		if (pkt_count == 0xFFFFFFFF) {
+			new_pkts = 0;
+			pkt_count = 0;
+			printk("VF detected PCIe read error F's in %s \n",__func__);
+			break;
+		}
+		printk("In loop VF detected PCIe read error F's in %s \n",__func__);
 		new_pkts += pkt_count;
 	}
 

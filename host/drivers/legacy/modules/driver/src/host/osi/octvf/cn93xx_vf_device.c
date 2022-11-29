@@ -807,8 +807,10 @@ static uint32_t cn93xx_update_read_index(octeon_instr_queue_t * iq)
 	u32 pkt_in_done = OCTEON_READ32(iq->inst_cnt_reg);
 
 	/* When there is no response to PCI read */
-	if (pkt_in_done == 0xFFFFFFFF)
+	if (pkt_in_done == 0xFFFFFFFF) {
+		printk("VF detected PCIe read error F's in %s \n",__func__);
 		last_done = 0;
+	}
 	else {
 		last_done = pkt_in_done - iq->pkt_in_done;
 		iq->pkt_in_done = pkt_in_done;
