@@ -29,6 +29,7 @@ then unpack, compile and install it.
 eg.
 ```bash
     export CROSS_COMPILE=<path to cross compiler>
+    export PATH=$PATH:<path to aarch64-marvell-linux-gnu-xxxx tools>
     mkdir libconfig-dep
     cd libconfig-dep
     mkdir bin
