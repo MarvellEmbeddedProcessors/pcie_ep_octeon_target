@@ -708,6 +708,7 @@ struct _OCTEON_DEVICE {
 	/* PHC related fields */
 	struct cavium_delayed_wq dev_poll_wq;
 	struct oct_ep_ptp_clock *oct_ep_ptp_clock;
+	struct kobject phc_sysfs_kobject;
 
 } ____cacheline_aligned_in_smp;
 
