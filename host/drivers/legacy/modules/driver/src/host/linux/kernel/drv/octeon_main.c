@@ -779,12 +779,6 @@ void octeon_destroy_resources(octeon_device_t * oct_dev)
 		cavium_print_msg("OCTEON[%d]: Response list deleted.\n",
 				 oct_dev->octeon_id);
 
-		if (oct_dev->sriov_info.sriov_enabled) {
-			octeon_disable_sriov(oct_dev);
-			cavium_print_msg("OCTEON[%d]: SRIOV disabled.\n",
-					 oct_dev->octeon_id);
-		}
-
 		/* Disable the device */
 		pci_disable_device(oct_dev->pci_dev);
 		octeon_delete_mbox(oct_dev);
@@ -846,6 +840,12 @@ void octeon_remove(struct pci_dev *pdev)
 			schedule_timeout_interruptible(HZ * 1);
 		}
 		goto before_exit;
+	}
+
+	if (oct_dev->sriov_info.sriov_enabled) {
+		octeon_disable_sriov(oct_dev);
+		cavium_print_msg("OCTEON[%d]: SRIOV disabled.\n",
+				 oct_dev->octeon_id);
 	}
 
 	/* Call the module handler for each module attached to the
