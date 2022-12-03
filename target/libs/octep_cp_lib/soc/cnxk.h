@@ -10,6 +10,16 @@
  */
 int cnxk_init(struct octep_cp_lib_cfg *cfg);
 
+/* Get platform information after initialization.
+ *
+ * Fill in information after initialization.
+ *
+ * @param info: [IN/OUT] non-null pointer to struct octep_cp_lib_info.
+ *
+ * return value: 0 on success, -errno on failure.
+ */
+int cnxk_get_info(struct octep_cp_lib_info *info);
+
 /* Send response to received message.
  *
  * Total buffer size cannot exceed max_msg_sz in library configuration.

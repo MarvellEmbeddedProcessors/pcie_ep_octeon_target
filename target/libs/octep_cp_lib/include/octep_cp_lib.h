@@ -26,6 +26,10 @@
 #define OCTEP_CP_SOC_MODEL_CN103xx_A0		BIT_ULL(23)
 #define OCTEP_CP_SOC_MODEL_CN106xx_A1		BIT_ULL(24)
 #define OCTEP_CP_SOC_MODEL_CNF105xx_A1		BIT_ULL(25)
+/* Following flags describe platform code is running on */
+#define OCTEP_CP_SOC_ENV_HW			BIT_ULL(61)
+#define OCTEP_CP_SOC_ENV_EMUL			BIT_ULL(62)
+#define OCTEP_CP_SOC_ENV_ASIM			BIT_ULL(63)
 
 #define OCTEP_CP_SOC_MODEL_CN96xx_Ax		(OCTEP_CP_SOC_MODEL_CN96xx_A0 | \
 						 OCTEP_CP_SOC_MODEL_CN96xx_B0)
@@ -67,6 +71,7 @@
 struct octep_cp_soc_model {
 	uint64_t flag;
 	char name[OCTEP_CP_SOC_MODEL_STR_LEN_MAX];
+	char env[OCTEP_CP_SOC_MODEL_STR_LEN_MAX];
 };
 
 /* Supported event types */
@@ -185,6 +190,34 @@ struct octep_cp_lib_cfg {
 	struct octep_cp_dom_cfg doms[OCTEP_CP_DOM_MAX];
 };
 
+/* pcie mac domain pf information */
+struct octep_cp_pf_info {
+	/* pcie mac domain pf index */
+	int idx;
+	/* Maximum supported message size */
+	uint16_t max_msg_sz;
+};
+
+/* pcie mac domain information */
+struct octep_cp_dom_info {
+	/* pcie mac domain index */
+	int idx;
+	/* pf count */
+	uint16_t npfs;
+	/* pf information */
+	struct octep_cp_pf_info pfs[OCTEP_CP_PF_PER_DOM_MAX];
+};
+
+/* library information */
+struct octep_cp_lib_info {
+	/* Detected soc */
+	struct octep_cp_soc_model soc_model;
+	/* number of pcie mac domains */
+	uint16_t ndoms;
+	/* configuration for pcie mac domains */
+	struct octep_cp_dom_info doms[OCTEP_CP_DOM_MAX];
+};
+
 /* Initialize octep_cp library.
  *
  * Library will fill in information after initialization.
@@ -194,6 +227,16 @@ struct octep_cp_lib_cfg {
  * return value: 0 on success, -errno on failure.
  */
 int octep_cp_lib_init(struct octep_cp_lib_cfg *cfg);
+
+/* Get library information after initialization.
+ *
+ * This api will return valid information only after library is initialized.
+ *
+ * @param info: [IN/OUT] non-null pointer to struct octep_cp_lib_info.
+ *
+ * return value: 0 on success, -errno on failure.
+ */
+int octep_cp_lib_get_info(struct octep_cp_lib_info *info);
 
 /* Send response to received message.
  *

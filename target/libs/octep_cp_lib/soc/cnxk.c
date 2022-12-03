@@ -316,6 +316,32 @@ pf_alloc_fail:
 	return err;
 }
 
+int cnxk_get_info(struct octep_cp_lib_info *info)
+{
+	struct octep_cp_dom_info *dom_info;
+	struct octep_cp_pf_info *pf_info;
+	struct cnxk_pem *pem;
+	struct cnxk_pf *pf;
+	int i, j;
+
+	info->ndoms = npems;
+	for (i = 0; i < npems; i++) {
+		pem = &pems[i];
+		dom_info = &info->doms[i];
+		dom_info->idx = pem->idx;
+		dom_info->npfs = pem->npfs;
+
+		for (j = 0; j < pem->npfs; j++) {
+			pf = &pem->pfs[j];
+			pf_info = &dom_info->pfs[j];
+			pf_info->idx = pf->idx;
+			pf_info->max_msg_sz = pf->mbox.h2fq.sz;
+		}
+	}
+
+	return 0;
+}
+
 static struct cnxk_pf *get_pf(struct cnxk_pem *pem, int idx)
 {
 	int i;

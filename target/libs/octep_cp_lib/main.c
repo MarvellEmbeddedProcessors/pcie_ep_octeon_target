@@ -46,6 +46,29 @@ int octep_cp_lib_init(struct octep_cp_lib_cfg *cfg)
 }
 
 __attribute__((visibility("default")))
+int octep_cp_lib_get_info(struct octep_cp_lib_info *info)
+{
+	int err;
+
+	CP_LIB_LOG(INFO, LIB, "get info\n");
+	if (state < CP_LIB_STATE_INIT)
+		return -EAGAIN;
+
+	if (!info)
+		return -EINVAL;
+
+	err = sops->get_info(info);
+	if (err < 0)
+		return err;
+
+	err = soc_get_model(&info->soc_model);
+	if (err < 0)
+		return err;
+
+	return 0;
+}
+
+__attribute__((visibility("default")))
 int octep_cp_lib_send_msg_resp(union octep_cp_msg_info *ctx,
 			       struct octep_cp_msg *msgs,
 			       int num)

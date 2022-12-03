@@ -22,57 +22,6 @@
 #define BIT_ULL(nr) (1ULL << (nr))
 #endif
 
-struct soc_model {
-#define SOC_MODEL_CN96xx_A0    BIT_ULL(0)
-#define SOC_MODEL_CN96xx_B0    BIT_ULL(1)
-#define SOC_MODEL_CN96xx_C0    BIT_ULL(2)
-#define SOC_MODEL_CNF95xx_A0   BIT_ULL(4)
-#define SOC_MODEL_CNF95xx_B0   BIT_ULL(6)
-#define SOC_MODEL_CNF95xxMM_A0 BIT_ULL(8)
-#define SOC_MODEL_CNF95xxN_A0  BIT_ULL(12)
-#define SOC_MODEL_CNF95xxO_A0  BIT_ULL(13)
-#define SOC_MODEL_CNF95xxN_A1  BIT_ULL(14)
-#define SOC_MODEL_CNF95xxN_B0  BIT_ULL(15)
-#define SOC_MODEL_CN98xx_A0    BIT_ULL(16)
-#define SOC_MODEL_CN98xx_A1    BIT_ULL(17)
-#define SOC_MODEL_CN106xx_A0   BIT_ULL(20)
-#define SOC_MODEL_CNF105xx_A0  BIT_ULL(21)
-#define SOC_MODEL_CNF105xxN_A0 BIT_ULL(22)
-#define SOC_MODEL_CN103xx_A0   BIT_ULL(23)
-#define SOC_MODEL_CN106xx_A1   BIT_ULL(24)
-/* Following flags describe platform code is running on */
-#define SOC_ENV_HW   BIT_ULL(61)
-#define SOC_ENV_EMUL BIT_ULL(62)
-#define SOC_ENV_ASIM BIT_ULL(63)
-
-	uint64_t flag;
-#define SOC_MODEL_STR_LEN_MAX 128
-	char name[SOC_MODEL_STR_LEN_MAX];
-	char env[SOC_MODEL_STR_LEN_MAX];
-};
-
-#define SOC_MODEL_CN96xx_Ax (SOC_MODEL_CN96xx_A0 | SOC_MODEL_CN96xx_B0)
-#define SOC_MODEL_CN98xx_Ax (SOC_MODEL_CN98xx_A0 | SOC_MODEL_CN98xx_A1)
-#define SOC_MODEL_CN9K                                                         \
-	(SOC_MODEL_CN96xx_Ax | SOC_MODEL_CN96xx_C0 | SOC_MODEL_CNF95xx_A0 |    \
-	 SOC_MODEL_CNF95xx_B0 | SOC_MODEL_CNF95xxMM_A0 |                       \
-	 SOC_MODEL_CNF95xxO_A0 | SOC_MODEL_CNF95xxN_A0 | SOC_MODEL_CN98xx_Ax | \
-	 SOC_MODEL_CNF95xxN_A1 | SOC_MODEL_CNF95xxN_B0)
-#define SOC_MODEL_CNF9K                                                        \
-	(SOC_MODEL_CNF95xx_A0 | SOC_MODEL_CNF95xx_B0 |                         \
-	 SOC_MODEL_CNF95xxMM_A0 | SOC_MODEL_CNF95xxO_A0 |                      \
-	 SOC_MODEL_CNF95xxN_A0 | SOC_MODEL_CNF95xxN_A1 |                       \
-	 SOC_MODEL_CNF95xxN_B0)
-
-#define SOC_MODEL_CN106xx   (SOC_MODEL_CN106xx_A0 | SOC_MODEL_CN106xx_A1)
-#define SOC_MODEL_CNF105xx  (SOC_MODEL_CNF105xx_A0)
-#define SOC_MODEL_CNF105xxN (SOC_MODEL_CNF105xxN_A0)
-#define SOC_MODEL_CN103xx   (SOC_MODEL_CN103xx_A0)
-#define SOC_MODEL_CN10K                                                        \
-	(SOC_MODEL_CN106xx | SOC_MODEL_CNF105xx | SOC_MODEL_CNF105xxN |        \
-	 SOC_MODEL_CN103xx)
-#define SOC_MODEL_CNF10K (SOC_MODEL_CNF105xx | SOC_MODEL_CNF105xxN)
-
 /* RoC and CPU IDs and revisions */
 #define VENDOR_ARM    0x41 /* 'A' */
 #define VENDOR_CAVIUM 0x43 /* 'C' */
@@ -307,14 +256,15 @@ static int populate_model(uint32_t midr)
 		    model_db[i].major == major && model_db[i].minor == minor) {
 			model.flag = model_db[i].flag;
 			strncpy(model.name, model_db[i].name,
-				SOC_MODEL_STR_LEN_MAX - 1);
+				OCTEP_CP_SOC_MODEL_STR_LEN_MAX - 1);
 			ret = 0;
 			break;
 		}
 not_found:
 	if (ret) {
 		model.flag = 0;
-		strncpy(model.name, "unknown", SOC_MODEL_STR_LEN_MAX - 1);
+		strncpy(model.name, "unknown",
+			OCTEP_CP_SOC_MODEL_STR_LEN_MAX - 1);
 		CP_LIB_LOG(ERR, SOC,
 			   "Invalid SoC model "
 			   "(impl=0x%x, part=0x%x, major=0x%x, minor=0x%x)",
@@ -353,6 +303,41 @@ err:
 	return rc;
 }
 
+static void of_env_get()
+{
+	const char *const path = "/proc/device-tree/soc@0/runplatform";
+	const char *const hw_plt = "HW_PLATFORM";
+	FILE *fp;
+
+	if (access(path, F_OK) != 0) {
+		strncpy(model.env, "HW_PLATFORM",
+			OCTEP_CP_SOC_MODEL_STR_LEN_MAX - 1);
+		model.flag = OCTEP_CP_SOC_ENV_HW;
+		return;
+	}
+
+	fp = fopen(path, "r");
+	if (!fp) {
+		CP_LIB_LOG(ERR, SOC, "Failed to open %s", path);
+		return;
+	}
+
+	if (!fgets(model.env, sizeof(model.env), fp)) {
+		CP_LIB_LOG(ERR, SOC, "Failed to read %s", path);
+		goto err;
+	}
+
+	/* we only support hardware platform */
+	if (strncmp(hw_plt, model.env, strlen(hw_plt))) {
+		CP_LIB_LOG(ERR, SOC, "Unknown platform: %s", model.env);
+		goto err;
+	}
+
+	model.flag = OCTEP_CP_SOC_ENV_HW;
+err:
+	fclose(fp);
+}
+
 static int detect_soc()
 {
 	unsigned long midr;
@@ -375,6 +360,7 @@ static struct cp_lib_soc_ops ops[CP_LIB_SOC_MAX] = {
 	/* otx2 */
 	{
 		cnxk_init,
+		cnxk_get_info,
 		cnxk_send_msg_resp,
 		cnxk_send_notification,
 		cnxk_recv_msg,
@@ -385,6 +371,7 @@ static struct cp_lib_soc_ops ops[CP_LIB_SOC_MAX] = {
 	/* cnxk */
 	{
 		cnxk_init,
+		cnxk_get_info,
 		cnxk_send_msg_resp,
 		cnxk_send_notification,
 		cnxk_recv_msg,
@@ -402,7 +389,7 @@ int soc_get_ops(struct cp_lib_soc_ops **p_ops)
 	if (err)
 		return err;
 
-	soc = (model.flag & (SOC_MODEL_CN10K)) ?
+	soc = (model.flag & (OCTEP_CP_SOC_MODEL_CN10K)) ?
 	       CP_LIB_SOC_CNXK : CP_LIB_SOC_OTX2;
 	if (!p_ops) {
 		CP_LIB_LOG(INFO, SOC, "Invalid param: p_ops:%p\n", p_ops);
@@ -410,5 +397,11 @@ int soc_get_ops(struct cp_lib_soc_ops **p_ops)
 	}
 	*p_ops = &ops[soc];
 
+	return 0;
+}
+
+int soc_get_model(struct octep_cp_soc_model *sm)
+{
+	memcpy(sm, &model, sizeof(struct octep_cp_soc_model));
 	return 0;
 }

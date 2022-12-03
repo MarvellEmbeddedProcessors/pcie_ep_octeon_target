@@ -57,6 +57,8 @@ struct cp_lib_cfg {
 struct cp_lib_soc_ops {
 	/* initialize */
 	int (*init)(struct octep_cp_lib_cfg *p_cfg);
+	/* get info */
+	int (*get_info)(struct octep_cp_lib_info *info);
 	/* send message responses to host */
 	int (*send_msg_resp)(union octep_cp_msg_info *ctx,
 			     struct octep_cp_msg *msg, int num);
@@ -86,6 +88,14 @@ extern enum cp_lib_soc soc;
  * return value: 0 on success, -errno on failure.
  */
 int soc_get_ops(struct cp_lib_soc_ops **ops);
+
+/* Get soc model.
+ *
+ * @param model: non-null pointer to struct octep_cp_soc_model.
+ *
+ * return value: 0 on success, -errno on failure.
+ */
+int soc_get_model(struct octep_cp_soc_model *sm);
 
 /* Parse file and populate configuration.
  *
