@@ -16,22 +16,7 @@
 
 #define PCIEEP_VSECST_CTL		(0x4d0ull)
 
-/*
- * This register only supported on cn10k.
- * The documentation for this register is not clear, and the current
- * implementation works for 0x418, and should work for all multiple
- * of 8 addresses.  It has not been tested for multiple of 4 addresses,
- * nor for addresses with bit 16 set.
- */
-#define PEMX_PFX_CSX_PFCFGX(pem, pf, offset)    ((0x8e0000008000 | \
-						  (uint64_t)pem << 36 | \
-						  pf << 18 | \
-						  ((offset >> 16) & 1) << 16 | \
-						  (offset >> 3) << 3) + \
-						 (((offset >> 2) & 1) << 2))
-
-#define CN10K_PCIEEP_VSECST_CTL			(0x418ull)
-
+#define CN10K_PCIEEP_VSECST_CTL		(0x418ull)
 
 /* oei trig interrupt register */
 #define SDP0_EPFX_OEI_TRIG(pf)		(0x86E0C0000000ull | (pf << 25))

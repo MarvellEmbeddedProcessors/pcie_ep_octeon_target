@@ -162,23 +162,33 @@ static int set_fw_ready(struct cnxk_pem *pem, struct cnxk_pf *pf,
 {
 	uint64_t val;
 	void* addr;
-	off_t reg;
 
-	/* for cn10k we map into pf0 only */
-	reg = (IS_SOC_CN10K) ?
-	       PEMX_PFX_CSX_PFCFGX(pem->idx, 0, CN10K_PCIEEP_VSECST_CTL) :
-	       PEMX_BASE(pem->idx);
-	addr = map_reg(0, 8, PROT_READ | PROT_WRITE, MAP_SHARED, reg);
+	addr = map_reg(0,
+		       8,
+		       PROT_READ | PROT_WRITE,
+		       MAP_SHARED,
+		       PEMX_BASE(pem->idx));
 	if (!addr) {
 		CP_LIB_LOG(INFO, CNXK,
-			   "Error setting pem[%d] [%p] fw ready(%d).\n",
-			   pem->idx, reg, status);
+			   "Error setting pem[%d] pf[%d] fw ready(%d).\n",
+			   pem->idx, pf->idx, status);
 		return -EIO;
 	}
-
 	if (IS_SOC_CN10K) {
-		/* 8 byte mapping needed, both 32 bit addresses used */
+		/* for cn10k we map into pf0 only
+		 *
+		 * This register only supported on cn10k.
+		 * The documentation for this register is not clear, and the current
+		 * implementation works for 0x418, and should work for all multiple
+		 * of 8 addresses.  It has not been tested for multiple of 4 addresses,
+		 * nor for addresses with bit 16 set.
+		 */
+		addr += (0x8000 | CN10K_PCIEEP_VSECST_CTL);
 		cp_write32(status, addr);
+		CP_LIB_LOG(INFO, CNXK,
+			   "pem[%d] pf[%d] fw ready %lx addr %p\n",
+			   pem->idx, pf->idx,
+			   status, addr);
 	} else {
 		addr += PEMX_CFG_WR_OFFSET;
 		val = ((status << PEMX_CFG_WR_DATA) |
