@@ -26,10 +26,6 @@
 #define OCTEP_CP_SOC_MODEL_CN103xx_A0		BIT_ULL(23)
 #define OCTEP_CP_SOC_MODEL_CN106xx_A1		BIT_ULL(24)
 #define OCTEP_CP_SOC_MODEL_CNF105xx_A1		BIT_ULL(25)
-/* Following flags describe platform code is running on */
-#define OCTEP_CP_SOC_ENV_HW			BIT_ULL(61)
-#define OCTEP_CP_SOC_ENV_EMUL			BIT_ULL(62)
-#define OCTEP_CP_SOC_ENV_ASIM			BIT_ULL(63)
 
 #define OCTEP_CP_SOC_MODEL_CN96xx_Ax		(OCTEP_CP_SOC_MODEL_CN96xx_A0 | \
 						 OCTEP_CP_SOC_MODEL_CN96xx_B0)
@@ -71,7 +67,6 @@
 struct octep_cp_soc_model {
 	uint64_t flag;
 	char name[OCTEP_CP_SOC_MODEL_STR_LEN_MAX];
-	char env[OCTEP_CP_SOC_MODEL_STR_LEN_MAX];
 };
 
 /* Supported event types */
