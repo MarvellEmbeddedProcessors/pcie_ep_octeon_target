@@ -303,41 +303,6 @@ err:
 	return rc;
 }
 
-static void of_env_get()
-{
-	const char *const path = "/proc/device-tree/soc@0/runplatform";
-	const char *const hw_plt = "HW_PLATFORM";
-	FILE *fp;
-
-	if (access(path, F_OK) != 0) {
-		strncpy(model.env, "HW_PLATFORM",
-			OCTEP_CP_SOC_MODEL_STR_LEN_MAX - 1);
-		model.flag = OCTEP_CP_SOC_ENV_HW;
-		return;
-	}
-
-	fp = fopen(path, "r");
-	if (!fp) {
-		CP_LIB_LOG(ERR, SOC, "Failed to open %s", path);
-		return;
-	}
-
-	if (!fgets(model.env, sizeof(model.env), fp)) {
-		CP_LIB_LOG(ERR, SOC, "Failed to read %s", path);
-		goto err;
-	}
-
-	/* we only support hardware platform */
-	if (strncmp(hw_plt, model.env, strlen(hw_plt))) {
-		CP_LIB_LOG(ERR, SOC, "Unknown platform: %s", model.env);
-		goto err;
-	}
-
-	model.flag = OCTEP_CP_SOC_ENV_HW;
-err:
-	fclose(fp);
-}
-
 static int detect_soc()
 {
 	unsigned long midr;
