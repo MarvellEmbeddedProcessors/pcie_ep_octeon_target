@@ -4,6 +4,7 @@
 
 #include <stdio.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <sys/mman.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -26,6 +27,8 @@
 #define MBOX_SZ		(size_t)(0x400000 / OCTEP_CP_PF_PER_DOM_MAX)
 
 struct cnxk_pf {
+	/* pf is valid */
+	bool valid;
 	/* index of pf */
 	unsigned long long idx;
 	/* mapped bar4 memory slot address */
@@ -37,18 +40,15 @@ struct cnxk_pf {
 };
 
 struct cnxk_pem {
+	/* pem is valid*/
+	bool valid;
 	/* index of pem */
 	unsigned long long idx;
-	/* index of 4mb bar4 memory slot */
-	int bar4_slot;
-	/* number of configured pf's */
-	int npfs;
 	/* array of pf's */
-	struct cnxk_pf *pfs;
+	struct cnxk_pf pfs[OCTEP_CP_PF_PER_DOM_MAX];
 };
 
-static int npems;
-static struct cnxk_pem pems[OCTEP_CP_DOM_MAX];
+static struct cnxk_pem pems[OCTEP_CP_DOM_MAX] = { 0 };
 
 static inline void* map_reg(void* addr, size_t len, int prot, int flags,
 			    off_t offset)
@@ -264,54 +264,57 @@ int cnxk_init(struct octep_cp_lib_cfg *cfg)
 	CP_LIB_LOG(INFO, CNXK, "init\n");
 
 	/* Initialize pf interfaces */
-	memset(pems, 0, sizeof(pems));
-	npems = cfg->ndoms;
-	for (i=0; i<npems; i++) {
+	memset(pems, 0, sizeof(pems[0]) * OCTEP_CP_DOM_MAX);
+	for (i = 0; i < cfg->ndoms; i++) {
 		dom_cfg = &cfg->doms[i];
-		pem = &pems[i];
-		pem->idx = dom_cfg->idx;
-		pem->npfs = dom_cfg->npfs;
-		pem->pfs = calloc(pem->npfs, sizeof(struct cnxk_pf));
-		if (!pem->pfs) {
-			err = -ENOMEM;
-			goto pf_alloc_fail;
+		if (dom_cfg->idx >= OCTEP_CP_DOM_MAX) {
+			CP_LIB_LOG(ERR, CNXK,
+				   "Invalid pem[%d] config index.\n",
+				   dom_cfg->idx);
+			err = -EINVAL;
+			goto init_fail;
 		}
-		for (j=0; j<dom_cfg->npfs; j++) {
+
+		pem = &pems[dom_cfg->idx];
+		pem->idx = dom_cfg->idx;
+		pem->valid = true;
+		for (j = 0; j < dom_cfg->npfs; j++) {
 			pf_cfg = &dom_cfg->pfs[j];
+			if (pf_cfg->idx >= OCTEP_CP_PF_PER_DOM_MAX) {
+				CP_LIB_LOG(ERR, CNXK,
+					   "Invalid pf[%d][%d] config index.\n",
+					   dom_cfg->idx, pf_cfg->idx);
+				err = -EINVAL;
+				goto init_fail;
+			}
+
 			pf = &pem->pfs[j];
 			pf->idx = pf_cfg->idx;
 			err = init_pf(pem, pf);
 			if (err) {
 				err = -ENOLINK;
-				goto init_pf_fail;
+				goto init_fail;
 			}
+			pf->valid = true;
 			pf_cfg->max_msg_sz = pf->mbox.h2fq.sz;
 		}
 	}
 
 	err = open_perst_uio();
 	if (err)
-		goto perst_uio_fail;
+		goto init_fail;
 
 	return 0;
 
-perst_uio_fail:
-	//close uio
-init_pf_fail:
-	for (i=0; i<npems; i++) {
-		if (!pems[i].pfs)
+init_fail:
+	for (i = 0; i < OCTEP_CP_DOM_MAX; i++) {
+		if (!pems[i].valid)
 			continue;
-		for (j=0; j<dom_cfg->npfs; j++)
-			uninit_pf(&pems[i], &(pems[i].pfs[j]));
+		for (j = 0; j < OCTEP_CP_PF_PER_DOM_MAX; j++) {
+			if (pems[i].pfs[j].valid)
+				uninit_pf(&pems[i], &(pems[i].pfs[j]));
+		}
 	}
-pf_alloc_fail:
-	for (i=0; i<npems; i++) {
-		if (!pems[i].pfs)
-			continue;
-		free(pems[i].pfs);
-		pems[i].npfs = 0;
-	}
-	npems = 0;
 
 	return err;
 }
@@ -324,34 +327,43 @@ int cnxk_get_info(struct octep_cp_lib_info *info)
 	struct cnxk_pf *pf;
 	int i, j;
 
-	info->ndoms = npems;
-	for (i = 0; i < npems; i++) {
+	info->ndoms = 0;
+	for (i = 0; i < OCTEP_CP_DOM_MAX; i++) {
 		pem = &pems[i];
-		dom_info = &info->doms[i];
-		dom_info->idx = pem->idx;
-		dom_info->npfs = pem->npfs;
+		if (!pem->valid)
+			continue;
 
-		for (j = 0; j < pem->npfs; j++) {
+		dom_info = &info->doms[i];
+		dom_info->idx = i;
+		dom_info->npfs = 0;
+		for (j = 0; j < OCTEP_CP_PF_PER_DOM_MAX; j++) {
 			pf = &pem->pfs[j];
+			if (!pf->valid)
+				continue;
+
 			pf_info = &dom_info->pfs[j];
-			pf_info->idx = pf->idx;
+			pf_info->idx = j;
 			pf_info->max_msg_sz = pf->mbox.h2fq.sz;
+			dom_info->npfs++;
 		}
+		info->ndoms++;
 	}
 
 	return 0;
 }
 
-static struct cnxk_pf *get_pf(struct cnxk_pem *pem, int idx)
+static inline struct cnxk_pf* get_pf(int pem_idx, int pf_idx)
 {
-	int i;
+	if (pem_idx >= OCTEP_CP_DOM_MAX || pf_idx >= OCTEP_CP_PF_PER_DOM_MAX)
+		return NULL;
 
-	for (i=0; i<pem->npfs; i++) {
-		if (pem->pfs[i].idx == idx)
-			return &pem->pfs[i];
-	}
+	if (!pems[pem_idx].valid)
+		return NULL;
 
-	return NULL;
+	if (!pems[pem_idx].pfs[pf_idx].valid)
+		return NULL;
+
+	return &pems[pem_idx].pfs[pf_idx];
 }
 
 int cnxk_send_msg_resp(union octep_cp_msg_info *ctx,
@@ -363,14 +375,11 @@ int cnxk_send_msg_resp(union octep_cp_msg_info *ctx,
 	struct cnxk_pf *pf;
 	int i, ret;
 
-	if (ctx->s.pem_idx >= npems || !num)
-		return -EINVAL;
-
-	pf = get_pf(&pems[ctx->s.pem_idx], ctx->s.pf_idx);
+	pf = get_pf(ctx->s.pem_idx, ctx->s.pf_idx);
 	if (!pf)
 		return -EINVAL;
 
-	for (i=0; i<num; i++) {
+	for (i = 0; i < num; i++) {
 		msg = &msgs[i];
 		hdr = (union octep_ctrl_mbox_msg_hdr *)&msg->info;
 		hdr->s.flags = OCTEP_CTRL_MBOX_MSG_HDR_FLAG_RESP;
@@ -399,10 +408,7 @@ int cnxk_send_notification(union octep_cp_msg_info *ctx,
 	struct cnxk_pf *pf;
 	int ret;
 
-	if (ctx->s.pem_idx >= npems)
-		return -EINVAL;
-
-	pf = get_pf(&pems[ctx->s.pem_idx], ctx->s.pf_idx);
+	pf = get_pf(ctx->s.pem_idx, ctx->s.pf_idx);
 	if (!pf)
 		return -EINVAL;
 
@@ -425,10 +431,7 @@ int cnxk_recv_msg(union octep_cp_msg_info *ctx,
 {
 	struct cnxk_pf *pf;
 
-	if (ctx->s.pem_idx >= npems || !num)
-		return -EINVAL;
-
-	pf = get_pf(&pems[ctx->s.pem_idx], ctx->s.pf_idx);
+	pf = get_pf(ctx->s.pem_idx, ctx->s.pf_idx);
 	if (!pf)
 		return -EINVAL;
 
@@ -439,25 +442,18 @@ int cnxk_recv_msg(union octep_cp_msg_info *ctx,
 
 int cnxk_send_event(struct octep_cp_event_info *info)
 {
-	struct cnxk_pem *pem;
 	struct cnxk_pf *pf;
 
 	if (info->e == OCTEP_CP_EVENT_TYPE_FW_READY) {
-		if (info->u.fw_ready.dom_idx >= npems)
-			return -EINVAL;
-
-		pem = &pems[info->u.fw_ready.dom_idx];
-		pf = get_pf(pem, info->u.fw_ready.pf_idx);
+		pf = get_pf(info->u.fw_ready.dom_idx, info->u.fw_ready.pf_idx);
 		if (!pf)
 			return -EINVAL;
 
-		return set_fw_ready(pem, pf, (info->u.fw_ready.ready != 0));
+		return set_fw_ready(&pems[info->u.fw_ready.dom_idx],
+				    pf,
+				    (info->u.fw_ready.ready != 0));
 	} else if (info->e == OCTEP_CP_EVENT_TYPE_HEARTBEAT) {
-		if (info->u.hbeat.dom_idx >= npems)
-			return -EINVAL;
-
-		pem = &pems[info->u.hbeat.dom_idx];
-		pf = get_pf(pem, info->u.hbeat.pf_idx);
+		pf = get_pf(info->u.hbeat.dom_idx, info->u.hbeat.pf_idx);
 		if (!pf)
 			return -EINVAL;
 
@@ -479,16 +475,17 @@ int cnxk_uninit()
 
 	CP_LIB_LOG(INFO, CNXK, "uninit\n");
 
-	for (i=0; i<npems; i++) {
-		if (pems[i].pfs) {
-			for (j=0; j<pems[i].npfs; j++) {
-				uninit_pf(&pems[i], &(pems[i].pfs[j]));
-			}
-			free(pems[i].pfs);
+	for (i = 0; i < OCTEP_CP_DOM_MAX; i++) {
+		if (!pems[i].valid)
+			continue;
+
+		for (j = 0; j < OCTEP_CP_PF_PER_DOM_MAX; j++) {
+			if (!pems[i].pfs[j].valid)
+				continue;
+
+			uninit_pf(&pems[i], &(pems[i].pfs[j]));
 		}
-		pems[i].npfs = 0;
 	}
-	npems = 0;
 
 	//close uio
 
