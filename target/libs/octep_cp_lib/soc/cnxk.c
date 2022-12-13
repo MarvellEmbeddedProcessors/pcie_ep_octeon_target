@@ -35,8 +35,12 @@ struct cnxk_pf {
 	uint64_t bar4_addr;
 	/* address of oei_trig register for interrupts */
 	void* oei_trig_addr;
+	/* offset from mapped address where actual data starts */
+	off_t oei_trig_offset;
 	/* pf mbox */
 	struct octep_ctrl_mbox mbox;
+	/* offset from mapped address where actual data starts */
+	off_t mbox_offset;
 };
 
 struct cnxk_pem {
@@ -50,9 +54,11 @@ struct cnxk_pem {
 
 static struct cnxk_pem pems[OCTEP_CP_DOM_MAX] = { 0 };
 
-static inline void* map_reg(void* addr, size_t len, int prot, int flags,
-			    off_t offset)
+static inline void* map_reg(unsigned long long addr, size_t len, int prot,
+			    off_t *offset)
 {
+	off_t pg_addr, pg_offset;
+	long pg_sz;
 	void* map;
 	int fd;
 
@@ -60,38 +66,53 @@ static inline void* map_reg(void* addr, size_t len, int prot, int flags,
 	if(fd <= 0)
 		return NULL;
 
-	map = mmap(addr, len, prot, flags, fd, offset);
+	pg_sz = sysconf(_SC_PAGESIZE);
+	pg_addr = ((addr / pg_sz) * pg_sz);
+	pg_offset = addr % pg_sz;
+	map = mmap(0, (pg_offset + len), prot, MAP_SHARED, fd, pg_addr);
 	if (map == (void *)MAP_FAILED) {
-		 CP_LIB_LOG(INFO, CNXK, "mmap[%llx:%llx] error (%d)\n",
-			    addr, offset, errno);
+		CP_LIB_LOG(INFO, CNXK, "mmap[%llx] error (%d)\n",
+			   addr, errno);
 		close(fd);
 		return NULL;
 	}
 	close(fd);
 
-	return map;
+	if (offset)
+		*offset = pg_offset;
+
+	return (map + pg_offset);
+}
+
+static inline int unmap_reg(void* addr, off_t offset, size_t len)
+{
+	return munmap((addr - offset), (len + offset));
 }
 
 static int get_bar4_idx8_addr(struct cnxk_pem *pem, struct cnxk_pf *pf)
 {
+	off_t offset = 0;
 	uint64_t val;
 	void* addr;
 
-	addr = map_reg(0, 8, PROT_READ, MAP_SHARED, PEMX_BASE(pem->idx));
+	addr = map_reg((PEMX_BASE(pem->idx) + BAR4_INDEX(8)),
+		       8,
+		       PROT_READ,
+		       &offset);
 	if (!addr) {
 		CP_LIB_LOG(INFO, CNXK, "Error mapping pem[%d] bar4 idx8\n",
 			   pem->idx);
 		return -EIO;
 	}
-	val = cp_read64(addr + BAR4_INDEX(8));
-	munmap(addr, 8);
+	val = cp_read64(addr);
+	unmap_reg(addr, offset, 8);
+
 	if (!(val & 1)) {
 		CP_LIB_LOG(INFO, CNXK,
 			   "Invalid pem[%d] pf[%d] bar4 idx8 value %lx\n",
 			   pem->idx, pf->idx, val);
 		return -ENOMEM;
 	}
-
 	val += (pf->idx * MBOX_SZ);
 	pf->bar4_addr = (((val & (~1)) >> 4) << 22);
 	CP_LIB_LOG(INFO, CNXK, "pem[%d] pf[%d] bar4 idx8 addr 0x%lx\n",
@@ -102,11 +123,10 @@ static int get_bar4_idx8_addr(struct cnxk_pem *pem, struct cnxk_pf *pf)
 
 static int open_oei_trig_csr(struct cnxk_pem *pem, struct cnxk_pf *pf)
 {
-	pf->oei_trig_addr = map_reg(0,
+	pf->oei_trig_addr = map_reg(SDP0_EPFX_OEI_TRIG(pf->idx),
 				    8,
 				    PROT_READ | PROT_WRITE,
-				    MAP_SHARED,
-				    SDP0_EPFX_OEI_TRIG(pf->idx));
+				    &pf->oei_trig_offset);
 	if (!pf->oei_trig_addr) {
 		CP_LIB_LOG(INFO, CNXK,
 			   "Error mapping pem[%d] pf[%d] oei_trig_addr(%p)\n",
@@ -125,11 +145,10 @@ static int init_mbox(struct cnxk_pem *pem, struct cnxk_pf *pf)
 	int err;
 
 	mbox = &pf->mbox;
-	mbox->barmem = map_reg(0,
+	mbox->barmem = map_reg(pf->bar4_addr,
 			       MBOX_SZ,
 			       PROT_READ | PROT_WRITE,
-			       MAP_SHARED,
-			       pf->bar4_addr);
+			       &pf->mbox_offset);
 	if (!mbox->barmem) {
 		CP_LIB_LOG(INFO, CNXK,
 			   "Error allocating pem[%d] pf[%d] mbox.\n",
@@ -137,12 +156,11 @@ static int init_mbox(struct cnxk_pem *pem, struct cnxk_pf *pf)
 		return -ENOMEM;
 	}
 	mbox->barmem_sz = MBOX_SZ;
-
 	err = octep_ctrl_mbox_init(mbox);
 	if (err) {
 		CP_LIB_LOG(INFO, CNXK, "pem[%d] pf[%d] mbox init failed.\n",
 			   pem->idx, pf->idx);
-		munmap(mbox->barmem, MBOX_SZ);
+		unmap_reg(mbox->barmem, pf->mbox_offset, MBOX_SZ);
 	}
 	CP_LIB_LOG(INFO, CNXK, "pem[%d] pf[%d] mbox h2fq sz %u addr %p\n",
 		   pem->idx, pf->idx, mbox->h2fq.sz, mbox->h2fq.hw_q);
@@ -160,20 +178,10 @@ static int open_perst_uio()
 static int set_fw_ready(struct cnxk_pem *pem, struct cnxk_pf *pf,
 			unsigned long long status)
 {
+	off_t offset = 0;
 	uint64_t val;
 	void* addr;
 
-	addr = map_reg(0,
-		       8,
-		       PROT_READ | PROT_WRITE,
-		       MAP_SHARED,
-		       PEMX_BASE(pem->idx));
-	if (!addr) {
-		CP_LIB_LOG(INFO, CNXK,
-			   "Error setting pem[%d] pf[%d] fw ready(%d).\n",
-			   pem->idx, pf->idx, status);
-		return -EIO;
-	}
 	if (IS_SOC_CN10K) {
 		/* for cn10k we map into pf0 only
 		 *
@@ -183,26 +191,45 @@ static int set_fw_ready(struct cnxk_pem *pem, struct cnxk_pf *pf,
 		 * of 8 addresses.  It has not been tested for multiple of 4 addresses,
 		 * nor for addresses with bit 16 set.
 		 */
-		addr += (0x8000 | CN10K_PCIEEP_VSECST_CTL);
+		addr = map_reg((PEMX_BASE(pem->idx) +
+				(0x8000 | CN10K_PCIEEP_VSECST_CTL)),
+			       8,
+			       PROT_READ | PROT_WRITE,
+			       &offset);
+		if (!addr) {
+			CP_LIB_LOG(INFO, CNXK,
+				   "Error setting pem[%d] pf[%d] fw ready(%d).\n",
+				   pem->idx, pf->idx, status);
+			return -EIO;
+		}
 		cp_write32(status, addr);
 		CP_LIB_LOG(INFO, CNXK,
 			   "pem[%d] pf[%d] fw ready %lx addr %p\n",
 			   pem->idx, pf->idx,
 			   status, addr);
 	} else {
-		addr += PEMX_CFG_WR_OFFSET;
+		addr = map_reg((PEMX_BASE(pem->idx) + PEMX_CFG_WR_OFFSET),
+			       8,
+			       PROT_READ | PROT_WRITE,
+			       &offset);
+		if (!addr) {
+			CP_LIB_LOG(INFO, CNXK,
+				   "Error setting pem[%d] pf[%d] fw ready(%d).\n",
+				   pem->idx, pf->idx, status);
+			return -EIO;
+		}
 		val = ((status << PEMX_CFG_WR_DATA) |
 		       (1 << 15) |
-		       (PCIEEP_VSECST_CTL << PEMX_CFG_WR_REG));
-
-		cp_write64((val | (pf->idx << PEMX_CFG_WR_PF)), addr);
+		       (PCIEEP_VSECST_CTL << PEMX_CFG_WR_REG) |
+		       (pf->idx << PEMX_CFG_WR_PF));
+		cp_write64(val, addr);
 		cp_read64(addr);
 		CP_LIB_LOG(INFO, CNXK,
 			   "pem[%d] pf[%d] fw ready %lx addr %p\n",
 			   pem->idx, pf->idx,
-			   val, addr + PEMX_CFG_WR_OFFSET);
+			   val, addr);
 	}
-	munmap(addr, 8);
+	unmap_reg(addr, offset, 8);
 
 	return 0;
 }
@@ -228,11 +255,11 @@ static int uninit_pf(struct cnxk_pem *pem, struct cnxk_pf *pf)
 {
 	if (pf->mbox.barmem) {
 		octep_ctrl_mbox_uninit(&pf->mbox);
-		munmap(pf->mbox.barmem, MBOX_SZ);
+		unmap_reg(pf->mbox.barmem, pf->mbox_offset, MBOX_SZ);
 	}
 
 	if (pf->oei_trig_addr)
-		munmap(pf->oei_trig_addr, 8);
+		unmap_reg(pf->oei_trig_addr, pf->oei_trig_offset, 8);
 
 	return 0;
 }
