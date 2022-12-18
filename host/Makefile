@@ -12,6 +12,7 @@ SUBDIRS+=drivers/mgmt_net
 SUBDIRS+=drivers/phc
 SUBDIRS+=drivers/octeon_ep
 SUBDIRS+=drivers/octeon_ep_vf
+SUBDIRS+=drivers/octboot_net
 
 all: $(SUBDIRS)
 		for d in $(SUBDIRS); do \
