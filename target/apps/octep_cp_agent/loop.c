@@ -222,6 +222,39 @@ static int process_get_info(struct octep_fw_info *info,
 	return info_sz;
 }
 
+static int process_dev_remove(union octep_cp_msg_info *fn_ctx,
+			      struct fn_cfg *fn,
+			      struct octep_ctrl_net_h2f_resp *resp)
+{
+	union octep_cp_msg_info vf_ctx;
+	struct fn_cfg *orig_fn;
+	struct pf_cfg *pf;
+	int i;
+
+	printf("\nCmd: device remove\n");
+
+	orig_fn = app_config_get_fn(&cfg, fn_ctx);
+	memcpy(fn, orig_fn, sizeof(struct fn_cfg));
+	if (fn_ctx->s.is_vf)
+		goto ret;
+
+	/* Initialize data for dependent vf's */
+	pf = &loop_cfg.pems[fn_ctx->s.pem_idx].pfs[fn_ctx->s.pf_idx];
+	memcpy(&vf_ctx, fn_ctx, sizeof(*fn_ctx));
+	vf_ctx.s.is_vf = 1;
+	for (i = 0; i < pf->nvf; i++) {
+		vf_ctx.s.vf_idx = i;
+		fn = app_config_get_fn(&loop_cfg, &vf_ctx);
+		orig_fn = app_config_get_fn(&cfg, &vf_ctx);
+		memcpy(fn, orig_fn, sizeof(struct fn_cfg));
+	}
+
+ret:
+	resp->hdr.s.reply = OCTEP_CTRL_NET_REPLY_OK;
+	return 0;
+
+}
+
 static int process_msg(union octep_cp_msg_info *ctx, struct octep_cp_msg* msg)
 {
 	struct octep_ctrl_net_h2f_req *req;
@@ -261,6 +294,9 @@ static int process_msg(union octep_cp_msg_info *ctx, struct octep_cp_msg* msg)
 			break;
 		case OCTEP_CTRL_NET_H2F_CMD_GET_INFO:
 			resp_sz += process_get_info(&fn->info, req, &resp);
+			break;
+		case OCTEP_CTRL_NET_H2F_CMD_DEV_REMOVE:
+			resp_sz += process_dev_remove(&msg->info, fn, &resp);
 			break;
 		default:
 			printf("APP: Unhandled Cmd : %u\n", req->hdr.s.cmd);
