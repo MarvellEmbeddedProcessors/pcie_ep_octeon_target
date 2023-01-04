@@ -5,12 +5,17 @@
 #define __APP_CONFIG_H__
 
 #include <stdint.h>
+#include <stdbool.h>
 
 #include <octep_hw.h>
 
 #ifndef ETH_ALEN
 #define ETH_ALEN	6
 #endif
+
+#define APP_CFG_PEM_MAX			8
+#define APP_CFG_PF_PER_PEM_MAX		128
+#define APP_CFG_VF_PER_PF_MAX		64
 
 #define MIN_HB_INTERVAL_MSECS		1000
 #define MAX_HB_INTERVAL_MSECS		15000
@@ -26,7 +31,6 @@ struct if_stats {
 
 /* Network interface data */
 struct if_cfg {
-	uint16_t idx;
 	uint16_t host_if_id;
 	/* current MTU of the interface */
 	uint16_t mtu;
@@ -49,41 +53,44 @@ struct if_cfg {
 	uint64_t advertised_modes;
 };
 
-/* Virtual function configuration */
-struct vf_cfg {
-	/* vf index */
-	int idx;
+/* function config */
+struct fn_cfg {
 	/* network interface data */
 	struct if_cfg iface;
+	/* network interface stats */
 	struct if_stats ifstats;
+	/* interface info */
 	struct octep_fw_info info;
-	struct vf_cfg *next;
+};
+
+/* Virtual function configuration */
+struct vf_cfg {
+	/* vf is valid */
+	bool valid;
+	/* config */
+	struct fn_cfg fn;
 };
 
 /* Physical function configuration */
 struct pf_cfg {
-	/* pf index */
-	int idx;
-	/* network interface data */
-	struct if_cfg iface;
-	struct if_stats ifstats;
-	struct octep_fw_info info;
+	/* pf is valid */
+	bool valid;
+	/* config */
+	struct fn_cfg fn;
 	/* number of vf's */
 	int nvf;
 	/* configuration for vf's */
-	struct vf_cfg *vfs;
-	struct pf_cfg *next;
+	struct vf_cfg vfs[APP_CFG_VF_PER_PF_MAX];
 };
 
 /* PEM configuration */
 struct pem_cfg {
-	/* pem index */
-	int idx;
+	/* pem is valid */
+	bool valid;
 	/* number of pf's */
 	int npf;
 	/* configuration for pf's */
-	struct pf_cfg *pfs;
-	struct pem_cfg *next;
+	struct pf_cfg pfs[APP_CFG_PF_PER_PEM_MAX];
 };
 
 /* app configuration */
@@ -91,7 +98,7 @@ struct app_cfg {
 	/* number of pem's */
 	int npem;
 	/* configuration for pem's */
-	struct pem_cfg *pems;
+	struct pem_cfg pems[APP_CFG_PEM_MAX];
 };
 
 extern struct app_cfg cfg;
@@ -104,23 +111,31 @@ extern struct app_cfg cfg;
  */
 int app_config_init(const char *cfg_file_path);
 
-/* Get interface based on information in essage header.
+/* Get pf/vf config based on information in message header.
  *
- * @param ctx_info: non-null pointer to message context info. This is the
- *                  pem->pf context used to poll for messages.
- * @param msg_info: non-null pointer to message info. This is the info from
- *                  received message.
- * @param iface: non-null pointer to struct if_cfg *.
- * @param ifstats: non-null pointer to struct if_stats *.
- * @param info: non-null pointer to struct octep_fw_info *.
+ * @param cfg: non-null pointer to struct app_cfg *.
+ * @param msg: non-null pointer to message info.
  *
- * return value: 0 on success, -errno on failure.
+ * return value: pointer to valid struct fn_cfg* on success, NULL on failure.
  */
-int app_config_get_if_from_msg_info(union octep_cp_msg_info *ctx_info,
-				    union octep_cp_msg_info *msg_info,
-				    struct if_cfg **iface,
-				    struct if_stats **ifstats,
-				    struct octep_fw_info **info);
+static inline struct fn_cfg *app_config_get_fn(struct app_cfg *p_cfg,
+					       union octep_cp_msg_info *msg)
+{
+	struct pf_cfg *pf;
+
+	if (msg->s.pem_idx >= APP_CFG_PEM_MAX)
+		return NULL;
+
+	if (msg->s.pf_idx >= APP_CFG_PF_PER_PEM_MAX)
+		return NULL;
+
+	if (msg->s.is_vf && msg->s.vf_idx >= APP_CFG_VF_PER_PF_MAX)
+		return NULL;
+
+	pf = &(p_cfg->pems[msg->s.pem_idx].pfs[msg->s.pf_idx]);
+
+	return (msg->s.is_vf) ? &(pf->vfs[msg->s.vf_idx].fn) : &pf->fn;
+}
 
 /* Free allocated configuration artifacts.
  *

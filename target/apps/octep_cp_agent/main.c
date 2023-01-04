@@ -92,7 +92,7 @@ static int set_fw_ready(int ready)
 
 int main(int argc, char *argv[])
 {
-	int err = 0, i, j;
+	int err = 0, src_i, src_j, dst_i, dst_j;
 	struct pem_cfg *pem;
 	struct pf_cfg *pf;
 
@@ -108,24 +108,30 @@ int main(int argc, char *argv[])
 	signal(SIGALRM, sigint_handler);
 
 init:
+	hb_interval = 0;
 	cp_lib_cfg.ndoms = cfg.npem;
-	pem = cfg.pems;
-	i = 0;
-	while (pem) {
-		cp_lib_cfg.doms[i].idx = pem->idx;
-		cp_lib_cfg.doms[i].npfs = pem->npf;
-		pf = pem->pfs;
-		j = 0;
-		while (pf) {
-			cp_lib_cfg.doms[i].pfs[j++].idx = pf->idx;
-			if (hb_interval == 0 ||
-			    pf->info.hb_interval < hb_interval)
-				hb_interval = pf->info.hb_interval;
+	dst_i = 0;
+	for (src_i = 0; src_i < APP_CFG_PEM_MAX; src_i++) {
+		pem = &cfg.pems[src_i];
+		if (!pem->valid)
+			continue;
 
-			pf = pf->next;
+		cp_lib_cfg.doms[dst_i].idx = src_i;
+		cp_lib_cfg.doms[dst_i].npfs = pem->npf;
+		dst_j = 0;
+		for (src_j = 0; src_j < APP_CFG_PF_PER_PEM_MAX; src_j++) {
+			pf = &pem->pfs[src_j];
+			if (!pf->valid)
+				continue;
+
+			cp_lib_cfg.doms[dst_i].pfs[dst_j].idx = src_j;
+			if (hb_interval == 0 ||
+			    pf->fn.info.hb_interval < hb_interval)
+				hb_interval = pf->fn.info.hb_interval;
+
+			dst_j++;
 		}
-		pem = pem->next;
-		i++;
+		dst_i++;
 	}
 	err = octep_cp_lib_init(&cp_lib_cfg);
 	if (err)

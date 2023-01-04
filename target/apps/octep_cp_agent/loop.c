@@ -20,6 +20,7 @@
 static struct octep_cp_msg rx_msg[LOOP_RX_BUF_CNT];
 static int rx_num = LOOP_RX_BUF_CNT;
 static int max_msg_sz = sizeof(union octep_ctrl_net_max_data);
+static struct app_cfg loop_cfg = { 0 };
 
 extern struct octep_cp_lib_cfg cp_lib_cfg;
 
@@ -54,6 +55,9 @@ int loop_init()
 		if (!msg->sg_list[0].msg)
 			goto mem_alloc_fail;
 	}
+
+	/* copy over global config into local runtime config */
+	memcpy(&loop_cfg, &cfg, sizeof(struct app_cfg));
 
 	printf("Loop: using single buffer with msg sz %u.\n", max_msg_sz);
 
@@ -222,45 +226,40 @@ static int process_msg(union octep_cp_msg_info *ctx, struct octep_cp_msg* msg)
 	struct octep_ctrl_net_h2f_req *req;
 	struct octep_ctrl_net_h2f_resp resp = { 0 };
 	struct octep_cp_msg resp_msg;
-	struct if_cfg *iface;
-	struct if_stats *ifdata;
-	struct octep_fw_info *info;
+	struct fn_cfg *fn;
 	int err, resp_sz;
 
-	err = app_config_get_if_from_msg_info(ctx,
-					      &msg->info,
-					      &iface,
-					      &ifdata,
-					      &info);
-	if (err) {
+	fn = app_config_get_fn(&loop_cfg, &msg->info);
+	if (!fn) {
 		printf("Invalid msg[%lx]\n", msg->info.words[0]);
 		return err;
 	}
+
 	req = (struct octep_ctrl_net_h2f_req *)msg->sg_list[0].msg;
 	resp.hdr.words[0] = req->hdr.words[0];
-	iface->host_if_id = req->hdr.s.sender;
+	fn->iface.host_if_id = req->hdr.s.sender;
 	resp_sz = resp_hdr_sz;
 	switch (req->hdr.s.cmd) {
 		case OCTEP_CTRL_NET_H2F_CMD_MTU:
-			resp_sz += process_mtu(iface, req, &resp);
+			resp_sz += process_mtu(&fn->iface, req, &resp);
 			break;
 		case OCTEP_CTRL_NET_H2F_CMD_MAC:
-			resp_sz += process_mac(iface, req, &resp);
+			resp_sz += process_mac(&fn->iface, req, &resp);
 			break;
 		case OCTEP_CTRL_NET_H2F_CMD_GET_IF_STATS:
-			resp_sz += process_get_if_stats(ifdata, req, &resp);
+			resp_sz += process_get_if_stats(&fn->ifstats, req, &resp);
 			break;
 		case OCTEP_CTRL_NET_H2F_CMD_LINK_STATUS:
-			resp_sz += process_link_status(iface, req, &resp);
+			resp_sz += process_link_status(&fn->iface, req, &resp);
 			break;
 		case OCTEP_CTRL_NET_H2F_CMD_RX_STATE:
-			resp_sz += process_rx_state(iface, req, &resp);
+			resp_sz += process_rx_state(&fn->iface, req, &resp);
 			break;
 		case OCTEP_CTRL_NET_H2F_CMD_LINK_INFO:
-			resp_sz += process_link_info(iface, req, &resp);
+			resp_sz += process_link_info(&fn->iface, req, &resp);
 			break;
 		case OCTEP_CTRL_NET_H2F_CMD_GET_INFO:
-			resp_sz += process_get_info(info, req, &resp);
+			resp_sz += process_get_info(&fn->info, req, &resp);
 			break;
 		default:
 			printf("Unhandled Cmd : %u\n", req->hdr.s.cmd);
@@ -275,12 +274,12 @@ static int process_msg(union octep_cp_msg_info *ctx, struct octep_cp_msg* msg)
 		resp_msg.sg_list[0].sz = resp_sz;
 		resp_msg.sg_list[0].msg = &resp;
 		octep_cp_lib_send_msg_resp(ctx, &resp_msg, 1);
-		ifdata->tx_stats.pkts++;
-		ifdata->tx_stats.octs += resp_sz;
+		fn->ifstats.tx_stats.pkts++;
+		fn->ifstats.tx_stats.octs += resp_sz;
 	}
 
-	ifdata->rx_stats.pkts++;
-	ifdata->rx_stats.octets += msg->info.s.sz;
+	fn->ifstats.rx_stats.pkts++;
+	fn->ifstats.rx_stats.octets += msg->info.s.sz;
 
 	return 0;
 }
@@ -291,12 +290,12 @@ int loop_process_msgs()
 	struct octep_cp_msg* msg;
 	int ret, i, j, m;
 
-	for (i=0; i<cp_lib_cfg.ndoms; i++) {
+	for (i = 0; i < cp_lib_cfg.ndoms; i++) {
 		ctx.s.pem_idx = cp_lib_cfg.doms[i].idx;
-		for (j=0; j<cp_lib_cfg.doms[i].npfs; j++) {
+		for (j = 0; j < cp_lib_cfg.doms[i].npfs; j++) {
 			ctx.s.pf_idx = cp_lib_cfg.doms[i].pfs[j].idx;
 			ret = octep_cp_lib_recv_msg(&ctx, rx_msg, rx_num);
-			for (m=0; m<ret; m++) {
+			for (m = 0; m < ret; m++) {
 				msg = &rx_msg[m];
 				process_msg(&ctx, msg);
 				/* library will overwrite msg size in header so reset it */

@@ -2,6 +2,7 @@
 #include <errno.h>
 #include <stdint.h>
 #include <libconfig.h>
+#include <string.h>
 
 #include "octep_cp_lib.h"
 #include "app_config.h"
@@ -23,7 +24,6 @@ struct app_cfg cfg;
  */
 
 #define CFG_TOKEN_SOC			"soc"
-#define CFG_TOKEN_BASE_SOC		"base_soc"
 #define CFG_TOKEN_PEMS			"pems"
 #define CFG_TOKEN_PFS			"pfs"
 #define CFG_TOKEN_VFS			"vfs"
@@ -67,146 +67,57 @@ static void print_config()
 	struct pem_cfg *pem;
 	struct pf_cfg *pf;
 	struct vf_cfg *vf;
+	int i, j, k;
 
-	pem = cfg.pems;
-	while (pem) {
-		pf = pem->pfs;
-		while (pf) {
-			printf("[%d]:[%d]\n", pem->idx, pf->idx);
-			print_if(&pf->iface);
-			print_info(&pf->info);
-			vf = pf->vfs;
-			while (vf) {
-				printf("[%d]:[%d]:[%d]\n",
-				       pem->idx, pf->idx, vf->idx);
-				print_if(&vf->iface);
-				print_info(&vf->info);
-				vf = vf->next;
+
+	for (i = 0; i < APP_CFG_PEM_MAX; i++) {
+		pem = &cfg.pems[i];
+		if (!pem->valid)
+			continue;
+
+		for (j = 0; j < APP_CFG_PF_PER_PEM_MAX; j++) {
+			pf = &pem->pfs[j];
+			if (!pf->valid)
+				continue;
+
+			printf("[%d]:[%d]\n", i, j);
+			print_if(&pf->fn.iface);
+			print_info(&pf->fn.info);
+			for (k = 0; k < APP_CFG_VF_PER_PF_MAX; k++) {
+				vf = &pf->vfs[k];
+				if (!vf->valid)
+					continue;
+
+				printf("[%d]:[%d]:[%d]\n", i, j, k);
+				print_if(&vf->fn.iface);
+				print_info(&vf->fn.info);
 			}
-			pf = pf->next;
 		}
-		pem = pem->next;
 	}
 }
 
-static struct pem_cfg *create_pem(int idx)
+static inline struct pem_cfg *get_pem(int idx)
 {
-	struct pem_cfg *pem, *p;
-
-	pem = calloc(sizeof(struct pem_cfg), 1);
-	if (!pem)
+	if (idx >= APP_CFG_PEM_MAX)
 		return NULL;
 
-	pem->idx = idx;
-	if(cfg.pems) {
-		p = cfg.pems;
-		while (p->next)
-			p = p->next;
-
-		p->next = pem;
-	} else {
-		cfg.pems = pem;
-	}
-	cfg.npem++;
-
-	return pem;
+	return &cfg.pems[idx];
 }
 
-static struct pem_cfg *get_pem(int idx)
+static inline struct pf_cfg *get_pf(struct pem_cfg *pemcfg, int idx)
 {
-	struct pem_cfg *pem;
-
-	if (!cfg.pems)
+	if (idx >= APP_CFG_PF_PER_PEM_MAX)
 		return NULL;
 
-	pem = cfg.pems;
-	while (pem) {
-		if (pem->idx == idx)
-			return pem;
-		pem = pem->next;
-	}
-
-	return NULL;
+	return &pemcfg->pfs[idx];
 }
 
-static struct pf_cfg *create_pf(struct pem_cfg *pemcfg, int idx)
+static inline struct vf_cfg *get_vf(struct pf_cfg *pfcfg, int idx)
 {
-	struct pf_cfg *pf, *p;
-
-	pf = calloc(sizeof(struct pf_cfg), 1);
-	if (!pf)
+	if (idx >= APP_CFG_VF_PER_PF_MAX)
 		return NULL;
 
-	pf->idx = idx;
-	if(pemcfg->pfs) {
-		p = pemcfg->pfs;
-		while (p->next)
-			p = p->next;
-
-		p->next = pf;
-	} else {
-		pemcfg->pfs = pf;
-	}
-	pemcfg->npf++;
-
-	return pf;
-}
-
-static struct pf_cfg *get_pf(struct pem_cfg *pemcfg, int idx)
-{
-	struct pf_cfg *pf;
-
-	if (!pemcfg->pfs)
-		return NULL;
-
-	pf = pemcfg->pfs;
-	while (pf) {
-		if (pf->idx == idx)
-			return pf;
-		pf = pf->next;
-	}
-
-	return NULL;
-}
-
-static struct vf_cfg *create_vf(struct pf_cfg *pfcfg, int idx)
-{
-	struct vf_cfg *vf, *p;
-
-	vf = calloc(sizeof(struct vf_cfg), 1);
-	if (!vf)
-		return NULL;
-
-	vf->idx = idx;
-	if(pfcfg->vfs) {
-		p = pfcfg->vfs;
-		while (p->next)
-			p = p->next;
-
-		p->next = vf;
-	} else {
-		pfcfg->vfs = vf;
-	}
-	pfcfg->nvf++;
-
-	return vf;
-}
-
-static struct vf_cfg *get_vf(struct pf_cfg *pfcfg, int idx)
-{
-	struct vf_cfg *vf;
-
-	if (!pfcfg->vfs)
-		return NULL;
-
-	vf = pfcfg->vfs;
-	while (vf) {
-		if (vf->idx == idx)
-			return vf;
-		vf = vf->next;
-	}
-
-	return vf;
+	return &pfcfg->vfs[idx];
 }
 
 int get_max_rx_pktlen(void)
@@ -275,18 +186,28 @@ static int parse_info(config_setting_t *lcfg, struct octep_fw_info *info)
 	return 0;
 }
 
+static int parse_fn(config_setting_t *lcfg, struct fn_cfg *fn)
+{
+	int err;
 
-static int parse_pf(config_setting_t *pf, struct pf_cfg *pfcfg)
+	err = parse_if(lcfg, &fn->iface);
+	if (err)
+		return err;
+
+	err = parse_info(lcfg, &fn->info);
+	if (err)
+		return err;
+
+	return 0;
+}
+
+static int parse_pf(config_setting_t *pf, struct pf_cfg *pfcfg, int pf_idx)
 {
 	config_setting_t *vfs, *vf;
 	int nvfs, i, idx, err;
 	struct vf_cfg *vfcfg;
 
-	err = parse_if(pf, &pfcfg->iface);
-	if (err)
-		return err;
-
-	err = parse_info(pf, &pfcfg->info);
+	err = parse_fn(pf, &pfcfg->fn);
 	if (err)
 		return err;
 
@@ -295,7 +216,7 @@ static int parse_pf(config_setting_t *pf, struct pf_cfg *pfcfg)
 		return 0;
 
 	nvfs = config_setting_length(vfs);
-	for (i=0; i<nvfs; i++) {
+	for (i = 0; i < nvfs; i++) {
 		vf = config_setting_get_elem(vfs, i);
 		if (!vf)
 			continue;
@@ -304,25 +225,22 @@ static int parse_pf(config_setting_t *pf, struct pf_cfg *pfcfg)
 			continue;
 		vfcfg = get_vf(pfcfg, idx);
 		if (!vfcfg) {
-			vfcfg = create_vf(pfcfg, idx);
-			if (!vfcfg) {
-				printf( "Oom for pf[%d]vf[%d]\n",
-					   pfcfg->idx, idx);
-				continue;
-			}
+			printf("Skipping out of bounds pf[%d]vf[%d]\n",
+			       pf_idx, idx);
+			continue;
 		}
-		err = parse_if(vf, &vfcfg->iface);
+		err = parse_fn(vf, &vfcfg->fn);
 		if (err)
 			return err;
-		err = parse_info(vf, &vfcfg->info);
-		if (err)
-			return err;
+
+		vfcfg->valid = true;
 	}
+	pfcfg->nvf = nvfs;
 
 	return 0;
 }
 
-static int parse_pem(config_setting_t *pem, struct pem_cfg *pemcfg)
+static int parse_pem(config_setting_t *pem, struct pem_cfg *pemcfg, int pem_idx)
 {
 	config_setting_t *pfs, *pf;
 	int npfs, i, idx, err;
@@ -333,7 +251,7 @@ static int parse_pem(config_setting_t *pem, struct pem_cfg *pemcfg)
 		return 0;
 
 	npfs = config_setting_length(pfs);
-	for (i=0; i<npfs; i++) {
+	for (i = 0; i < npfs; i++) {
 		pf = config_setting_get_elem(pfs, i);
 		if (!pf)
 			continue;
@@ -342,17 +260,17 @@ static int parse_pem(config_setting_t *pem, struct pem_cfg *pemcfg)
 			continue;
 		pfcfg = get_pf(pemcfg, idx);
 		if (!pfcfg) {
-			pfcfg = create_pf(pemcfg, idx);
-			if (!pfcfg) {
-				printf( "Oom for pem[%d]pf[%d]\n",
-			   		   pemcfg->idx, idx);
-				continue;
-			}
+			printf( "Skipping out of bounds pem[%d]pf[%d]\n",
+		   		   pem_idx, idx);
+			continue;
 		}
-		err = parse_pf(pf, pfcfg);
+		err = parse_pf(pf, pfcfg, i);
 		if (err)
 			return err;
+
+		pfcfg->valid = true;
 	}
+	pemcfg->npf = npfs;
 
 	return 0;
 }
@@ -364,7 +282,7 @@ static int parse_pems(config_setting_t *pems)
 	struct pem_cfg *pemcfg;
 
 	npems = config_setting_length(pems);
-	for (i=0; i<npems; i++) {
+	for (i = 0; i < npems; i++) {
 		pem = config_setting_get_elem(pems, i);
 		if (!pem)
 			continue;
@@ -373,53 +291,16 @@ static int parse_pems(config_setting_t *pems)
 			continue;
 		pemcfg = get_pem(idx);
 		if (!pemcfg) {
-			pemcfg = create_pem(idx);
-			if (!pemcfg) {
-				printf( "Oom for pem[%d]\n", idx);
-				continue;
-			}
+			printf( "Skipping out of bounds pem[%d]\n", idx);
+			continue;
 		}
-		err = parse_pem(pem, pemcfg);
+		err = parse_pem(pem, pemcfg, idx);
 		if (err)
 			return err;
+
+		pemcfg->valid = true;
 	}
-
-	return 0;
-}
-
-static int parse_base_config(const char* cfg_file_path)
-{
-	config_setting_t *lcfg, *pems;
-	config_t fcfg;
-	int err;
-
-	printf("base config file : %s\n", cfg_file_path);
-	config_init(&fcfg);
-	if (!config_read_file(&fcfg, cfg_file_path)) {
-		printf( "%s:%d - %s\n",
-			   config_error_file(&fcfg),
-			   config_error_line(&fcfg),
-			   config_error_text(&fcfg));
-		config_destroy(&fcfg);
-		return(EXIT_FAILURE);
-	}
-
-	lcfg = config_lookup(&fcfg, CFG_TOKEN_SOC);
-	if (!lcfg) {
-		config_destroy(&fcfg);
-		return -EINVAL;
-	}
-
-	pems = config_setting_get_member(lcfg, CFG_TOKEN_PEMS);
-	if (pems) {
-		err = parse_pems(pems);
-		if (err) {
-			config_destroy(&fcfg);
-			return err;
-		}
-	}
-
-	config_destroy(&fcfg);
+	cfg.npem = npems;
 
 	return 0;
 }
@@ -427,10 +308,10 @@ static int parse_base_config(const char* cfg_file_path)
 int app_config_init(const char *cfg_file_path)
 {
 	config_setting_t *lcfg, *pems;
-	const char *str;
 	config_t fcfg;
 	int err;
 
+	memset (&cfg, 0, sizeof(struct app_cfg));
 	printf("config file : %s\n", cfg_file_path);
 	config_init(&fcfg);
 	if (!config_read_file(&fcfg, cfg_file_path)) {
@@ -446,14 +327,6 @@ int app_config_init(const char *cfg_file_path)
 	if (!lcfg) {
 		config_destroy(&fcfg);
 		return -EINVAL;
-	}
-
-	if (config_setting_lookup_string(lcfg, CFG_TOKEN_BASE_SOC, &str)) {
-		err = parse_base_config(str);
-		if (err) {
-			config_destroy(&fcfg);
-			return err;
-		}
 	}
 
 	pems = config_setting_get_member(lcfg, CFG_TOKEN_PEMS);
@@ -472,76 +345,10 @@ int app_config_init(const char *cfg_file_path)
 	return 0;
 }
 
-int app_config_get_if_from_msg_info(union octep_cp_msg_info *ctx_info,
-				    union octep_cp_msg_info *msg_info,
-				    struct if_cfg **iface,
-				    struct if_stats **ifstats,
-				    struct octep_fw_info **info)
-{
-	struct pem_cfg *pem = cfg.pems;
-	struct pf_cfg *pf;
-	struct vf_cfg *vf;
-
-	while (pem) {
-		if (pem->idx == ctx_info->s.pem_idx) {
-			pf = pem->pfs;
-			while (pf) {
-				if (pf->idx == ctx_info->s.pf_idx) {
-					if (!msg_info->s.is_vf) {
-						printf("pem[%u] pf[%u]\n",
-						       pem->idx, pf->idx);
-						*iface = &pf->iface;
-						*ifstats = &pf->ifstats;
-						*info = &pf->info;
-						return 0;
-					}
-					vf = pf->vfs;
-					while (vf) {
-						if (vf->idx == msg_info->s.vf_idx) {
-							printf("pem[%u] pf[%u] vf[%u]\n",
-							       pem->idx, pf->idx, vf->idx);
-							*iface = &vf->iface;
-							*ifstats = &vf->ifstats;
-							*info = &vf->info;
-							return 0;
-						}
-						vf = vf->next;
-					}
-				}
-				pf = pf->next;
-			}
-		}
-		pem = pem->next;
-	}
-
-	return -ENOENT;
-}
-
 int app_config_uninit()
 {
-	struct pem_cfg *pem, *pp;
-	struct pf_cfg *pf, *pfp;
-	struct vf_cfg *vf, *vfp;
-
 	printf("config uninit\n");
-	pem = cfg.pems;
-	while (pem) {
-		pf = pem->pfs;
-		while (pf) {
-			vf = pf->vfs;
-			while (vf) {
-				vfp = vf->next;
-				free(vf);
-				vf = vfp;
-			}
-			pfp = pf->next;
-			free(pf);
-			pf = pfp;
-		}
-		pp = pem->next;
-		free(pem);
-		pem = pp;
-	}
+	memset (&cfg, 0, sizeof(struct app_cfg));
 
 	return 0;
 }
