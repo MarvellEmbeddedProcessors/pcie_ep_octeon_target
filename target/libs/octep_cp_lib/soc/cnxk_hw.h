@@ -6,6 +6,10 @@
 
 #define PEMX_BASE(a)			(0x8E0000000000ull | a<<36)
 
+#define PEMX_ON_OFFSET			(0xe0ull)
+
+#define PEMX_ON_PEMOOR			(0x2ull)
+
 /* pemX bar4 index, this is a chunk of 4mb */
 #define BAR4_INDEX(i)			(0x700ull | i<<3)
 

@@ -48,6 +48,8 @@ struct cnxk_pem {
 	bool valid;
 	/* index of pem */
 	unsigned long long idx;
+	/* file descriptor for uio interrupt */
+	int uio_fd;
 	/* array of pf's */
 	struct cnxk_pf pfs[OCTEP_CP_PF_PER_DOM_MAX];
 };
@@ -170,11 +172,6 @@ static int init_mbox(struct cnxk_pem *pem, struct cnxk_pf *pf)
 	return err;
 }
 
-static int open_perst_uio()
-{
-	return 0;
-}
-
 static int set_fw_ready(struct cnxk_pem *pem, struct cnxk_pf *pf,
 			unsigned long long status)
 {
@@ -280,13 +277,115 @@ static int raise_oei_trig_int(struct cnxk_pf *pf, enum sdp_epf_oei_trig_bit bit)
 	return 0;
 }
 
+static int check_pem_status(struct cnxk_pem *pem)
+{
+	int wait, ret = -EAGAIN;
+	off_t offset = 0;
+	uint64_t val;
+	void* addr;
+
+	addr = map_reg((PEMX_BASE(pem->idx) + PEMX_ON_OFFSET),
+		       8,
+		       PROT_READ,
+		       &offset);
+	if (!addr) {
+		CP_LIB_LOG(ERR, CNXK, "Error mapping pem[%d] status\n",
+			   pem->idx);
+		return -EIO;
+	}
+	wait = 0;
+	do {
+		val = cp_read64(addr);
+		if (val & PEMX_ON_PEMOOR) {
+			ret = 0;
+			break;
+		}
+
+		sleep(1);
+		wait++;
+	} while (wait < 10);
+
+	unmap_reg(addr, offset, 8);
+
+	if (ret < 0)
+		CP_LIB_LOG(ERR, CNXK, "pem[%d] unavailable\n", pem->idx);
+
+	return ret;
+}
+
+static int uninit_pem(struct cnxk_pem *pem)
+{
+	int j;
+
+	if (pem->uio_fd)
+		close(pem->uio_fd);
+
+	for (j = 0; j < OCTEP_CP_PF_PER_DOM_MAX; j++) {
+		if (pem->pfs[j].valid)
+			uninit_pf(pem, &(pem->pfs[j]));
+	}
+	pem->valid = false;
+
+	return 0;
+}
+
+static int init_pem(struct cnxk_pem *pem, struct octep_cp_dom_cfg *dom_cfg)
+{
+	struct octep_cp_pf_cfg *pf_cfg;
+	struct cnxk_pf *pf;
+	char uio_path[256];
+	int err, j, fd;
+
+	pem->idx = dom_cfg->idx;
+	err = check_pem_status(pem);
+	if (err < 0)
+		return err;
+
+	/* TODO: this is temporary mapping, currently there is no way to
+	 * map a /dev/uioX entry to pem->idx, this needs to be fixed
+	 * in the pem_ep driver. This code will have to iterate all /dev/uioX
+	 * devices and identify correct device for the pem potentially
+	 * based on some identifier in uio->name
+	 */
+	sprintf(uio_path, "/dev/uio%lld", pem->idx);
+	fd = open(uio_path, O_RDONLY | O_NONBLOCK);
+	if (fd < 0)
+		return -errno;
+
+	pem->uio_fd = fd;
+	for (j = 0; j < dom_cfg->npfs; j++) {
+		pf_cfg = &dom_cfg->pfs[j];
+		if (pf_cfg->idx >= OCTEP_CP_PF_PER_DOM_MAX) {
+			CP_LIB_LOG(ERR, CNXK,
+				   "Invalid pf[%d][%d] config index.\n",
+				   dom_cfg->idx, pf_cfg->idx);
+			err = -EINVAL;
+			goto init_fail;
+		}
+
+		pf = &pem->pfs[j];
+		pf->idx = pf_cfg->idx;
+		err = init_pf(pem, pf);
+		if (err) {
+			err = -ENOLINK;
+			goto init_fail;
+		}
+		pf->valid = true;
+		pf_cfg->max_msg_sz = pf->mbox.h2fq.sz;
+	}
+	pem->valid = true;
+
+	return 0;
+
+init_fail:
+	uninit_pem(pem);
+	return -ENOLINK;
+}
+
 int cnxk_init(struct octep_cp_lib_cfg *cfg)
 {
-	int err = 0, i, j;
 	struct octep_cp_dom_cfg *dom_cfg;
-	struct octep_cp_pf_cfg *pf_cfg;
-	struct cnxk_pem *pem;
-	struct cnxk_pf *pf;
+	int err = 0, i;
 
 	CP_LIB_LOG(INFO, CNXK, "init\n");
 
@@ -302,46 +401,17 @@ int cnxk_init(struct octep_cp_lib_cfg *cfg)
 			goto init_fail;
 		}
 
-		pem = &pems[dom_cfg->idx];
-		pem->idx = dom_cfg->idx;
-		pem->valid = true;
-		for (j = 0; j < dom_cfg->npfs; j++) {
-			pf_cfg = &dom_cfg->pfs[j];
-			if (pf_cfg->idx >= OCTEP_CP_PF_PER_DOM_MAX) {
-				CP_LIB_LOG(ERR, CNXK,
-					   "Invalid pf[%d][%d] config index.\n",
-					   dom_cfg->idx, pf_cfg->idx);
-				err = -EINVAL;
-				goto init_fail;
-			}
-
-			pf = &pem->pfs[j];
-			pf->idx = pf_cfg->idx;
-			err = init_pf(pem, pf);
-			if (err) {
-				err = -ENOLINK;
-				goto init_fail;
-			}
-			pf->valid = true;
-			pf_cfg->max_msg_sz = pf->mbox.h2fq.sz;
-		}
+		err = init_pem(&pems[dom_cfg->idx], dom_cfg);
+		if (err)
+			goto init_fail;
 	}
-
-	err = open_perst_uio();
-	if (err)
-		goto init_fail;
 
 	return 0;
 
 init_fail:
-	for (i = 0; i < OCTEP_CP_DOM_MAX; i++) {
-		if (!pems[i].valid)
-			continue;
-		for (j = 0; j < OCTEP_CP_PF_PER_DOM_MAX; j++) {
-			if (pems[i].pfs[j].valid)
-				uninit_pf(&pems[i], &(pems[i].pfs[j]));
-		}
-	}
+	for (i = 0; i < OCTEP_CP_DOM_MAX; i++)
+		if (pems[i].valid)
+			uninit_pem(&pems[i]);
 
 	return err;
 }
@@ -492,29 +562,36 @@ int cnxk_send_event(struct octep_cp_event_info *info)
 
 int cnxk_recv_event(struct octep_cp_event_info *info, int num)
 {
-	//poll uio
-	return 0;
+	int i, n_ev, data, n;
+	struct cnxk_pem *pem;
+
+	for (i = 0, n_ev = 0; i < OCTEP_CP_DOM_MAX; i++) {
+		pem = &pems[i];
+		if (!pem->valid)
+			continue;
+
+		n = read(pem->uio_fd, &data, sizeof(int));
+		if (n <= 0)
+			continue;
+
+		info[n_ev].e = OCTEP_CP_EVENT_TYPE_PERST;
+		info[n_ev].u.perst.dom_idx = pem->idx;
+		if (++n_ev >= num)
+			break;
+	}
+
+	return n_ev;
 }
 
 int cnxk_uninit()
 {
-	int i, j;
+	int i;
 
 	CP_LIB_LOG(INFO, CNXK, "uninit\n");
 
-	for (i = 0; i < OCTEP_CP_DOM_MAX; i++) {
-		if (!pems[i].valid)
-			continue;
-
-		for (j = 0; j < OCTEP_CP_PF_PER_DOM_MAX; j++) {
-			if (!pems[i].pfs[j].valid)
-				continue;
-
-			uninit_pf(&pems[i], &(pems[i].pfs[j]));
-		}
-	}
-
-	//close uio
+	for (i = 0; i < OCTEP_CP_DOM_MAX; i++)
+		if (pems[i].valid)
+			uninit_pem(&pems[i]);
 
 	return 0;
 }
