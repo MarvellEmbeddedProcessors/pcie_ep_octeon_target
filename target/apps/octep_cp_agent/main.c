@@ -19,6 +19,28 @@ static int hb_interval = 0;
 
 struct octep_cp_lib_cfg cp_lib_cfg = { 0 };
 
+static int process_events()
+{
+#define MAX_EVENTS		6
+
+	struct octep_cp_event_info e[MAX_EVENTS];
+	int n, i;
+
+	n = octep_cp_lib_recv_event(e, MAX_EVENTS);
+	if (n < 0)
+		return n;
+
+	for (i = 0; i < n; i++) {
+		if (e[i].e == OCTEP_CP_EVENT_TYPE_PERST) {
+			printf("Event: perst on dom[%d]\n",
+			       e[i].u.perst.dom_idx);
+			perst = 1;
+		}
+	}
+
+	return 0;
+}
+
 static int send_heartbeat()
 {
 	struct octep_cp_event_info info;
@@ -121,6 +143,7 @@ init:
 	alarm(hb_interval);
 	while (!force_quit && !perst) {
 		loop_process_msgs();
+		process_events();
 	}
 	set_fw_ready(0);
 
@@ -129,6 +152,7 @@ init:
 
 	if (perst) {
 		perst = 0;
+		printf("\nReinitializing...\n");
 		goto init;
 	}
 
