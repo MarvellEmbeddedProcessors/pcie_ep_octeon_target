@@ -115,8 +115,8 @@ static int get_bar4_idx8_addr(struct cnxk_pem *pem, struct cnxk_pf *pf)
 			   pem->idx, pf->idx, val);
 		return -ENOMEM;
 	}
-	val += (pf->idx * MBOX_SZ);
-	pf->bar4_addr = (((val & (~1)) >> 4) << 22);
+
+	pf->bar4_addr = (((val & (~1)) >> 4) << 22) + (pf->idx * MBOX_SZ);
 	CP_LIB_LOG(INFO, CNXK, "pem[%d] pf[%d] bar4 idx8 addr 0x%lx\n",
 		   pem->idx, pf->idx, pf->bar4_addr);
 
