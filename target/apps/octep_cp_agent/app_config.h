@@ -28,7 +28,10 @@ struct if_stats {
 struct if_cfg {
 	uint16_t idx;
 	uint16_t host_if_id;
+	/* current MTU of the interface */
 	uint16_t mtu;
+	/* Max Receive packet length of the interface */
+	uint16_t max_rx_pktlen;
 	uint8_t mac_addr[ETH_ALEN];
 	/* enum octep_ctrl_net_state */
 	uint16_t link_state;

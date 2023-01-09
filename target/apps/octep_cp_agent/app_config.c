@@ -209,6 +209,18 @@ static struct vf_cfg *get_vf(struct pf_cfg *pfcfg, int idx)
 	return vf;
 }
 
+int get_max_rx_pktlen(void)
+{
+	struct octep_cp_lib_info info;
+
+	octep_cp_lib_get_info(&info);
+	if (info.soc_model.flag &
+	    (OCTEP_CP_SOC_MODEL_CN96xx_Ax | OCTEP_CP_SOC_MODEL_CNF95xxN_A0))
+		return (16 * 1024);
+
+	return ((64 * 1024) - 1);
+}
+
 static int parse_if(config_setting_t *lcfg, struct if_cfg *iface)
 {
 	config_setting_t *mac;
@@ -240,6 +252,7 @@ static int parse_if(config_setting_t *lcfg, struct if_cfg *iface)
 		iface->supported_modes = ival;
 	if (config_setting_lookup_int(lcfg, CFG_TOKEN_IF_AMODES, &ival))
 		iface->advertised_modes = ival;
+	iface->max_rx_pktlen = get_max_rx_pktlen();
 
 	return 0;
 }

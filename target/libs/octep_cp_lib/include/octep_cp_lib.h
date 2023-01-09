@@ -4,6 +4,10 @@
 #ifndef __OCTEP_CP_LIB_H__
 #define __OCTEP_CP_LIB_H__
 
+#ifndef BIT_ULL
+#define BIT_ULL(nr) (1ULL << (nr))
+#endif
+
 #define OCTEP_CP_DOM_MAX			8
 #define OCTEP_CP_PF_PER_DOM_MAX			128
 #define OCTEP_CP_MSG_DESC_MAX			4
