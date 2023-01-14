@@ -21,30 +21,37 @@ ifeq ($(CP_LIB_DIR),)
 $(error "CP_LIB_DIR not defined. Aborting...")
 endif
 
-LIBCONFIG_PKGCONF = PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config
-
-ifneq ($(shell $(LIBCONFIG_PKGCONF) --exists libconfig && echo 1),1)
-$(info Could not find libconfig.pc in $(PKG_CONFIG_PATH))
-$(info Use PKG_CONFIG_PATH to provide correct path to libconfig.pc)
-$(error Aborting...)
+ifneq ($(CROSS_COMPILE),)
+ifeq ($(BUILD_DEP_INC),)
+$(info "Use BUILD_DEP_INC to provide paths for build dependency includes")
 endif
 
-LIBCONFIG_CFLAGS = $(shell $(LIBCONFIG_PKGCONF) --cflags libconfig)
-LIBCONFIG_SHARED_LIB_FLAGS = $(shell $(LIBCONFIG_PKGCONF) --libs libconfig)
-LIBCONFIG_STATIC_LIB_FLAGS = $(shell $(LIBCONFIG_PKGCONF) --static --libs libconfig)
+ifeq ($(BUILD_DEP_LIB),)
+$(info "Use BUILD_DEP_LIB to provide paths for build dependency libraries")
+endif
+endif
 
 SRCS = main.c loop.c app_config.c
 
 CFLAGS = -O3 -Werror -Wall \
 	-I$(CP_LIB_DIR)/include \
-	-I$(CURDIR)/compat/$(PLAT) \
-	$(LIBCONFIG_CFLAGS)
+	-I$(CURDIR)/compat/$(PLAT)
+
+ifneq ($(BUILD_DEP_INC),)
+CFLAGS += -I$(BUILD_DEP_INC)
+endif
 
 LDFLAGS_SHARED = -L$(CP_LIB_DIR) -l$(NAME_PREFIX)
-LDFLAGS_SHARED += $(LIBCONFIG_SHARED_LIB_FLAGS)
+ifneq ($(BUILD_DEP_LIB),)
+LDFLAGS_SHARED += -L$(BUILD_DEP_LIB)
+endif
+LDFLAGS_SHARED += -lconfig
 
 LDFLAGS_STATIC = -L$(CP_LIB_DIR) -l:lib$(NAME_PREFIX).a
-LDFLAGS_STATIC += $(LIBCONFIG_STATIC_LIB_FLAGS)
+ifneq ($(BUILD_DEP_LIB),)
+LDFLAGS_STATIC += -L$(BUILD_DEP_LIB)
+endif
+LDFLAGS_STATIC += -lconfig
 
 STATIC_BIN = $(APP_NAME)
 SHARED_BIN = $(APP_NAME)-shared
