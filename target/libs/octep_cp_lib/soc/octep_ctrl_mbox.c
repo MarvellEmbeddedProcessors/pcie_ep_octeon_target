@@ -98,58 +98,71 @@ int octep_ctrl_mbox_init(struct octep_ctrl_mbox *mbox)
 	if (!mbox)
 		return -EINVAL;
 
-	if (!mbox->barmem || !mbox->barmem_sz)
+	if (!mbox->bar4_fd || !mbox->barmem || !mbox->barmem_sz)
 		return -EINVAL;
 
 	err = set_mbox_info(mbox);
 	if (err)
 		return err;
 
-	cp_write64(OCTEP_CTRL_MBOX_MAGIC_NUMBER,
-		   OCTEP_CTRL_MBOX_INFO_MAGIC_NUM(mbox->barmem));
-	cp_write32(mbox->barmem_sz,
-		   OCTEP_CTRL_MBOX_INFO_BARMEM_SZ(mbox->barmem));
-
-	cp_write64(OCTEP_CTRL_MBOX_STATUS_INIT,
-		   OCTEP_CTRL_MBOX_INFO_FW_STATUS(mbox->barmem));
-
-	cp_write32(0, OCTEP_CTRL_MBOX_H2FQ_PROD(mbox->barmem));
-	cp_write32(0, OCTEP_CTRL_MBOX_H2FQ_CONS(mbox->barmem));
-	cp_write32(mbox->h2fq.sz, OCTEP_CTRL_MBOX_H2FQ_SZ(mbox->barmem));
-
-	cp_write32(0, OCTEP_CTRL_MBOX_F2HQ_PROD(mbox->barmem));
-	cp_write32(0, OCTEP_CTRL_MBOX_F2HQ_CONS(mbox->barmem));
-	cp_write32(mbox->f2hq.sz, OCTEP_CTRL_MBOX_F2HQ_SZ(mbox->barmem));
-
-	cp_write64(OCTEP_CTRL_MBOX_STATUS_READY,
-		   OCTEP_CTRL_MBOX_INFO_FW_STATUS(mbox->barmem));
+	cp_write64_fd(OCTEP_CTRL_MBOX_MAGIC_NUMBER,
+		      OCTEP_CTRL_MBOX_INFO_MAGIC_NUM(mbox->barmem),
+		      mbox->bar4_fd);
+	cp_write32_fd(mbox->barmem_sz,
+		      OCTEP_CTRL_MBOX_INFO_BARMEM_SZ(mbox->barmem),
+		      mbox->bar4_fd);
+	cp_write64_fd(OCTEP_CTRL_MBOX_STATUS_INIT,
+		      OCTEP_CTRL_MBOX_INFO_FW_STATUS(mbox->barmem),
+		      mbox->bar4_fd);
+	cp_write32_fd(0,
+		      OCTEP_CTRL_MBOX_H2FQ_PROD(mbox->barmem),
+		      mbox->bar4_fd);
+	cp_write32_fd(0,
+		      OCTEP_CTRL_MBOX_H2FQ_CONS(mbox->barmem),
+		      mbox->bar4_fd);
+	cp_write32_fd(mbox->h2fq.sz,
+		      OCTEP_CTRL_MBOX_H2FQ_SZ(mbox->barmem),
+		      mbox->bar4_fd);
+	cp_write32_fd(0,
+		      OCTEP_CTRL_MBOX_F2HQ_PROD(mbox->barmem),
+		      mbox->bar4_fd);
+	cp_write32_fd(0,
+		      OCTEP_CTRL_MBOX_F2HQ_CONS(mbox->barmem),
+		      mbox->bar4_fd);
+	cp_write32_fd(mbox->f2hq.sz,
+		      OCTEP_CTRL_MBOX_F2HQ_SZ(mbox->barmem),
+		      mbox->bar4_fd);
+	cp_write64_fd(OCTEP_CTRL_MBOX_STATUS_READY,
+		      OCTEP_CTRL_MBOX_INFO_FW_STATUS(mbox->barmem),
+		      mbox->bar4_fd);
 
 	return 0;
 }
 
 static int write_mbox_data(struct octep_ctrl_mbox_q *q, uint32_t *pi,
-			   uint32_t ci, void *buf, uint32_t w_sz)
+			   uint32_t ci, void *buf, uint32_t w_sz,
+			   int fd)
 {
 	uint32_t cp_sz;
-	void *qbuf;
+	uint64_t qbuf;
 
 	/* Assumption: Caller has ensured enough write space */
 	qbuf = (q->hw_q + *pi);
 	if (*pi < ci) {
 		/* copy entire w_sz */
-		memcpy(qbuf, buf, w_sz);
+		cp_write_fd(buf, w_sz, qbuf, fd);
 		*pi = octep_ctrl_mbox_circq_inc(*pi, w_sz, q->sz);
 	} else {
 		/* copy upto end of queue */
 		cp_sz = cp_min((q->sz - *pi), w_sz);
-		memcpy(qbuf, buf, cp_sz);
+		cp_write_fd(buf, cp_sz, qbuf, fd);
 		w_sz -= cp_sz;
 		*pi = octep_ctrl_mbox_circq_inc(*pi, cp_sz, q->sz);
 		if (w_sz) {
 			/* roll over and copy remaining w_sz */
 			buf += cp_sz;
 			qbuf = (q->hw_q + *pi);
-			memcpy(qbuf, buf, w_sz);
+			cp_write_fd(buf, w_sz, qbuf, fd);
 			*pi = octep_ctrl_mbox_circq_inc(*pi, w_sz, q->sz);
 		}
 	}
@@ -166,17 +179,19 @@ int octep_ctrl_mbox_send(struct octep_ctrl_mbox *mbox,
 	struct octep_ctrl_mbox_q *q;
 	uint32_t pi, ci, prev_pi, buf_sz, w_sz;
 	int m, s;
+	uint64_t val;
 
 	if (!mbox || !msgs)
 		return -EINVAL;
 
-	if (cp_read64(OCTEP_CTRL_MBOX_INFO_HOST_STATUS(mbox->barmem)) !=
-	    OCTEP_CTRL_MBOX_STATUS_READY)
+	val = cp_read64_fd(OCTEP_CTRL_MBOX_INFO_HOST_STATUS(mbox->barmem),
+			   mbox->bar4_fd);
+	if (val != OCTEP_CTRL_MBOX_STATUS_READY)
 		return -EIO;
 
 	q = &mbox->f2hq;
-	pi = cp_read32(q->hw_prod);
-	ci = cp_read32(q->hw_cons);
+	pi = cp_read32_fd(q->hw_prod, mbox->bar4_fd);
+	ci = cp_read32_fd(q->hw_cons, mbox->bar4_fd);
 	for (m = 0; m < num; m++) {
 		msg = &msgs[m];
 		if (!msg)
@@ -188,12 +203,12 @@ int octep_ctrl_mbox_send(struct octep_ctrl_mbox *mbox,
 			break;
 
 		prev_pi = pi;
-		write_mbox_data(q, &pi, ci, (void*)&msg->hdr, mbox_hdr_sz);
+		write_mbox_data(q, &pi, ci, (void*)&msg->hdr, mbox_hdr_sz, mbox->bar4_fd);
 		buf_sz = msg->hdr.s.sz;
 		for (s = 0; ((s < msg->sg_num) && (buf_sz > 0)); s++) {
 			sg = &msg->sg_list[s];
 			w_sz = (sg->sz <= buf_sz) ? sg->sz : buf_sz;
-			write_mbox_data(q, &pi, ci, sg->msg, w_sz);
+			write_mbox_data(q, &pi, ci, sg->msg, w_sz, mbox->bar4_fd);
 			buf_sz -= w_sz;
 		}
 		if (buf_sz) {
@@ -202,34 +217,35 @@ int octep_ctrl_mbox_send(struct octep_ctrl_mbox *mbox,
 			break;
 		}
 	}
-	cp_write32(pi, q->hw_prod);
+	cp_write32_fd(pi, q->hw_prod, mbox->bar4_fd);
 
 	return (m) ? m : -EAGAIN;
 }
 
 static int read_mbox_data(struct octep_ctrl_mbox_q *q, uint32_t pi,
-			  uint32_t *ci, void *buf, uint32_t r_sz)
+			  uint32_t *ci, void *buf, uint32_t r_sz,
+			  int fd)
 {
 	uint32_t cp_sz;
-	void *qbuf;
+	uint64_t qbuf;
 
 	/* Assumption: Caller has ensured enough read space */
 	qbuf = (q->hw_q + *ci);
 	if (*ci < pi) {
 		/* copy entire r_sz */
-		memcpy(buf, qbuf, r_sz);
+		cp_read_fd(buf, r_sz, qbuf, fd);
 		*ci = octep_ctrl_mbox_circq_inc(*ci, r_sz, q->sz);
 	} else {
 		/* copy upto end of queue */
 		cp_sz = cp_min((q->sz - *ci), r_sz);
-		memcpy(buf, qbuf, cp_sz);
+		cp_read_fd(buf, cp_sz, qbuf, fd);
 		r_sz -= cp_sz;
 		*ci = octep_ctrl_mbox_circq_inc(*ci, cp_sz, q->sz);
 		if (r_sz) {
 			/* roll over and copy remaining r_sz */
 			buf += cp_sz;
 			qbuf = (q->hw_q + *ci);
-			memcpy(buf, qbuf, r_sz);
+			cp_read_fd(buf, r_sz, qbuf, fd);
 			*ci = octep_ctrl_mbox_circq_inc(*ci, r_sz, q->sz);
 		}
 	}
@@ -246,17 +262,19 @@ int octep_ctrl_mbox_recv(struct octep_ctrl_mbox *mbox,
 	struct octep_ctrl_mbox_q *q;
 	uint32_t pi, ci, q_depth, r_sz, buf_sz, prev_ci;
 	int s, m;
+	uint64_t val;
 
 	if (!mbox || !msgs)
 		return -EINVAL;
 
-	if (cp_read64(OCTEP_CTRL_MBOX_INFO_HOST_STATUS(mbox->barmem)) !=
-	    OCTEP_CTRL_MBOX_STATUS_READY)
+	val = cp_read64_fd(OCTEP_CTRL_MBOX_INFO_HOST_STATUS(mbox->barmem),
+			   mbox->bar4_fd);
+	if (val != OCTEP_CTRL_MBOX_STATUS_READY)
 		return -EIO;
 
 	q = &mbox->h2fq;
-	pi = cp_read32(q->hw_prod);
-	ci = cp_read32(q->hw_cons);
+	pi = cp_read32_fd(q->hw_prod, mbox->bar4_fd);
+	ci = cp_read32_fd(q->hw_cons, mbox->bar4_fd);
 	for (m = 0; m < num; m++) {
 		q_depth = octep_ctrl_mbox_circq_depth(pi, ci, q->sz);
 		if (q_depth < mbox_hdr_sz)
@@ -267,12 +285,12 @@ int octep_ctrl_mbox_recv(struct octep_ctrl_mbox *mbox,
 			break;
 
 		prev_ci = ci;
-		read_mbox_data(q, pi, &ci, (void*)&msg->hdr, mbox_hdr_sz);
+		read_mbox_data(q, pi, &ci, (void*)&msg->hdr, mbox_hdr_sz, mbox->bar4_fd);
 		buf_sz = msg->hdr.s.sz;
 		for (s = 0; ((s < msg->sg_num) && (buf_sz > 0)); s++) {
 			sg = &msg->sg_list[s];
 			r_sz = (sg->sz <= buf_sz) ? sg->sz : buf_sz;
-			read_mbox_data(q, pi, &ci, sg->msg, r_sz);
+			read_mbox_data(q, pi, &ci, sg->msg, r_sz, mbox->bar4_fd);
 			buf_sz -= r_sz;
 		}
 		if (buf_sz) {
@@ -281,7 +299,7 @@ int octep_ctrl_mbox_recv(struct octep_ctrl_mbox *mbox,
 			break;
 		}
 	}
-	cp_write32(ci, q->hw_cons);
+	cp_write32_fd(ci, q->hw_cons, mbox->bar4_fd);
 
 	return (m) ? m : -EAGAIN;
 }
@@ -293,11 +311,18 @@ int octep_ctrl_mbox_uninit(struct octep_ctrl_mbox *mbox)
 	if (!mbox->barmem)
 		return -EINVAL;
 
-	cp_write64(OCTEP_CTRL_MBOX_STATUS_UNINIT,
-		   OCTEP_CTRL_MBOX_INFO_FW_STATUS(mbox->barmem));
-	cp_write64(0, OCTEP_CTRL_MBOX_INFO_MAGIC_NUM(mbox->barmem));
-	cp_write64(0, OCTEP_CTRL_MBOX_INFO_FW_VERSION(mbox->barmem));
-	cp_write64(0, OCTEP_CTRL_MBOX_INFO_FW_STATUS(mbox->barmem));
+	cp_write64_fd(OCTEP_CTRL_MBOX_STATUS_UNINIT,
+		      OCTEP_CTRL_MBOX_INFO_FW_STATUS(mbox->barmem),
+		      mbox->bar4_fd);
+	cp_write64_fd(0,
+		      OCTEP_CTRL_MBOX_INFO_MAGIC_NUM(mbox->barmem),
+		      mbox->bar4_fd);
+	cp_write64_fd(0,
+		      OCTEP_CTRL_MBOX_INFO_FW_VERSION(mbox->barmem),
+		      mbox->bar4_fd);
+	cp_write64_fd(0,
+		      OCTEP_CTRL_MBOX_INFO_FW_STATUS(mbox->barmem),
+		      mbox->bar4_fd);
 
 	return 0;
 }

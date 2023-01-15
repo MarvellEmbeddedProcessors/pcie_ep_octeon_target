@@ -115,22 +115,24 @@ struct octep_ctrl_mbox_q {
 	/* size of queue buffer */
 	uint32_t sz;
 	/* producer address in bar mem */
-	void *hw_prod;
+	uint64_t hw_prod;
 	/* consumer address in bar mem */
-	void *hw_cons;
+	uint64_t hw_cons;
 	/* q base adddress in bar mem */
-	void *hw_q;
+	uint64_t hw_q;
 };
 
 struct octep_ctrl_mbox {
 	/* size of bar memory */
 	uint32_t barmem_sz;
 	/* pointer to BAR memory */
-	void *barmem;
+	uint64_t barmem;
 	/* host-to-fw queue */
 	struct octep_ctrl_mbox_q h2fq;
 	/* fw-to-host queue */
 	struct octep_ctrl_mbox_q f2hq;
+	/* file descriptor for bar memory */
+	int bar4_fd;
 };
 
 /* Initialize control mbox.

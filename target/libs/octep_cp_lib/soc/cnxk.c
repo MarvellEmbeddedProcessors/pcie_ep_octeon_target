@@ -26,6 +26,11 @@
  */
 #define MBOX_SZ		(size_t)(0x400000 / OCTEP_CP_PF_PER_DOM_MAX)
 
+#define PEM_BAR4_INDEX 8
+#define PEM_BAR4_INDEX_SIZE 0x400000ULL
+#define PEM_BAR4_INDEX_ADDR (PEM_BAR4_INDEX * PEM_BAR4_INDEX_SIZE)
+
+
 struct cnxk_pf {
 	/* pf is valid */
 	bool valid;
@@ -39,8 +44,6 @@ struct cnxk_pf {
 	off_t oei_trig_offset;
 	/* pf mbox */
 	struct octep_ctrl_mbox mbox;
-	/* offset from mapped address where actual data starts */
-	off_t mbox_offset;
 };
 
 struct cnxk_pem {
@@ -91,38 +94,6 @@ static inline int unmap_reg(void* addr, off_t offset, size_t len)
 	return munmap((addr - offset), (len + offset));
 }
 
-static int get_bar4_idx8_addr(struct cnxk_pem *pem, struct cnxk_pf *pf)
-{
-	off_t offset = 0;
-	uint64_t val;
-	void* addr;
-
-	addr = map_reg((PEMX_BASE(pem->idx) + BAR4_INDEX(8)),
-		       8,
-		       PROT_READ,
-		       &offset);
-	if (!addr) {
-		CP_LIB_LOG(INFO, CNXK, "Error mapping pem[%d] bar4 idx8\n",
-			   pem->idx);
-		return -EIO;
-	}
-	val = cp_read64(addr);
-	unmap_reg(addr, offset, 8);
-
-	if (!(val & 1)) {
-		CP_LIB_LOG(INFO, CNXK,
-			   "Invalid pem[%d] pf[%d] bar4 idx8 value %lx\n",
-			   pem->idx, pf->idx, val);
-		return -ENOMEM;
-	}
-
-	pf->bar4_addr = (((val & (~1)) >> 4) << 22) + (pf->idx * MBOX_SZ);
-	CP_LIB_LOG(INFO, CNXK, "pem[%d] pf[%d] bar4 idx8 addr 0x%lx\n",
-		   pem->idx, pf->idx, pf->bar4_addr);
-
-	return 0;
-}
-
 static int open_oei_trig_csr(struct cnxk_pem *pem, struct cnxk_pf *pf)
 {
 	pf->oei_trig_addr = map_reg(SDP0_EPFX_OEI_TRIG(pf->idx),
@@ -147,22 +118,21 @@ static int init_mbox(struct cnxk_pem *pem, struct cnxk_pf *pf)
 	int err;
 
 	mbox = &pf->mbox;
-	mbox->barmem = map_reg(pf->bar4_addr,
-			       MBOX_SZ,
-			       PROT_READ | PROT_WRITE,
-			       &pf->mbox_offset);
-	if (!mbox->barmem) {
-		CP_LIB_LOG(INFO, CNXK,
+	mbox->bar4_fd = open("/dev/pem_ep_bar4_mem", O_RDWR | O_SYNC);
+	if(mbox->bar4_fd <= 0) {
+		CP_LIB_LOG(ERR, CNXK,
 			   "Error allocating pem[%d] pf[%d] mbox.\n",
 			   pem->idx, pf->idx);
 		return -ENOMEM;
 	}
+
+	mbox->barmem = pf->bar4_addr;
 	mbox->barmem_sz = MBOX_SZ;
 	err = octep_ctrl_mbox_init(mbox);
 	if (err) {
 		CP_LIB_LOG(INFO, CNXK, "pem[%d] pf[%d] mbox init failed.\n",
 			   pem->idx, pf->idx);
-		unmap_reg(mbox->barmem, pf->mbox_offset, MBOX_SZ);
+		close(mbox->bar4_fd);
 	}
 	CP_LIB_LOG(INFO, CNXK, "pem[%d] pf[%d] mbox h2fq sz %u addr %p\n",
 		   pem->idx, pf->idx, mbox->h2fq.sz, mbox->h2fq.hw_q);
@@ -235,9 +205,7 @@ static int init_pf(struct cnxk_pem *pem, struct cnxk_pf *pf)
 {
 	int err;
 
-	err = get_bar4_idx8_addr(pem, pf);
-	if (err)
-		return err;
+	pf->bar4_addr = PEM_BAR4_INDEX_ADDR;
 	err = init_mbox(pem, pf);
 	if (err)
 		return err;
@@ -252,7 +220,7 @@ static int uninit_pf(struct cnxk_pem *pem, struct cnxk_pf *pf)
 {
 	if (pf->mbox.barmem) {
 		octep_ctrl_mbox_uninit(&pf->mbox);
-		unmap_reg(pf->mbox.barmem, pf->mbox_offset, MBOX_SZ);
+		close(pf->mbox.bar4_fd);
 	}
 
 	if (pf->oei_trig_addr)

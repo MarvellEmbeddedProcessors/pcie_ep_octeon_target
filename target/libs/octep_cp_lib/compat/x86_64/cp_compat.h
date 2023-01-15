@@ -86,4 +86,55 @@ cp_eth_random_addr(uint8_t *addr)
 	addr[0] |= CP_ETHER_LOCAL_ADMIN_ADDR; /* set local assignment bit */
 }
 
+static __cp_always_inline uint32_t
+cp_read32_fd(uint64_t addr, int fd)
+{
+	uint32_t val;
+
+	lseek(fd, addr, SEEK_SET);
+	read(fd, &val, 4);
+
+	return val;
+}
+
+static __cp_always_inline uint64_t
+cp_read64_fd(uint64_t addr, int fd)
+{
+	uint64_t val;
+
+	lseek(fd, addr, SEEK_SET);
+	read(fd, &val, 8);
+
+	return val;
+}
+
+static __cp_always_inline size_t
+cp_read_fd(void* buf, size_t count, uint64_t addr, int fd)
+{
+	lseek(fd, addr, SEEK_SET);
+
+	return read(fd, buf, count);
+}
+
+static __cp_always_inline void
+cp_write32_fd(uint32_t value, uint64_t addr, int fd)
+{
+	lseek(fd, addr, SEEK_SET);
+	write(fd, &value, 4);
+}
+
+static __cp_always_inline void
+cp_write64_fd(uint64_t value, uint64_t addr, int fd)
+{
+	lseek(fd, addr, 0);
+	write(fd, &value, 8);
+}
+
+static __cp_always_inline void
+cp_write_fd(void* buf, size_t count, uint64_t addr, int fd)
+{
+	lseek(fd, addr, SEEK_SET);
+	write(fd, buf, count);
+}
+
 #endif /* __CP_COMPAT_H__ */
