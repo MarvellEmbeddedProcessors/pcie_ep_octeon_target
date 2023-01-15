@@ -24,7 +24,7 @@
  * there are 16 4mb slots in bar4, we assign 1 slot per pem,
  * so each pf will get 4mb/OCTEP_CP_PF_PER_DOM_MAX = 32768 bytes for mbox.
  */
-#define MBOX_SZ		(size_t)(0x400000 / OCTEP_CP_PF_PER_DOM_MAX)
+#define MBOX_SZ		(size_t)(PEMX_BAR4_INDEX_SIZE / OCTEP_CP_PF_PER_DOM_MAX)
 
 #define PEM_BAR4_INDEX 8
 #define PEM_BAR4_INDEX_SIZE 0x400000ULL
@@ -115,13 +115,15 @@ static int open_oei_trig_csr(struct cnxk_pem *pem, struct cnxk_pf *pf)
 static int init_mbox(struct cnxk_pem *pem, struct cnxk_pf *pf)
 {
 	struct octep_ctrl_mbox *mbox;
+	char memdev_name[32];
 	int err;
 
 	mbox = &pf->mbox;
-	mbox->bar4_fd = open("/dev/pem_ep_bar4_mem", O_RDWR | O_SYNC);
+	snprintf(memdev_name, 32, "/dev/pem%lld_ep_bar4_mem", pem->idx);
+	mbox->bar4_fd = open(memdev_name, O_RDWR | O_SYNC);
 	if(mbox->bar4_fd <= 0) {
 		CP_LIB_LOG(ERR, CNXK,
-			   "Error allocating pem[%d] pf[%d] mbox.\n",
+			   "Error opening pem[%d] pf[%d] mbox file.\n",
 			   pem->idx, pf->idx);
 		return -ENOMEM;
 	}
@@ -205,7 +207,7 @@ static int init_pf(struct cnxk_pem *pem, struct cnxk_pf *pf)
 {
 	int err;
 
-	pf->bar4_addr = PEM_BAR4_INDEX_ADDR + (pf->idx * MBOX_SZ);
+	pf->bar4_addr = PEMX_BAR4_INDEX_ADDR + (pf->idx * MBOX_SZ);
 	err = init_mbox(pem, pf);
 	if (err)
 		return err;

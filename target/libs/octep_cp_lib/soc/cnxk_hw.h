@@ -11,7 +11,9 @@
 #define PEMX_ON_PEMOOR			(0x2ull)
 
 /* pemX bar4 index, this is a chunk of 4mb */
-#define BAR4_INDEX(i)			(0x700ull | i<<3)
+#define PEMX_BAR4_INDEX			8
+#define PEMX_BAR4_INDEX_SIZE		0x400000ULL
+#define PEMX_BAR4_INDEX_ADDR		(PEMX_BAR4_INDEX * PEMX_BAR4_INDEX_SIZE)
 
 #define PEMX_CFG_WR_OFFSET		0x18
 #define PEMX_CFG_WR_DATA		32
