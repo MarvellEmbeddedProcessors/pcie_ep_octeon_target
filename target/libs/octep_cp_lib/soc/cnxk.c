@@ -205,7 +205,7 @@ static int init_pf(struct cnxk_pem *pem, struct cnxk_pf *pf)
 {
 	int err;
 
-	pf->bar4_addr = PEM_BAR4_INDEX_ADDR;
+	pf->bar4_addr = PEM_BAR4_INDEX_ADDR + (pf->idx * MBOX_SZ);
 	err = init_mbox(pem, pf);
 	if (err)
 		return err;
