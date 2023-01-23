@@ -45,13 +45,13 @@ LDFLAGS_SHARED = -L$(CP_LIB_DIR) -l$(NAME_PREFIX)
 ifneq ($(BUILD_DEP_LIB),)
 LDFLAGS_SHARED += -L$(BUILD_DEP_LIB)
 endif
-LDFLAGS_SHARED += -lconfig
+LDFLAGS_SHARED += -lconfig -lrt
 
 LDFLAGS_STATIC = -L$(CP_LIB_DIR) -l:lib$(NAME_PREFIX).a
 ifneq ($(BUILD_DEP_LIB),)
 LDFLAGS_STATIC += -L$(BUILD_DEP_LIB)
 endif
-LDFLAGS_STATIC += -lconfig
+LDFLAGS_STATIC += -lconfig -lrt
 
 STATIC_BIN = $(APP_NAME)
 SHARED_BIN = $(APP_NAME)-shared

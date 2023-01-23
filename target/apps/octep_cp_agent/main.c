@@ -8,6 +8,7 @@
 #include <errno.h>
 #include <string.h>
 #include <sys/time.h>
+#include <time.h>
 
 #include "octep_cp_lib.h"
 #include "loop.h"
@@ -16,8 +17,10 @@
 static volatile int force_quit = 0;
 static volatile int perst = 0;
 static int hb_interval = 0;
-
 struct octep_cp_lib_cfg cp_lib_cfg = { 0 };
+
+static timer_t tim;
+static struct itimerspec itim = { 0 };
 
 static int process_events()
 {
@@ -58,6 +61,14 @@ static int send_heartbeat()
 	return 0;
 }
 
+static void trigger_alarm(int hb_interval)
+{
+	itim.it_value.tv_sec = (hb_interval / 1000);
+	itim.it_value.tv_nsec = (hb_interval % 1000) * 1000000;
+
+	timer_settime(tim, 0, &itim, NULL);
+}
+
 void sigint_handler(int sig_num) {
 
 	if (sig_num == SIGINT) {
@@ -68,7 +79,7 @@ void sigint_handler(int sig_num) {
 			return;
 
 		send_heartbeat();
-		alarm(hb_interval);
+		trigger_alarm(hb_interval);
 	}
 }
 
@@ -107,6 +118,7 @@ int main(int argc, char *argv[])
 	signal(SIGINT, sigint_handler);
 	signal(SIGALRM, sigint_handler);
 
+	timer_create(CLOCK_REALTIME, NULL, &tim);
 init:
 	hb_interval = 0;
 	cp_lib_cfg.ndoms = cfg.npem;
@@ -145,8 +157,7 @@ init:
 
 	set_fw_ready(1);
 	printf("Heartbeat interval : %u msecs\n", hb_interval);
-	hb_interval /= 1000;
-	alarm(hb_interval);
+	trigger_alarm(hb_interval);
 	while (!force_quit && !perst) {
 		loop_process_msgs();
 		process_events();
@@ -162,6 +173,7 @@ init:
 		goto init;
 	}
 
+	timer_delete(tim);
 	app_config_uninit();
 
 	return 0;
