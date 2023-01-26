@@ -119,10 +119,24 @@ struct octep_iface_tx_stats {
 struct octep_fw_info {
 	/* interface pkind */
 	uint16_t pkind;
+
 	/* pf heartbeat interval in milliseconds */
 	uint16_t hb_interval;
+
 	/* pf heartbeat miss count */
 	uint16_t hb_miss_count;
+
+	/* reserved */
+	uint16_t reserved1;
+
+	/* supported offloads */
+	uint64_t offloads[2];
+
+	/* supported features */
+	uint64_t features[2];
+
+	/* reserved */
+	uint64_t reserved2[3];
 };
 
 #endif /* __OCTEP_HW_H__ */
