@@ -8,6 +8,10 @@
 #define BIT_ULL(nr) (1ULL << (nr))
 #endif
 
+#define OCTEP_CP_VERSION(a, b, c)		(((a & 0xff) << 16) + \
+						 ((b & 0xff) << 8) + \
+						  (c & 0xff))
+
 #define OCTEP_CP_DOM_MAX			8
 #define OCTEP_CP_PF_PER_DOM_MAX			128
 #define OCTEP_CP_MSG_DESC_MAX			4
@@ -183,6 +187,14 @@ struct octep_cp_dom_cfg {
 /* library configuration */
 struct octep_cp_lib_cfg {
 	/* Info to be filled by caller */
+	/* Control plane min supported version,
+	 * should be of type OCTEP_CP_VERSION
+	 */
+	uint32_t min_version;
+	/* Control plane max supported version,
+	 * should be of type OCTEP_CP_VERSION
+	 */
+	uint32_t max_version;
 	/* number of pcie mac domains */
 	uint16_t ndoms;
 	/* configuration for pcie mac domains */
@@ -209,6 +221,8 @@ struct octep_cp_dom_info {
 
 /* library information */
 struct octep_cp_lib_info {
+	/* Host control plane version of type OCTEP_CP_VERSION */
+	uint32_t host_version;
 	/* Detected soc */
 	struct octep_cp_soc_model soc_model;
 	/* number of pcie mac domains */

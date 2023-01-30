@@ -112,7 +112,8 @@ static int open_oei_trig_csr(struct cnxk_pem *pem, struct cnxk_pf *pf)
 	return 0;
 }
 
-static int init_mbox(struct cnxk_pem *pem, struct cnxk_pf *pf)
+static int init_mbox(struct octep_cp_lib_cfg *cfg, struct cnxk_pem *pem,
+		     struct cnxk_pf *pf)
 {
 	struct octep_ctrl_mbox *mbox;
 	char memdev_name[32];
@@ -128,6 +129,8 @@ static int init_mbox(struct cnxk_pem *pem, struct cnxk_pf *pf)
 		return -ENOMEM;
 	}
 
+	mbox->min_version = cfg->min_version;
+	mbox->max_version = cfg->max_version;
 	mbox->barmem = pf->bar4_addr;
 	mbox->barmem_sz = MBOX_SZ;
 	err = octep_ctrl_mbox_init(mbox);
@@ -136,6 +139,8 @@ static int init_mbox(struct cnxk_pem *pem, struct cnxk_pf *pf)
 			   pem->idx, pf->idx);
 		close(mbox->bar4_fd);
 	}
+	CP_LIB_LOG(INFO, CNXK, "pem[%d] pf[%d] control plane versions %x:%x\n",
+		   pem->idx, pf->idx, cfg->min_version, cfg->max_version);
 	CP_LIB_LOG(INFO, CNXK, "pem[%d] pf[%d] mbox h2fq sz %u addr %p\n",
 		   pem->idx, pf->idx, mbox->h2fq.sz, mbox->h2fq.hw_q);
 	CP_LIB_LOG(INFO, CNXK, "pem[%d] pf[%d] mbox f2hq sz %u addr %p\n",
@@ -203,12 +208,13 @@ static int set_fw_ready(struct cnxk_pem *pem, struct cnxk_pf *pf,
 	return 0;
 }
 
-static int init_pf(struct cnxk_pem *pem, struct cnxk_pf *pf)
+static int init_pf(struct octep_cp_lib_cfg *cfg, struct cnxk_pem *pem,
+		   struct cnxk_pf *pf)
 {
 	int err;
 
 	pf->bar4_addr = PEMX_BAR4_INDEX_ADDR + (pf->idx * MBOX_SZ);
-	err = init_mbox(pem, pf);
+	err = init_mbox(cfg, pem, pf);
 	if (err)
 		return err;
 	err = open_oei_trig_csr(pem, pf);
@@ -299,7 +305,8 @@ static int uninit_pem(struct cnxk_pem *pem)
 	return 0;
 }
 
-static int init_pem(struct cnxk_pem *pem, struct octep_cp_dom_cfg *dom_cfg)
+static int init_pem(struct octep_cp_lib_cfg *cfg, struct cnxk_pem *pem,
+		    struct octep_cp_dom_cfg *dom_cfg)
 {
 	struct octep_cp_pf_cfg *pf_cfg;
 	struct cnxk_pf *pf;
@@ -335,7 +342,7 @@ static int init_pem(struct cnxk_pem *pem, struct octep_cp_dom_cfg *dom_cfg)
 
 		pf = &pem->pfs[j];
 		pf->idx = pf_cfg->idx;
-		err = init_pf(pem, pf);
+		err = init_pf(cfg, pem, pf);
 		if (err) {
 			err = -ENOLINK;
 			goto init_fail;
@@ -371,7 +378,7 @@ int cnxk_init(struct octep_cp_lib_cfg *cfg)
 			goto init_fail;
 		}
 
-		err = init_pem(&pems[dom_cfg->idx], dom_cfg);
+		err = init_pem(cfg, &pems[dom_cfg->idx], dom_cfg);
 		if (err)
 			goto init_fail;
 	}

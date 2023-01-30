@@ -14,6 +14,15 @@
 #include "loop.h"
 #include "app_config.h"
 
+/* Control plane version */
+#define CP_VERSION_MAJOR		1
+#define CP_VERSION_MINOR		0
+#define CP_VERSION_VARIANT		0
+
+#define CP_VERSION_CURRENT		(OCTEP_CP_VERSION(CP_VERSION_MAJOR, \
+							  CP_VERSION_MINOR, \
+							  CP_VERSION_VARIANT))
+
 static volatile int force_quit = 0;
 static volatile int perst = 0;
 static int hb_interval = 0;
@@ -121,6 +130,8 @@ int main(int argc, char *argv[])
 	timer_create(CLOCK_REALTIME, NULL, &tim);
 init:
 	hb_interval = 0;
+	cp_lib_cfg.min_version = CP_VERSION_CURRENT;
+	cp_lib_cfg.max_version = CP_VERSION_CURRENT;
 	cp_lib_cfg.ndoms = cfg.npem;
 	dst_i = 0;
 	for (src_i = 0; src_i < APP_CFG_PEM_MAX; src_i++) {

@@ -13,10 +13,12 @@
  * |reserved (4 bytes)                         |
  * |-------------------------------------------|
  * |host version (8 bytes)                     |
+ * |    low 32 bits                            |
  * |host status (8 bytes)                      |
  * |host reserved (104 bytes)                  |
  * |-------------------------------------------|
- * |fw version (8 bytes)                       |
+ * |fw version's (8 bytes)                     |
+ * |    min=high 32 bits, max=low 32 bits      |
  * |fw status (8 bytes)                        |
  * |fw reserved (104 bytes)                    |
  * |===========================================|
@@ -49,18 +51,18 @@
 #define BIT(a)	(1ULL << (a))
 #endif
 
-#define OCTEP_CTRL_MBOX_MAGIC_NUMBER			0xdeaddeadbeefbeefull
+#define OCTEP_CTRL_MBOX_MAGIC_NUMBER		0xdeaddeadbeefbeefull
 
 /* Valid request message */
-#define OCTEP_CTRL_MBOX_MSG_HDR_FLAG_REQ		BIT(0)
+#define OCTEP_CTRL_MBOX_MSG_HDR_FLAG_REQ	BIT(0)
 /* Valid response message */
-#define OCTEP_CTRL_MBOX_MSG_HDR_FLAG_RESP		BIT(1)
+#define OCTEP_CTRL_MBOX_MSG_HDR_FLAG_RESP	BIT(1)
 /* Valid notification, no response required */
-#define OCTEP_CTRL_MBOX_MSG_HDR_FLAG_NOTIFY		BIT(2)
+#define OCTEP_CTRL_MBOX_MSG_HDR_FLAG_NOTIFY	BIT(2)
 /* Valid custom message */
-#define OCTEP_CTRL_MBOX_MSG_HDR_FLAG_CUSTOM		BIT(3)
+#define OCTEP_CTRL_MBOX_MSG_HDR_FLAG_CUSTOM	BIT(3)
 
-#define OCTEP_CTRL_MBOX_MSG_DESC_MAX			4
+#define OCTEP_CTRL_MBOX_MSG_DESC_MAX		4
 
 enum octep_ctrl_mbox_status {
 	OCTEP_CTRL_MBOX_STATUS_INVALID = 0,
@@ -123,6 +125,14 @@ struct octep_ctrl_mbox_q {
 };
 
 struct octep_ctrl_mbox {
+	/* Control plane min supported version,
+	 * should be of type OCTEP_CP_VERSION
+	 */
+	uint32_t min_version;
+	/* Control plane max supported version,
+	 * should be of type OCTEP_CP_VERSION
+	 */
+	uint32_t max_version;
 	/* size of bar memory */
 	uint32_t barmem_sz;
 	/* pointer to BAR memory */
@@ -133,6 +143,8 @@ struct octep_ctrl_mbox {
 	struct octep_ctrl_mbox_q f2hq;
 	/* file descriptor for bar memory */
 	int bar4_fd;
+	/* host version */
+	uint64_t host_version;
 };
 
 /* Initialize control mbox.

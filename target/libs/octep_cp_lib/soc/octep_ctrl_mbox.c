@@ -46,6 +46,24 @@
 
 static const uint32_t mbox_hdr_sz = sizeof(union octep_ctrl_mbox_msg_hdr);
 
+static inline int is_host_ready(struct octep_ctrl_mbox *mbox)
+{
+	uint64_t val;
+
+	val = cp_read64_fd(OCTEP_CTRL_MBOX_INFO_HOST_STATUS(mbox->barmem),
+			   mbox->bar4_fd);
+	if (val != OCTEP_CTRL_MBOX_STATUS_READY)
+		return 0;
+
+	if (mbox->host_version)
+		return 1;
+
+	mbox->host_version = cp_read64_fd(OCTEP_CTRL_MBOX_INFO_HOST_VERSION(mbox->barmem),
+					  mbox->bar4_fd);
+
+	return (!mbox->host_version);
+}
+
 static inline uint32_t octep_ctrl_mbox_circq_inc(uint32_t index, uint32_t inc,
 						 uint32_t sz)
 {
@@ -88,11 +106,14 @@ static inline int set_mbox_info(struct octep_ctrl_mbox *mbox)
 	mbox->f2hq.hw_cons = OCTEP_CTRL_MBOX_F2HQ_CONS(mbox->barmem);
 	mbox->f2hq.hw_q = mbox->barmem + OCTEP_CTRL_MBOX_TOTAL_INFO_SZ + qsz;
 
+	mbox->host_version = 0;
+
 	return 0;
 }
 
 int octep_ctrl_mbox_init(struct octep_ctrl_mbox *mbox)
 {
+	uint64_t supported_versions;
 	int err;
 
 	if (!mbox)
@@ -113,6 +134,11 @@ int octep_ctrl_mbox_init(struct octep_ctrl_mbox *mbox)
 		      mbox->bar4_fd);
 	cp_write64_fd(OCTEP_CTRL_MBOX_STATUS_INIT,
 		      OCTEP_CTRL_MBOX_INFO_FW_STATUS(mbox->barmem),
+		      mbox->bar4_fd);
+	supported_versions = (((uint64_t)mbox->min_version) << 32) |
+			      mbox->max_version;
+	cp_write64_fd(supported_versions,
+		      OCTEP_CTRL_MBOX_INFO_FW_VERSION(mbox->barmem),
 		      mbox->bar4_fd);
 	cp_write32_fd(0,
 		      OCTEP_CTRL_MBOX_H2FQ_PROD(mbox->barmem),
@@ -179,14 +205,11 @@ int octep_ctrl_mbox_send(struct octep_ctrl_mbox *mbox,
 	struct octep_ctrl_mbox_q *q;
 	uint32_t pi, ci, prev_pi, buf_sz, w_sz;
 	int m, s;
-	uint64_t val;
 
 	if (!mbox || !msgs)
 		return -EINVAL;
 
-	val = cp_read64_fd(OCTEP_CTRL_MBOX_INFO_HOST_STATUS(mbox->barmem),
-			   mbox->bar4_fd);
-	if (val != OCTEP_CTRL_MBOX_STATUS_READY)
+	if (!is_host_ready(mbox))
 		return -EIO;
 
 	q = &mbox->f2hq;
@@ -262,14 +285,11 @@ int octep_ctrl_mbox_recv(struct octep_ctrl_mbox *mbox,
 	struct octep_ctrl_mbox_q *q;
 	uint32_t pi, ci, q_depth, r_sz, buf_sz, prev_ci;
 	int s, m;
-	uint64_t val;
 
 	if (!mbox || !msgs)
 		return -EINVAL;
 
-	val = cp_read64_fd(OCTEP_CTRL_MBOX_INFO_HOST_STATUS(mbox->barmem),
-			   mbox->bar4_fd);
-	if (val != OCTEP_CTRL_MBOX_STATUS_READY)
+	if (!is_host_ready(mbox))
 		return -EIO;
 
 	q = &mbox->h2fq;
