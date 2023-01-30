@@ -1,0 +1,45 @@
+Marvell SDP Input Rate Limiting
+===============================
+
+Host SDP input rate limiting configuration can be done using the following script and cfg file.
+
+target/apps/ratelimit
+├── README
+├── sdp-iq-rl.cfg
+└── sdp-iq-rl.sh
+
+These scripts are to be executed on the Octeon (target) platform.
+
+* sdp-iq-rl.sh
+	This script configures the SDP input queue rate limiting at Host side by
+	taking the configuration params from the sdp-iq-rl.cfg.
+* sdp-iq-rl.cfg
+	This cfg file is in CSV format and  contains the rate limiting configuration parameters
+	in the following order.
+	<VF ID>,<Queue Number>,<Bandwidth in Mbps>
+	Example:
+		0,0,8000 // This represents to configure Queue number 0 of SDP VF 0 to 8000 Mbps
+		0,1,7000 // This represents to configure Queue number 1 of SDP VF 0 to 7000 Mbps
+		0,2,6000 // This represents to configure Queue number 2 of SDP VF 0 to 6000 Mbps
+		1,0,8000 // This represents to configure Queue number 0 of SDP VF 1 to 8000 Mbps
+		1,1,7000 // This represents to configure Queue number 1 of SDP VF 1 to 7000 Mbps
+		1,2,6000 // This represents to configure Queue number 2 of SDP VF 1 to 6000 Mbps
+		2,0,8000 // This represents to configure Queue number 0 of SDP VF 2 to 8000 Mbps
+		2,1,7000 // This represents to configure Queue number 1 of SDP VF 2 to 7000 Mbps
+		2,2,6000 // This represents to configure Queue number 2 of SDP VF 2 to 6000 Mbps
+
+* sdp-iq-rl.cfg.run
+	The current running rate limiting configuration can be found in this file, only if the
+	configuration has been applied  successfully by the script and will be created dynamically
+	at the end.
+
+* To disable SDP rate limiting (ie; no rate limiting to be applied), configure bandwidth
+  as 0 for the specific VF, Queue pair in sdp-iq-rl.cfg and re-run the sdp-iq-rl.sh script.
+
+How to apply rate limit
+-----------------------
+
+Prepare the sdp-iq-rl.cfg file and run the rate limit script as below:
+
+  $cd $APP_DIR/ratelimit
+  $sh sdp-iq-rl.sh
