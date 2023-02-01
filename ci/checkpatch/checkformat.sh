@@ -44,7 +44,7 @@ for f in $@; do
 	echo -e "\n$f"
 	printf '=%.0s' $(seq 1 ${#f})
 	echo ""
-	output=$(cat $f | $CLANG_FORMAT -p1 $EXTRA_ARGS 2>&1)
+	output=$(cat $f | $CLANG_FORMAT -p1 $EXTRA_ARGS -style=file 2>&1)
 	# Ignore non-existing file comparisons because it means those files
 	# have been removed in later commits or patch wouldn't apply.
 	output=${output/No such file or directory/}
