@@ -740,17 +740,19 @@ check_all_ports_link_status(void)
 			/* print link status if flag set */
 			if (print_flag == 1) {
 				if (link.link_status)
-					printf(
-					"Port%d Link Up. Speed %u Mbps - %s\n",
-						portid, link.link_speed,
-				(link.link_duplex == ETH_LINK_FULL_DUPLEX) ?
-					("full-duplex") : ("half-duplex\n"));
+					printf("Port%d Link Up. Speed %u Mbps - "
+					       "%s\n",
+					       portid, link.link_speed,
+					       (link.link_duplex ==
+						L2FWD_PCIE_EP_ETH_LINK_FULL_DUPLEX) ?
+						       ("full-duplex") :
+						       ("half-duplex\n"));
 				else
 					printf("Port %d Link Down\n", portid);
 				continue;
 			}
 			/* clear all_ports_up flag if any link down */
-			if (link.link_status == ETH_LINK_DOWN) {
+			if (link.link_status == L2FWD_PCIE_EP_ETH_LINK_DOWN) {
 				all_ports_up = 0;
 				break;
 			}
@@ -786,10 +788,13 @@ signal_handler(int signum)
 static void
 init_port_type(void)
 {
+
+#if L2FWD_PCIE_EP_RTE_VERSION < RTE_VERSION_NUM(22, 11, 0, 0)
 	struct rte_pci_device *pci_dev;
 	uint16_t port;
 
-	RTE_ETH_FOREACH_DEV(port) {
+	RTE_ETH_FOREACH_DEV(port)
+	{
 
 		pci_dev = l2fwd_pcie_ep_get_pci_dev(port);
 		if (pci_dev == NULL)
@@ -807,13 +812,12 @@ init_port_type(void)
 		} else if (pci_dev->id.device_id == 0xa0f7) {
 			port_map_info[port].port_type = PORT_TYPE_NPU_PCI;
 		} else {
-			printf("Unknown port %d; device (%x:%x) %u:%u:%u:%u\n",
-				port,
-				pci_dev->id.vendor_id, pci_dev->id.device_id,
-				pci_dev->addr.domain, pci_dev->addr.bus,
-				pci_dev->addr.devid, pci_dev->addr.function);
+			printf("Unknown port %d; device (%x:%x) %u:%u:%u:%u\n", port,
+			       pci_dev->id.vendor_id, pci_dev->id.device_id, pci_dev->addr.domain,
+			       pci_dev->addr.bus, pci_dev->addr.devid, pci_dev->addr.function);
 		}
 	}
+#endif
 }
 
 int
@@ -831,37 +835,41 @@ main(int argc, char **argv)
 	uint16_t portid;
 	int ret;
 
-	uint8_t default_key[] = {
-		0xFE, 0xED, 0x0B, 0xAD, 0xFE, 0xED, 0x0B, 0xAD,
-		0xAD, 0x0B, 0xED, 0xFE, 0xAD, 0x0B, 0xED, 0xFE,
-		0x13, 0x57, 0x9B, 0xEF, 0x24, 0x68, 0xAC, 0x0E,
-		0x91, 0x72, 0x53, 0x11, 0x82, 0x64, 0x20, 0x44,
-		0x12, 0xEF, 0x34, 0xCD, 0x56, 0xBC, 0x78, 0x9A,
-		0x9A, 0x78, 0xBC, 0x56, 0xCD, 0x34, 0xEF, 0x12
-	};
+	uint8_t default_key[] = {0xFE, 0xED, 0x0B, 0xAD, 0xFE, 0xED, 0x0B, 0xAD, 0xAD, 0x0B,
+				 0xED, 0xFE, 0xAD, 0x0B, 0xED, 0xFE, 0x13, 0x57, 0x9B, 0xEF,
+				 0x24, 0x68, 0xAC, 0x0E, 0x91, 0x72, 0x53, 0x11, 0x82, 0x64,
+				 0x20, 0x44, 0x12, 0xEF, 0x34, 0xCD, 0x56, 0xBC, 0x78, 0x9A,
+				 0x9A, 0x78, 0xBC, 0x56, 0xCD, 0x34, 0xEF, 0x12};
 
 	struct rte_eth_conf port_conf = {
-		.rxmode = {
-			.mq_mode = ETH_MQ_RX_RSS,
-			.split_hdr_size = 0,
-			.offloads = (DEV_RX_OFFLOAD_TCP_CKSUM |
-				     DEV_RX_OFFLOAD_IPV4_CKSUM |
-				     DEV_RX_OFFLOAD_UDP_CKSUM |
-				     DEV_RX_OFFLOAD_JUMBO_FRAME),
-		},
-		.rx_adv_conf = {
-			.rss_conf = {
-				.rss_key = default_key,
-				.rss_hf = (ETH_RSS_IP | ETH_RSS_UDP |
-						ETH_RSS_TCP),
+		.rxmode =
+			{
+				.mq_mode = L2FWD_PCIE_EP_ETH_MQ_RX_RSS,
+#if L2FWD_PCIE_EP_RTE_VERSION < RTE_VERSION_NUM(22, 11, 0, 0)
+				.split_hdr_size = 0,
+#endif
+				.offloads = (L2FWD_PCIE_EP_ETH_RX_OFFLOAD_TCP_CKSUM |
+					     L2FWD_PCIE_EP_ETH_RX_OFFLOAD_IPV4_CKSUM |
+					     L2FWD_PCIE_EP_ETH_RX_OFFLOAD_UDP_CKSUM |
+					     L2FWD_PCIE_EP_ETH_RX_OFFLOAD_JUMBO_FRAME),
 			},
-		},
-		.txmode = {
-			.mq_mode = ETH_MQ_TX_NONE,
-			.offloads = (DEV_TX_OFFLOAD_TCP_CKSUM |
-				     DEV_TX_OFFLOAD_IPV4_CKSUM |
-				     DEV_TX_OFFLOAD_UDP_CKSUM),
-		},
+		.rx_adv_conf =
+			{
+				.rss_conf =
+					{
+						.rss_key = default_key,
+						.rss_hf = (L2FWD_PCIE_EP_ETH_RSS_IP |
+							   L2FWD_PCIE_EP_ETH_RSS_UDP |
+							   L2FWD_PCIE_EP_ETH_RSS_TCP),
+					},
+			},
+		.txmode =
+			{
+				.mq_mode = L2FWD_PCIE_EP_ETH_MQ_TX_NONE,
+				.offloads = (L2FWD_PCIE_EP_ETH_TX_OFFLOAD_TCP_CKSUM |
+					     L2FWD_PCIE_EP_ETH_TX_OFFLOAD_IPV4_CKSUM |
+					     L2FWD_PCIE_EP_ETH_TX_OFFLOAD_UDP_CKSUM),
+			},
 	};
 
 	/* init EAL */
@@ -978,49 +986,44 @@ main(int argc, char **argv)
 
 		ret = rte_eth_dev_info_get(portid, &dev_info);
 		if (ret != 0)
-			rte_panic("Error during getting device (port %u) info: %s\n",
-				  portid, strerror(-ret));
+			rte_panic("Error during getting device (port %u) info: %s\n", portid,
+				  strerror(-ret));
 
-		if (!(dev_info.rx_offload_capa & DEV_RX_OFFLOAD_SCATTER))
+		if (!(dev_info.rx_offload_capa & L2FWD_PCIE_EP_ETH_RX_OFFLOAD_SCATTER))
 			printf("SCATTER not supported in driver\n");
 		else
-			local_port_conf.rxmode.offloads |=
-						 DEV_RX_OFFLOAD_SCATTER;
+			local_port_conf.rxmode.offloads |= L2FWD_PCIE_EP_ETH_RX_OFFLOAD_SCATTER;
 
-		if (!(dev_info.tx_offload_capa & DEV_TX_OFFLOAD_MULTI_SEGS))
+		if (!(dev_info.tx_offload_capa & L2FWD_PCIE_EP_ETH_TX_OFFLOAD_MULTI_SEGS))
 			printf("MULTI_SEG not supported in driver\n");
 		else
-			local_port_conf.txmode.offloads |=
-						 DEV_TX_OFFLOAD_MULTI_SEGS;
+			local_port_conf.txmode.offloads |= L2FWD_PCIE_EP_ETH_TX_OFFLOAD_MULTI_SEGS;
 
-		if (dev_info.rx_offload_capa & DEV_RX_OFFLOAD_RSS_HASH) {
+		if (dev_info.rx_offload_capa & L2FWD_PCIE_EP_ETH_RX_OFFLOAD_RSS_HASH) {
 			printf("setting rx hash for port id %d\n", portid);
-			local_port_conf.rxmode.offloads
-				|= DEV_RX_OFFLOAD_RSS_HASH;
+			local_port_conf.rxmode.offloads |= L2FWD_PCIE_EP_ETH_RX_OFFLOAD_RSS_HASH;
 		}
 
-		local_port_conf.rx_adv_conf.rss_conf.rss_hf &=
-			dev_info.flow_type_rss_offloads;
+		local_port_conf.rx_adv_conf.rss_conf.rss_hf &= dev_info.flow_type_rss_offloads;
 		if (local_port_conf.rx_adv_conf.rss_conf.rss_hf !=
-				port_conf.rx_adv_conf.rss_conf.rss_hf) {
-			printf("Port %u modified RSS hash function based on hardware support,"
-			       "requested:%#"PRIx64" configured:%#"PRIx64"",
-				portid,
-				port_conf.rx_adv_conf.rss_conf.rss_hf,
-				local_port_conf.rx_adv_conf.rss_conf.rss_hf);
+		    port_conf.rx_adv_conf.rss_conf.rss_hf) {
+			printf("Port %u modified RSS hash function based on "
+			       "hardware support,"
+			       "requested:%#" PRIx64 " configured:%#" PRIx64 "",
+			       portid, port_conf.rx_adv_conf.rss_conf.rss_hf,
+			       local_port_conf.rx_adv_conf.rss_conf.rss_hf);
 		}
 
-		if (dev_info.tx_offload_capa & DEV_TX_OFFLOAD_MBUF_FAST_FREE)
+		if (dev_info.tx_offload_capa & L2FWD_PCIE_EP_ETH_TX_OFFLOAD_MBUF_FAST_FREE)
 			local_port_conf.txmode.offloads |=
-				DEV_TX_OFFLOAD_MBUF_FAST_FREE;
+				L2FWD_PCIE_EP_ETH_TX_OFFLOAD_MBUF_FAST_FREE;
 
 		/* local_port_conf.link_speeds =
 			rte_eth_devices[portid].data->dev_conf.link_speeds;
 		*/
 		l2fwd_configure_pkt_len(&local_port_conf, &dev_info);
 
-		ret = rte_eth_dev_configure(portid, l2fwd_queues_per_port,
-					    l2fwd_queues_per_port,
+		ret = rte_eth_dev_configure(portid, l2fwd_queues_per_port, l2fwd_queues_per_port,
 					    &local_port_conf);
 		if (ret < 0)
 			rte_exit(EXIT_FAILURE, "Cannot configure device: err=%d, port=%u\n",
