@@ -50,7 +50,7 @@ int octep_cp_lib_get_info(struct octep_cp_lib_info *info)
 {
 	int err;
 
-	CP_LIB_LOG(INFO, LIB, "get info\n");
+	//CP_LIB_LOG(INFO, LIB, "get info\n");
 	if (state < CP_LIB_STATE_INIT)
 		return -EAGAIN;
 

@@ -41,61 +41,6 @@ struct app_cfg cfg;
 #define CFG_TOKEN_INFO_HB_INTERVAL	"hb_interval"
 #define CFG_TOKEN_INFO_HB_MISS_COUNT	"hb_miss_count"
 
-static void print_if(struct if_cfg *iface)
-{
-	printf("mac_addr: %02x:%02x:%02x:%02x:%02x:%02x\n",
-	       iface->mac_addr[0], iface->mac_addr[1],
-	       iface->mac_addr[2], iface->mac_addr[3],
-	       iface->mac_addr[4], iface->mac_addr[5]);
-	printf("mtu: %d, link: %d, rx: %d, autoneg: 0x%x\n",
-	       iface->mtu, iface->link_state, iface->rx_state,
-	       iface->autoneg);
-	printf("pause_mode: 0x%x, speed: %d\n",
-	       iface->pause_mode, iface->speed);
-	printf("supported_modes: 0x%lx, advertised_modes: 0x%lx\n",
-	       iface->supported_modes, iface->advertised_modes);
-}
-
-static void print_info(struct octep_fw_info *info)
-{
-	printf("pkind: %u, hbi: %u, hbmc: %u\n",
-	       info->pkind, info->hb_interval, info->hb_miss_count);
-}
-
-static void print_config()
-{
-	struct pem_cfg *pem;
-	struct pf_cfg *pf;
-	struct vf_cfg *vf;
-	int i, j, k;
-
-
-	for (i = 0; i < APP_CFG_PEM_MAX; i++) {
-		pem = &cfg.pems[i];
-		if (!pem->valid)
-			continue;
-
-		for (j = 0; j < APP_CFG_PF_PER_PEM_MAX; j++) {
-			pf = &pem->pfs[j];
-			if (!pf->valid)
-				continue;
-
-			printf("[%d]:[%d]\n", i, j);
-			print_if(&pf->fn.iface);
-			print_info(&pf->fn.info);
-			for (k = 0; k < APP_CFG_VF_PER_PF_MAX; k++) {
-				vf = &pf->vfs[k];
-				if (!vf->valid)
-					continue;
-
-				printf("[%d]:[%d]:[%d]\n", i, j, k);
-				print_if(&vf->fn.iface);
-				print_info(&vf->fn.info);
-			}
-		}
-	}
-}
-
 static inline struct pem_cfg *get_pem(int idx)
 {
 	if (idx >= APP_CFG_PEM_MAX)
@@ -118,18 +63,6 @@ static inline struct vf_cfg *get_vf(struct pf_cfg *pfcfg, int idx)
 		return NULL;
 
 	return &pfcfg->vfs[idx];
-}
-
-int get_max_rx_pktlen(void)
-{
-	struct octep_cp_lib_info info;
-
-	octep_cp_lib_get_info(&info);
-	if (info.soc_model.flag &
-	    (OCTEP_CP_SOC_MODEL_CN96xx_Ax | OCTEP_CP_SOC_MODEL_CNF95xxN_A0))
-		return (16 * 1024);
-
-	return ((64 * 1024) - 1);
 }
 
 static int parse_if(config_setting_t *lcfg, struct if_cfg *iface)
@@ -163,7 +96,6 @@ static int parse_if(config_setting_t *lcfg, struct if_cfg *iface)
 		iface->supported_modes = ival;
 	if (config_setting_lookup_int(lcfg, CFG_TOKEN_IF_AMODES, &ival))
 		iface->advertised_modes = ival;
-	iface->max_rx_pktlen = get_max_rx_pktlen();
 
 	return 0;
 }
@@ -225,7 +157,7 @@ static int parse_pf(config_setting_t *pf, struct pf_cfg *pfcfg, int pf_idx)
 			continue;
 		vfcfg = get_vf(pfcfg, idx);
 		if (!vfcfg) {
-			printf("Skipping out of bounds pf[%d]vf[%d]\n",
+			printf("APP: Skipping out of bounds pf[%d]vf[%d]\n",
 			       pf_idx, idx);
 			continue;
 		}
@@ -260,7 +192,7 @@ static int parse_pem(config_setting_t *pem, struct pem_cfg *pemcfg, int pem_idx)
 			continue;
 		pfcfg = get_pf(pemcfg, idx);
 		if (!pfcfg) {
-			printf( "Skipping out of bounds pem[%d]pf[%d]\n",
+			printf("APP: Skipping out of bounds pem[%d]pf[%d]\n",
 		   		   pem_idx, idx);
 			continue;
 		}
@@ -291,7 +223,7 @@ static int parse_pems(config_setting_t *pems)
 			continue;
 		pemcfg = get_pem(idx);
 		if (!pemcfg) {
-			printf( "Skipping out of bounds pem[%d]\n", idx);
+			printf("APP: Skipping out of bounds pem[%d]\n", idx);
 			continue;
 		}
 		err = parse_pem(pem, pemcfg, idx);
@@ -312,13 +244,13 @@ int app_config_init(const char *cfg_file_path)
 	int err;
 
 	memset (&cfg, 0, sizeof(struct app_cfg));
-	printf("config file : %s\n", cfg_file_path);
+	printf("APP: config init : %s\n", cfg_file_path);
 	config_init(&fcfg);
 	if (!config_read_file(&fcfg, cfg_file_path)) {
-		printf( "%s:%d - %s\n",
-			   config_error_file(&fcfg),
-			   config_error_line(&fcfg),
-			   config_error_text(&fcfg));
+		printf("APP: %s:%d - %s\n",
+		       config_error_file(&fcfg),
+		       config_error_line(&fcfg),
+		       config_error_text(&fcfg));
 		config_destroy(&fcfg);
 		return -EINVAL;
 	}
@@ -340,14 +272,111 @@ int app_config_init(const char *cfg_file_path)
 
 	config_destroy(&fcfg);
 
-	print_config();
+	return 0;
+}
+
+static int update_fn(struct fn_cfg *fn, struct octep_cp_lib_info *info)
+{
+	fn->iface.max_rx_pktlen = (info->soc_model.flag &
+				   (OCTEP_CP_SOC_MODEL_CN96xx_Ax |
+				    OCTEP_CP_SOC_MODEL_CNF95xxN_A0)) ?
+				   (16 * 1024) : ((64 * 1024) - 1);
+
+	return 0;
+}
+
+int app_config_update()
+{
+	struct octep_cp_lib_info info;
+	struct pem_cfg *pem;
+	struct pf_cfg *pf;
+	struct vf_cfg *vf;
+	int i, j, k;
+
+	octep_cp_lib_get_info(&info);
+	for (i = 0; i < APP_CFG_PEM_MAX; i++) {
+		pem = &cfg.pems[i];
+		if (!pem->valid)
+			continue;
+
+		for (j = 0; j < APP_CFG_PF_PER_PEM_MAX; j++) {
+			pf = &pem->pfs[j];
+			if (!pf->valid)
+				continue;
+
+			update_fn(&pf->fn, &info);
+			for (k = 0; k < APP_CFG_VF_PER_PF_MAX; k++) {
+				vf = &pf->vfs[k];
+				if (!vf->valid)
+					continue;
+
+				update_fn(&vf->fn, &info);
+			}
+		}
+	}
+
+	return 0;
+}
+
+static void print_if(struct if_cfg *iface)
+{
+	printf("APP: mac_addr: %02x:%02x:%02x:%02x:%02x:%02x\n",
+	       iface->mac_addr[0], iface->mac_addr[1],
+	       iface->mac_addr[2], iface->mac_addr[3],
+	       iface->mac_addr[4], iface->mac_addr[5]);
+	printf("APP: mtu: %d, link: %d, rx: %d, autoneg: 0x%x\n",
+	       iface->mtu, iface->link_state, iface->rx_state,
+	       iface->autoneg);
+	printf("APP: pause_mode: 0x%x, speed: %d\n",
+	       iface->pause_mode, iface->speed);
+	printf("APP: supported_modes: 0x%lx, advertised_modes: 0x%lx\n",
+	       iface->supported_modes, iface->advertised_modes);
+}
+
+static void print_info(struct octep_fw_info *info)
+{
+	printf("APP: pkind: %u, hbi: %u, hbmc: %u\n",
+	       info->pkind, info->hb_interval, info->hb_miss_count);
+}
+
+int app_config_print()
+{
+	struct pem_cfg *pem;
+	struct pf_cfg *pf;
+	struct vf_cfg *vf;
+	int i, j, k;
+
+	for (i = 0; i < APP_CFG_PEM_MAX; i++) {
+		pem = &cfg.pems[i];
+		if (!pem->valid)
+			continue;
+
+		for (j = 0; j < APP_CFG_PF_PER_PEM_MAX; j++) {
+			pf = &pem->pfs[j];
+			if (!pf->valid)
+				continue;
+
+			printf("APP: [%d]:[%d]\n", i, j);
+			print_if(&pf->fn.iface);
+			print_info(&pf->fn.info);
+			for (k = 0; k < APP_CFG_VF_PER_PF_MAX; k++) {
+				vf = &pf->vfs[k];
+				if (!vf->valid)
+					continue;
+
+				printf("APP: [%d]:[%d]:[%d]\n", i, j, k);
+				print_if(&vf->fn.iface);
+				print_info(&vf->fn.info);
+			}
+		}
+	}
 
 	return 0;
 }
 
 int app_config_uninit()
 {
-	printf("config uninit\n");
+	printf("APP: config uninit\n");
 	memset (&cfg, 0, sizeof(struct app_cfg));
 
 	return 0;

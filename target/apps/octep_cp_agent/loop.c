@@ -37,7 +37,7 @@ int loop_init()
 	int i, j;
 	struct octep_cp_msg *msg;
 
-	printf("Loop: Init\n");
+	printf("APP: Loop Init\n");
 	/* for now only support single buffer messages */
 	for (i=0; i<cp_lib_cfg.ndoms; i++) {
 		for (j=0; j<cp_lib_cfg.doms[i].npfs; j++) {
@@ -59,7 +59,7 @@ int loop_init()
 	/* copy over global config into local runtime config */
 	memcpy(&loop_cfg, &cfg, sizeof(struct app_cfg));
 
-	printf("Loop: using single buffer with msg sz %u.\n", max_msg_sz);
+	printf("APP: using single buffer with msg sz %u.\n", max_msg_sz);
 
 	return 0;
 
@@ -83,12 +83,13 @@ static int process_mtu(struct if_cfg *iface,
 
 	if (req->mtu.cmd == OCTEP_CTRL_NET_CMD_GET) {
 		resp->mtu.val = iface->max_rx_pktlen;
-		printf("Cmd: get mtu : %u\n", resp->mtu.val);
+
+		printf("APP: Cmd: get mtu : %u\n", resp->mtu.val);
 		ret = mtu_sz;
 	}
 	else {
 		iface->mtu = req->mtu.val;
-		printf("Cmd: set mtu : %u\n", req->mtu.val);
+		printf("APP: Cmd: set mtu : %u\n", req->mtu.val);
 	}
 	resp->hdr.s.reply = OCTEP_CTRL_NET_REPLY_OK;
 
@@ -104,7 +105,7 @@ static int process_mac(struct if_cfg *iface,
 	if (req->mac.cmd == OCTEP_CTRL_NET_CMD_GET) {
 		memcpy(&resp->mac.addr, &iface->mac_addr, ETH_ALEN);
 		ret = mac_sz;
-		printf("Cmd: get mac : %02x:%02x:%02x:%02x:%02x:%02x\n",
+		printf("APP: Cmd: get mac : %02x:%02x:%02x:%02x:%02x:%02x\n",
 			   resp->mac.addr[0],
 			   resp->mac.addr[1],
 			   resp->mac.addr[2],
@@ -114,7 +115,7 @@ static int process_mac(struct if_cfg *iface,
 	}
 	else {
 		memcpy(&iface->mac_addr, &req->mac.addr, ETH_ALEN);
-		printf("Cmd: set mac : %02x:%02x:%02x:%02x:%02x:%02x\n",
+		printf("APP: Cmd: set mac : %02x:%02x:%02x:%02x:%02x:%02x\n",
 			   req->mac.addr[0],
 			   req->mac.addr[1],
 			   req->mac.addr[2],
@@ -134,7 +135,7 @@ static int process_get_if_stats(struct if_stats *ifstats,
 	/* struct if_stats = struct octep_ctrl_net_h2f_resp_cmd_get_stats */
 	memcpy(&resp->if_stats, ifstats, if_stats_sz);
 	resp->hdr.s.reply = OCTEP_CTRL_NET_REPLY_OK;
-	printf("Cmd: get if stats\n");
+	printf("APP: Cmd: get if stats\n");
 
 	return if_stats_sz;
 }
@@ -148,11 +149,11 @@ static int process_link_status(struct if_cfg *iface,
 	if (req->link.cmd == OCTEP_CTRL_NET_CMD_GET) {
 		resp->link.state = iface->link_state;
 		ret = state_sz;
-		printf("Cmd: get link state : %u\n", resp->link.state);
+		printf("APP: Cmd: get link state : %u\n", resp->link.state);
 	}
 	else {
 		iface->link_state = req->link.state;
-		printf("Cmd: set link state : %u\n", req->link.state);
+		printf("APP: Cmd: set link state : %u\n", req->link.state);
 	}
 	resp->hdr.s.reply = OCTEP_CTRL_NET_REPLY_OK;
 
@@ -168,11 +169,11 @@ static int process_rx_state(struct if_cfg *iface,
 	if (req->rx.cmd == OCTEP_CTRL_NET_CMD_GET) {
 		resp->rx.state = iface->rx_state;
 		ret = state_sz;
-		printf("Cmd: get rx state : %u\n", resp->rx.state);
+		printf("APP: Cmd: get rx state : %u\n", resp->rx.state);
 	}
 	else {
 		iface->rx_state = req->rx.state;
-		printf("Cmd: set rx state : %u\n", req->rx.state);
+		printf("APP: Cmd: set rx state : %u\n", req->rx.state);
 	}
 	resp->hdr.s.reply = OCTEP_CTRL_NET_REPLY_OK;
 
@@ -192,14 +193,14 @@ static int process_link_info(struct if_cfg *iface,
 		resp->link_info.pause = iface->pause_mode;
 		resp->link_info.speed = iface->speed;
 		ret = link_info_sz;
-		printf("Cmd: get link info\n");
+		printf("APP: Cmd: get link info\n");
 	}
 	else {
 		iface->advertised_modes = req->link_info.info.advertised_modes;
 		iface->autoneg = req->link_info.info.autoneg;
 		iface->pause_mode = req->link_info.info.pause;
 		iface->speed = req->link_info.info.speed;
-		printf("Cmd: set link info: am:%lx a:%x p:%x s:%x\n",
+		printf("APP: Cmd: set link info: am:%lx a:%x p:%x s:%x\n",
 			req->link_info.info.advertised_modes,
 			req->link_info.info.autoneg,
 			req->link_info.info.pause,
@@ -215,7 +216,7 @@ static int process_get_info(struct octep_fw_info *info,
 			    struct octep_ctrl_net_h2f_resp *resp)
 {
 	memcpy(&resp->info.fw_info, info, sizeof(struct octep_fw_info));
-	printf("Cmd: get info\n");
+	printf("APP: Cmd: get info\n");
 	resp->hdr.s.reply = OCTEP_CTRL_NET_REPLY_OK;
 
 	return info_sz;
@@ -231,7 +232,7 @@ static int process_msg(union octep_cp_msg_info *ctx, struct octep_cp_msg* msg)
 
 	fn = app_config_get_fn(&loop_cfg, &msg->info);
 	if (!fn) {
-		printf("Invalid msg[%lx]\n", msg->info.words[0]);
+		printf("APP: Invalid msg[%lx]\n", msg->info.words[0]);
 		return err;
 	}
 
@@ -262,7 +263,7 @@ static int process_msg(union octep_cp_msg_info *ctx, struct octep_cp_msg* msg)
 			resp_sz += process_get_info(&fn->info, req, &resp);
 			break;
 		default:
-			printf("Unhandled Cmd : %u\n", req->hdr.s.cmd);
+			printf("APP: Unhandled Cmd : %u\n", req->hdr.s.cmd);
 			resp_sz = 0;
 			break;
 	}
@@ -310,8 +311,6 @@ int loop_process_msgs()
 int loop_uninit()
 {
 	int i;
-
-	printf("%s\n", __func__);
 
 	for (i=0 ;i<rx_num; i++) {
 		if (rx_msg[i].sg_list[0].msg)

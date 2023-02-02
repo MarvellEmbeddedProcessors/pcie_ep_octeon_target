@@ -35,7 +35,7 @@ static int process_events()
 
 	for (i = 0; i < n; i++) {
 		if (e[i].e == OCTEP_CP_EVENT_TYPE_PERST) {
-			printf("Event: perst on dom[%d]\n",
+			printf("APP: Event: perst on dom[%d]\n",
 			       e[i].u.perst.dom_idx);
 			perst = 1;
 		}
@@ -72,7 +72,7 @@ static void trigger_alarm(int hb_interval)
 void sigint_handler(int sig_num) {
 
 	if (sig_num == SIGINT) {
-		printf("Program quitting.\n");
+		printf("APP: Program quitting.\n");
 		force_quit = 1;
 	} else if (sig_num == SIGALRM) {
 		if (force_quit || perst)
@@ -108,7 +108,7 @@ int main(int argc, char *argv[])
 	struct pf_cfg *pf;
 
 	if (argc < 2) {
-		printf("Provide path to config file.\n");
+		printf("APP: Provide path to config file.\n");
 		return -EINVAL;
 	}
 	err = app_config_init(argv[1]);
@@ -149,14 +149,17 @@ init:
 	if (err)
 		return err;
 
+	app_config_update();
 	err = loop_init();
 	if (err) {
 		octep_cp_lib_uninit();
 		return err;
 	}
 
+	app_config_print();
+	printf("APP: Heartbeat interval : %u msecs\n", hb_interval);
+
 	set_fw_ready(1);
-	printf("Heartbeat interval : %u msecs\n", hb_interval);
 	trigger_alarm(hb_interval);
 	while (!force_quit && !perst) {
 		loop_process_msgs();
@@ -169,7 +172,7 @@ init:
 
 	if (perst) {
 		perst = 0;
-		printf("\nReinitializing...\n");
+		printf("\nAPP: Reinitializing...\n");
 		goto init;
 	}
 

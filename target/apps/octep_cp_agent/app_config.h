@@ -137,6 +137,23 @@ static inline struct fn_cfg *app_config_get_fn(struct app_cfg *p_cfg,
 	return (msg->s.is_vf) ? &(pf->vfs[msg->s.vf_idx].fn) : &pf->fn;
 }
 
+/* Update/adjust app configuration.
+ *
+ * This can be called after octep_cp_lib is initialized.
+ * App can then use library info to adjust its configuration based on
+ * any available runtime information.
+ *
+ * return value: 0 on success, -errno on failure.
+ */
+int app_config_update();
+
+/* Print app configuration.
+ *
+ *
+ * return value: 0 on success, -errno on failure.
+ */
+int app_config_print();
+
 /* Free allocated configuration artifacts.
  *
  *
