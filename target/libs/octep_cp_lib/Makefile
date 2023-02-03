@@ -3,26 +3,24 @@
 
 PLAT ?= aarch64
 
-ifeq ($(PLAT), aarch64)
-ifeq ($(CROSS_COMPILE),)
-$(error "Please provide CROSS_COMPILE for platform $(PLAT)")
-endif
+ifeq ($(INSTALL_PATH),)
+INSTALL_PATH=$(CURDIR)/bin
 endif
 
-CC = $(CROSS_COMPILE)gcc
-AR = $(CROSS_COMPILE)ar
-RANLIB = $(CROSS_COMPILE)ranlib
-LD = $(CROSS_COMPILE)ld
+CC ?= $(CROSS_COMPILE)gcc
+AR ?= $(CROSS_COMPILE)ar
+RANLIB ?= $(CROSS_COMPILE)ranlib
+LD ?= $(CROSS_COMPILE)ld
 
 LIB = liboctep_cp
 
-CFLAGS = -O3 -Werror -Wall -fPIC -g \
-	-I$(CURDIR) \
-	-I$(CURDIR)/include \
-	-I$(CURDIR)/soc \
-	-I$(CURDIR)/compat/$(PLAT)
+LIB_CFLAGS = $(CFLAGS) -O3 -Werror -Wall -fPIC -g \
+		-I$(CURDIR) \
+		-I$(CURDIR)/include \
+		-I$(CURDIR)/soc \
+		-I$(CURDIR)/compat/$(PLAT)
 
-LDFLAGS = -shared -fvisibility=hidden
+LIB_LDFLAGS = $(LDFLAGS) -shared -fvisibility=hidden
 
 SRCS = main.c
 SRCS += soc/soc.c soc/cnxk.c
@@ -33,22 +31,30 @@ OBJS += soc.o cnxk.o octep_ctrl_mbox.o
 
 STATIC_BIN = $(LIB).a
 SHARED_BIN = $(LIB).so
+INSTALL_INC_DIR = $(INSTALL_PATH)/include
+INSTALL_LIB_DIR = $(INSTALL_PATH)/lib
 
-all: shared static
-.PHONY: shared static
+all: shared static install
+.PHONY: shared static install clean
 
 static:
 	$(info ====Building $(STATIC_BIN)====)
-	$(CC) $(CFLAGS) -c $(SRCS)
+	$(CC) $(LIB_CFLAGS) -c $(SRCS)
 	$(AR) rc $(STATIC_BIN) $(OBJS)
 	$(RANLIB) $(STATIC_BIN)
 
 shared:
 	$(info ====Building $(SHARED_BIN)====)
-	$(CC) $(CFLAGS) $(SRCS) -o $(SHARED_BIN) $(LDFLAGS)
+	$(CC) $(LIB_CFLAGS) $(SRCS) -Wl,-soname,$(SHARED_BIN).1 -o $(SHARED_BIN).1.0.1 $(LIB_LDFLAGS)
+	ln -sf $(SHARED_BIN).1.0.1 $(SHARED_BIN)
+
+install: static shared
+	mkdir -p $(INSTALL_INC_DIR) || true
+	mkdir -p $(INSTALL_LIB_DIR) || true
+	cp -f include/*.h $(INSTALL_INC_DIR)
+	cp -df $(SHARED_BIN)* $(STATIC_BIN) $(INSTALL_LIB_DIR)
 
 clean:
 	$(info ====Cleaning lib====)
-	rm -f $(OBJS) || true
-	rm -f $(SHARED_BIN) || true
-	rm -f $(STATIC_BIN) || true
+	@rm -f $(OBJS) $(SHARED_BIN)* $(STATIC_BIN) || true
+	@rm -rf $(INSTALL_INC_DIR) $(INSTALL_LIB_DIR) || true
