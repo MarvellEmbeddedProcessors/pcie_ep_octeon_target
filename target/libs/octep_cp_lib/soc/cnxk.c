@@ -457,6 +457,11 @@ int cnxk_send_msg_resp(union octep_cp_msg_info *ctx,
 		msg = &msgs[i];
 		hdr = (union octep_ctrl_mbox_msg_hdr *)&msg->info;
 		hdr->s.flags = OCTEP_CTRL_MBOX_MSG_HDR_FLAG_RESP;
+		/* host always sets pf_idx == 0 and has no notion of
+		 * pem_idx, so make sure they are always 0
+		 */
+		hdr->s.pem_idx = 0;
+		hdr->s.pf_idx = 0;
 		ret = octep_ctrl_mbox_send(&pf->mbox,
 					   (struct octep_ctrl_mbox_msg *)msg,
 					   1);
@@ -488,6 +493,11 @@ int cnxk_send_notification(union octep_cp_msg_info *ctx,
 
 	hdr = (union octep_ctrl_mbox_msg_hdr *)&msg->info;
 	hdr->s.flags = OCTEP_CTRL_MBOX_MSG_HDR_FLAG_NOTIFY;
+	/* host always sets pf_idx == 0 and has no notion of
+	 * pem_idx, so make sure they are always 0
+	 */
+	hdr->s.pem_idx = 0;
+	hdr->s.pf_idx = 0;
 	ret = octep_ctrl_mbox_send(&pf->mbox,
 				   (struct octep_ctrl_mbox_msg *)msg,
 				   1);
@@ -504,14 +514,25 @@ int cnxk_recv_msg(union octep_cp_msg_info *ctx,
 		  int num)
 {
 	struct cnxk_pf *pf;
+	int ret, m;
 
 	pf = get_pf(ctx->s.pem_idx, ctx->s.pf_idx);
 	if (!pf)
 		return -EINVAL;
 
-	return octep_ctrl_mbox_recv(&pf->mbox,
-				    (struct octep_ctrl_mbox_msg *)msgs,
-				    num);
+	ret = octep_ctrl_mbox_recv(&pf->mbox,
+				   (struct octep_ctrl_mbox_msg *)msgs,
+				   num);
+	for (m = 0; m < ret; m++) {
+		/* host always sets pf_idx == 0 and has no notion of
+		 * pem_idx, so copy them from context, since we know the
+		 * exact pem and pf this message came over
+		 */
+		msgs[m].info.s.pem_idx = ctx->s.pem_idx;
+		msgs[m].info.s.pf_idx = ctx->s.pf_idx;
+	}
+
+	return ret;
 }
 
 int cnxk_send_event(struct octep_cp_event_info *info)
