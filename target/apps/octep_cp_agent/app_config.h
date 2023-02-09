@@ -146,12 +146,29 @@ static inline struct fn_cfg *app_config_get_fn(struct app_cfg *p_cfg,
  */
 int app_config_update();
 
+/* Update/adjust app configuration for a pem.
+ *
+ * This can be called after initializing a pem after a reset operation
+ * App can then use library info to adjust its configuration based on
+ * any available runtime information.
+ *
+ * return value: 0 on success, -errno on failure.
+ */
+int app_config_update_pem(int dom_idx);
+
 /* Print app configuration.
  *
  *
  * return value: 0 on success, -errno on failure.
  */
 int app_config_print();
+
+/* Print app configuration for a pem
+ *
+ *
+ * return value: 0 on success, -errno on failure.
+ */
+int app_config_print_pem(int dom_idx);
 
 /* Free allocated configuration artifacts.
  *

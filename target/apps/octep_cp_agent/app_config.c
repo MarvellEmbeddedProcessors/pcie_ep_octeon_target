@@ -286,31 +286,51 @@ static int update_fn(struct fn_cfg *fn, struct octep_cp_lib_info *info)
 
 int app_config_update()
 {
-	struct octep_cp_lib_info info;
 	struct pem_cfg *pem;
-	struct pf_cfg *pf;
-	struct vf_cfg *vf;
-	int i, j, k;
+	int i;
 
-	octep_cp_lib_get_info(&info);
 	for (i = 0; i < APP_CFG_PEM_MAX; i++) {
 		pem = &cfg.pems[i];
 		if (!pem->valid)
 			continue;
 
-		for (j = 0; j < APP_CFG_PF_PER_PEM_MAX; j++) {
-			pf = &pem->pfs[j];
-			if (!pf->valid)
+		app_config_update_pem(i);
+	}
+
+	return 0;
+}
+
+int app_config_update_pem(int dom_idx)
+{
+	struct octep_cp_lib_info info;
+	struct pem_cfg *pem;
+	struct pf_cfg *pf;
+	struct vf_cfg *vf;
+	int j, k;
+
+	if (dom_idx >= APP_CFG_PEM_MAX) {
+		printf("APP: Invalid domain index: %d\n",
+		       dom_idx);
+		return -EINVAL;
+	}
+
+	octep_cp_lib_get_info(&info);
+	pem = &cfg.pems[dom_idx];
+	if (!pem->valid)
+		return -EINVAL;
+
+	for (j = 0; j < pem->npf; j++) {
+		pf = &pem->pfs[j];
+		if (!pf->valid)
+			continue;
+
+		update_fn(&pf->fn, &info);
+		for (k = 0; k < APP_CFG_VF_PER_PF_MAX; k++) {
+			vf = &pf->vfs[k];
+			if (!vf->valid)
 				continue;
 
-			update_fn(&pf->fn, &info);
-			for (k = 0; k < APP_CFG_VF_PER_PF_MAX; k++) {
-				vf = &pf->vfs[k];
-				if (!vf->valid)
-					continue;
-
-				update_fn(&vf->fn, &info);
-			}
+			update_fn(&vf->fn, &info);
 		}
 	}
 
@@ -341,32 +361,46 @@ static void print_info(struct octep_fw_info *info)
 int app_config_print()
 {
 	struct pem_cfg *pem;
-	struct pf_cfg *pf;
-	struct vf_cfg *vf;
-	int i, j, k;
+	int i;
 
 	for (i = 0; i < APP_CFG_PEM_MAX; i++) {
 		pem = &cfg.pems[i];
 		if (!pem->valid)
 			continue;
 
-		for (j = 0; j < APP_CFG_PF_PER_PEM_MAX; j++) {
-			pf = &pem->pfs[j];
-			if (!pf->valid)
+		app_config_print_pem(i);
+	}
+
+	return 0;
+}
+
+int app_config_print_pem(int dom_idx)
+{
+	struct pem_cfg *pem;
+	struct pf_cfg *pf;
+	struct vf_cfg *vf;
+	int j, k;
+
+	pem = &cfg.pems[dom_idx];
+	if (!pem->valid)
+		return -EINVAL;
+
+	for (j = 0; j < pem->npf; j++) {
+		pf = &pem->pfs[j];
+		if (!pf->valid)
+			continue;
+
+		printf("APP: [%d]:[%d]\n", dom_idx, j);
+		print_if(&pf->fn.iface);
+		print_info(&pf->fn.info);
+		for (k = 0; k < APP_CFG_VF_PER_PF_MAX; k++) {
+			vf = &pf->vfs[k];
+			if (!vf->valid)
 				continue;
 
-			printf("APP: [%d]:[%d]\n", i, j);
-			print_if(&pf->fn.iface);
-			print_info(&pf->fn.info);
-			for (k = 0; k < APP_CFG_VF_PER_PF_MAX; k++) {
-				vf = &pf->vfs[k];
-				if (!vf->valid)
-					continue;
-
-				printf("APP: [%d]:[%d]:[%d]\n", i, j, k);
-				print_if(&vf->fn.iface);
-				print_info(&vf->fn.info);
-			}
+			printf("APP: [%d]:[%d]:[%d]\n", dom_idx, j, k);
+			print_if(&vf->fn.iface);
+			print_info(&vf->fn.info);
 		}
 	}
 

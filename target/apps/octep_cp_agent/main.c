@@ -24,19 +24,20 @@
 							  CP_VERSION_VARIANT))
 
 static volatile int force_quit = 0;
-static volatile int perst = 0;
+static volatile int perst[APP_CFG_PEM_MAX] = { 0 };
 static int hb_interval = 0;
 struct octep_cp_lib_cfg cp_lib_cfg = { 0 };
 
 static timer_t tim;
 static struct itimerspec itim = { 0 };
+static int app_handle_perst(int dom_idx);
 
 static int process_events()
 {
 #define MAX_EVENTS		6
 
 	struct octep_cp_event_info e[MAX_EVENTS];
-	int n, i;
+	int n, i, err;
 
 	n = octep_cp_lib_recv_event(e, MAX_EVENTS);
 	if (n < 0)
@@ -46,7 +47,12 @@ static int process_events()
 		if (e[i].e == OCTEP_CP_EVENT_TYPE_PERST) {
 			printf("APP: Event: perst on dom[%d]\n",
 			       e[i].u.perst.dom_idx);
-			perst = 1;
+			err = app_handle_perst(e[i].u.perst.dom_idx);
+			if (err) {
+				printf("APP: Unable to handle perst event on PEM %d!\n",
+				       e[i].u.perst.dom_idx);
+				return err;
+			}
 		}
 	}
 
@@ -60,6 +66,9 @@ static int send_heartbeat()
 
 	info.e = OCTEP_CP_EVENT_TYPE_HEARTBEAT;
 	for (i=0; i<cp_lib_cfg.ndoms; i++) {
+		if (perst[i])
+			continue;
+
 		info.u.hbeat.dom_idx = cp_lib_cfg.doms[i].idx;
 		for (j=0; j<cp_lib_cfg.doms[i].npfs; j++) {
 			info.u.hbeat.pf_idx = cp_lib_cfg.doms[i].pfs[j].idx;
@@ -84,7 +93,7 @@ void sigint_handler(int sig_num) {
 		printf("APP: Program quitting.\n");
 		force_quit = 1;
 	} else if (sig_num == SIGALRM) {
-		if (force_quit || perst)
+		if (force_quit)
 			return;
 
 		send_heartbeat();
@@ -92,21 +101,60 @@ void sigint_handler(int sig_num) {
 	}
 }
 
-static int set_fw_ready(int ready)
+static int set_fw_ready_for_pem(int dom_idx, int ready)
 {
 	struct octep_cp_event_info info;
-	int i, j;
+	int j;
 
 	info.e = OCTEP_CP_EVENT_TYPE_FW_READY;
 	info.u.fw_ready.ready = ready;
-	for (i=0; i<cp_lib_cfg.ndoms; i++) {
-		info.u.fw_ready.dom_idx = cp_lib_cfg.doms[i].idx;
-		for (j=0; j<cp_lib_cfg.doms[i].npfs; j++) {
-			info.u.fw_ready.pf_idx = cp_lib_cfg.doms[i].pfs[j].idx;
-			octep_cp_lib_send_event(&info);
-		}
+	info.u.fw_ready.dom_idx = dom_idx;
+	for (j = 0; j < cp_lib_cfg.doms[dom_idx].npfs; j++) {
+		info.u.fw_ready.pf_idx = cp_lib_cfg.doms[dom_idx].pfs[j].idx;
+		octep_cp_lib_send_event(&info);
 	}
 
+	return 0;
+}
+
+static int set_fw_ready(int ready)
+{
+	int i;
+
+	for (i=0; i<cp_lib_cfg.ndoms; i++) {
+		set_fw_ready_for_pem(i, ready);
+	}
+
+	return 0;
+}
+
+static int app_handle_perst(int dom_idx)
+{
+	struct pem_cfg *pem;
+	int err;
+
+	pem = &cfg.pems[dom_idx];
+	if (!pem->valid)
+		return -EINVAL;
+
+	perst[dom_idx] = 1;
+	set_fw_ready_for_pem(dom_idx, 0);
+	octep_cp_lib_uninit_pem(dom_idx);
+	loop_uninit_pem(dom_idx);
+	printf("APP: Reinitiazing PEM %d\n", dom_idx);
+
+	err = octep_cp_lib_init_pem(&cp_lib_cfg, dom_idx);
+	if (err)
+		return err;
+	app_config_update_pem(dom_idx);
+	err = loop_init_pem(dom_idx);
+	if (err) {
+		octep_cp_lib_uninit_pem(dom_idx);
+		return err;
+	}
+	app_config_print_pem(dom_idx);
+	set_fw_ready_for_pem(dom_idx, 1);
+	perst[dom_idx] = 0;
 	return 0;
 }
 
@@ -128,7 +176,7 @@ int main(int argc, char *argv[])
 	signal(SIGALRM, sigint_handler);
 
 	timer_create(CLOCK_REALTIME, NULL, &tim);
-init:
+
 	hb_interval = 0;
 	cp_lib_cfg.min_version = CP_VERSION_CURRENT;
 	cp_lib_cfg.max_version = CP_VERSION_CURRENT;
@@ -172,7 +220,7 @@ init:
 
 	set_fw_ready(1);
 	trigger_alarm(hb_interval);
-	while (!force_quit && !perst) {
+	while (!force_quit) {
 		loop_process_msgs();
 		process_events();
 	}
@@ -180,12 +228,6 @@ init:
 
 	octep_cp_lib_uninit();
 	loop_uninit();
-
-	if (perst) {
-		perst = 0;
-		printf("\nAPP: Reinitializing...\n");
-		goto init;
-	}
 
 	timer_delete(tim);
 	app_config_uninit();

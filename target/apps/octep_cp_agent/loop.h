@@ -10,6 +10,12 @@
  */
 int loop_init();
 
+/* Initialize loop mode implementation for a pem
+ *
+ * return value: 0 on success, -errno on failure.
+ */
+int loop_init_pem(int dom_idx);
+
 /* Process interrupts and host messages.
  *
  * return value: size of response in words on success, -errno on failure.
@@ -27,5 +33,11 @@ int loop_process_sigusr1();
  * return value: 0 on success, -errno on failure.
  */
 int loop_uninit();
+
+/* Uninitialize loop mode implementation for a pem
+ *
+ * return value: 0 on success, -errno on failure.
+ */
+int loop_uninit_pem(int dom_idx);
 
 #endif /* __LOOP_H__ */

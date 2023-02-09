@@ -32,18 +32,34 @@ static const uint32_t link_info_sz = sizeof(struct octep_ctrl_net_link_info);
 static const uint32_t if_stats_sz = sizeof(struct octep_ctrl_net_h2f_resp_cmd_get_stats);
 static const uint32_t info_sz = sizeof(struct octep_ctrl_net_h2f_resp_cmd_get_info);
 
+int loop_init_pem(int dom_idx)
+{
+	int j;
+
+	printf("APP: Loop Init PEM %d\n", dom_idx);
+	/* for now only support single buffer messages */
+	for (j = 0; j < cp_lib_cfg.doms[dom_idx].npfs; j++) {
+		if (cp_lib_cfg.doms[dom_idx].pfs[j].max_msg_sz < max_msg_sz)
+			return -EINVAL;
+	}
+
+	/* copy over global config into local runtime config */
+	memcpy(&loop_cfg.pems[dom_idx], &cfg.pems[dom_idx], sizeof(struct pem_cfg));
+
+	return 0;
+}
+
 int loop_init()
 {
-	int i, j;
+	int i, ret;
 	struct octep_cp_msg *msg;
 
 	printf("APP: Loop Init\n");
 	/* for now only support single buffer messages */
 	for (i=0; i<cp_lib_cfg.ndoms; i++) {
-		for (j=0; j<cp_lib_cfg.doms[i].npfs; j++) {
-			if (cp_lib_cfg.doms[i].pfs[j].max_msg_sz < max_msg_sz)
-				return -EINVAL;
-		}
+		ret = loop_init_pem(i);
+		if (ret)
+			return ret;
 	}
 
 	for (i=0; i<rx_num; i++) {
@@ -56,8 +72,7 @@ int loop_init()
 			goto mem_alloc_fail;
 	}
 
-	/* copy over global config into local runtime config */
-	memcpy(&loop_cfg, &cfg, sizeof(struct app_cfg));
+	loop_cfg.npem = cfg.npem;
 
 	printf("APP: using single buffer with msg sz %u.\n", max_msg_sz);
 
@@ -354,5 +369,10 @@ int loop_uninit()
 		rx_msg[i].sg_list[0].sz = 0;
 	}
 
+	return 0;
+}
+
+int loop_uninit_pem(int dom_idx)
+{
 	return 0;
 }
