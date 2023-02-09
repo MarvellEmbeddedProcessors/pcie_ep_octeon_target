@@ -7,11 +7,15 @@ export OCTEONTX_HOST_ROOT
 export CONFIG_OCTEON_EP=m
 export CONFIG_OCTEON_EP_VF=m
 
+ifneq (,$(findstring PORT_EXTENDER_ENABLED=1, $(OCTEONTX_BUILD_ENV)))
 SUBDIRS=drivers/legacy/modules/driver/src
 SUBDIRS+=drivers/mgmt_net
-SUBDIRS+=drivers/phc
-SUBDIRS+=drivers/octeon_ep
+else
+SUBDIRS=drivers/octeon_ep
 SUBDIRS+=drivers/octeon_ep_vf
+endif
+
+SUBDIRS+=drivers/phc
 SUBDIRS+=drivers/octboot_net
 
 all: $(SUBDIRS)
