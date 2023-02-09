@@ -325,23 +325,27 @@ static struct cp_lib_soc_ops ops[CP_LIB_SOC_MAX] = {
 	/* otx2 */
 	{
 		cnxk_init,
+		cnxk_init_pem,
 		cnxk_get_info,
 		cnxk_send_msg_resp,
 		cnxk_send_notification,
 		cnxk_recv_msg,
 		cnxk_send_event,
 		cnxk_recv_event,
+		cnxk_uninit_pem,
 		cnxk_uninit
 	},
 	/* cnxk */
 	{
 		cnxk_init,
+		cnxk_init_pem,
 		cnxk_get_info,
 		cnxk_send_msg_resp,
 		cnxk_send_notification,
 		cnxk_recv_msg,
 		cnxk_send_event,
 		cnxk_recv_event,
+		cnxk_uninit_pem,
 		cnxk_uninit
 	}
 };

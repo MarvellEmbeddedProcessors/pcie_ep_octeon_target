@@ -10,6 +10,8 @@
 
 #define PEMX_ON_PEMOOR			(0x2ull)
 
+#define PEMX_DIS_PORT_OFFSET		(0x50ull)
+
 /* pemX bar4 index, this is a chunk of 4mb */
 #define PEMX_BAR4_INDEX			7
 #define PEMX_BAR4_INDEX_SIZE		0x400000ULL

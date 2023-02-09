@@ -31,7 +31,7 @@
 #define PEM_BAR4_INDEX 8
 #define PEM_BAR4_INDEX_SIZE 0x400000ULL
 #define PEM_BAR4_INDEX_ADDR (PEM_BAR4_INDEX * PEM_BAR4_INDEX_SIZE)
-
+#define PEM_STATUS_WAIT_TIMEOUT	10
 
 struct cnxk_pf {
 	/* pf is valid */
@@ -287,12 +287,31 @@ static int check_pem_status(struct cnxk_pem *pem)
 
 		sleep(1);
 		wait++;
-	} while (wait < 10);
+	} while (wait < PEM_STATUS_WAIT_TIMEOUT);
 
 	unmap_reg(addr, offset, 8);
 
-	if (ret < 0)
+	if (ret < 0) {
 		CP_LIB_LOG(ERR, CNXK, "pem[%d] unavailable\n", pem->idx);
+		return ret;
+	}
+
+	addr = map_reg((PEMX_BASE(pem->idx) + PEMX_DIS_PORT_OFFSET),
+		       8, PROT_READ | PROT_WRITE, &offset);
+	if (!addr) {
+		CP_LIB_LOG(ERR, CNXK, "Error mapping pem[%d] disable port register\n",
+			   pem->idx);
+		return -EIO;
+	}
+	val = cp_read64(addr);
+	cp_write64(val, addr);
+	val = cp_read64(addr);
+	if (val) {
+		CP_LIB_LOG(ERR, CNXK, "pem[%d] disable port not cleared\n",
+			   pem->idx);
+		return -EIO;
+	}
+	unmap_reg(addr, offset, 8);
 
 	return ret;
 }
@@ -449,6 +468,32 @@ init_fail:
 			uninit_pem(&pems[i]);
 
 	return err;
+}
+
+int cnxk_init_pem(struct octep_cp_lib_cfg *cfg, int dom_idx)
+{
+	struct octep_cp_dom_cfg *dom_cfg;
+
+	CP_LIB_LOG(INFO, CNXK, "init PEM %d\n", dom_idx);
+
+	if (dom_idx >= OCTEP_CP_DOM_MAX) {
+		CP_LIB_LOG(ERR, CNXK,
+				"Invalid pem[%d] config index.\n",
+				dom_idx);
+		return -EINVAL;
+	}
+	dom_cfg = &cfg->doms[dom_idx];
+
+	/* If pem was valid before then it should be uninitialized
+	 * before clearing pem data.
+	 */
+	if (pems[dom_idx].valid)
+		uninit_pem(&pems[dom_idx]);
+
+	memset(&pems[dom_idx], 0, sizeof(pems[dom_idx]));
+
+	/* Initialize pf interfaces */
+	return init_pem(cfg, &pems[dom_cfg->idx], dom_cfg);
 }
 
 int cnxk_get_info(struct octep_cp_lib_info *info)
@@ -648,6 +693,16 @@ int cnxk_uninit()
 	for (i = 0; i < OCTEP_CP_DOM_MAX; i++)
 		if (pems[i].valid)
 			uninit_pem(&pems[i]);
+
+	return 0;
+}
+
+int cnxk_uninit_pem(int dom_idx)
+{
+	CP_LIB_LOG(INFO, CNXK, "uninit PEM %d\n", dom_idx);
+
+	if (pems[dom_idx].valid)
+		uninit_pem(&pems[dom_idx]);
 
 	return 0;
 }

@@ -46,6 +46,27 @@ int octep_cp_lib_init(struct octep_cp_lib_cfg *cfg)
 }
 
 __attribute__((visibility("default")))
+int octep_cp_lib_init_pem(struct octep_cp_lib_cfg *cfg, int dom_idx)
+{
+	int err;
+
+	CP_LIB_LOG(INFO, LIB, "init PEM %d\n", dom_idx);
+	if (state < CP_LIB_STATE_INIT)
+		return -ENAVAIL;
+
+	if (!sops)
+		return -ENAVAIL;
+
+	err = sops->init_pem(cfg, dom_idx);
+	if (err)
+		return err;
+
+	user_cfg.doms[dom_idx] = cfg->doms[dom_idx];
+
+	return 0;
+}
+
+__attribute__((visibility("default")))
 int octep_cp_lib_get_info(struct octep_cp_lib_info *info)
 {
 	int err;
@@ -156,6 +177,20 @@ int octep_cp_lib_uninit()
 	memset(&user_cfg, 0, sizeof(struct octep_cp_lib_cfg));
 	sops = NULL;
 	state = CP_LIB_STATE_INVALID;
+
+	return 0;
+}
+
+__attribute__((visibility("default")))
+int octep_cp_lib_uninit_pem(int dom_idx)
+{
+	CP_LIB_LOG(INFO, LIB, "uninit PEM %d\n", dom_idx);
+
+	if (state == CP_LIB_STATE_UNINIT || state == CP_LIB_STATE_INVALID)
+		return 0;
+
+	sops->uninit_pem(dom_idx);
+	memset(&user_cfg.doms[dom_idx], 0, sizeof(struct octep_cp_dom_cfg));
 
 	return 0;
 }

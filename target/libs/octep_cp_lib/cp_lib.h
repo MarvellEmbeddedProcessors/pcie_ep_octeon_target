@@ -57,6 +57,8 @@ struct cp_lib_cfg {
 struct cp_lib_soc_ops {
 	/* initialize */
 	int (*init)(struct octep_cp_lib_cfg *p_cfg);
+	/* initialize a pem */
+	int (*init_pem)(struct octep_cp_lib_cfg *p_cfg, int dom_idx);
 	/* get info */
 	int (*get_info)(struct octep_cp_lib_info *info);
 	/* send message responses to host */
@@ -72,6 +74,8 @@ struct cp_lib_soc_ops {
 	int (*send_event)(struct octep_cp_event_info *info);
 	/* receive soc events */
 	int (*recv_event)(struct octep_cp_event_info *info, int num);
+	/* uninitialize pem */
+	int (*uninit_pem)(int dom_idx);
 	/* uninitialize */
 	int (*uninit)(void);
 };

@@ -10,6 +10,12 @@
  */
 int cnxk_init(struct octep_cp_lib_cfg *cfg);
 
+/* Initialize a particular pem
+ *
+ * return value: 0 on success, -errno on failure.
+ */
+int cnxk_init_pem(struct octep_cp_lib_cfg *cfg, int dom_idx);
+
 /* Get platform information after initialization.
  *
  * Fill in information after initialization.
@@ -88,6 +94,12 @@ int cnxk_send_event(struct octep_cp_event_info *info);
  * return value: number of events received on success, -errno on failure.
  */
 int cnxk_recv_event(struct octep_cp_event_info *info, int num);
+
+/* UnInitialize cnxk mbox, csr's etc for a pem.
+ *
+ * return value: 0 on success, -errno on failure.
+ */
+int cnxk_uninit_pem(int dom_idx);
 
 /* UnInitialize cnxk mbox, csr's etc.
  *

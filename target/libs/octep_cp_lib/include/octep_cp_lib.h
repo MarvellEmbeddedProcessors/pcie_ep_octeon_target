@@ -241,6 +241,16 @@ struct octep_cp_lib_info {
  */
 int octep_cp_lib_init(struct octep_cp_lib_cfg *cfg);
 
+/* Initialize a pem after a perst or other reset operation
+ *
+ * Library will fill in information of pem after initialization.
+ *
+ * @param cfg: [IN/OUT] non-null pointer to struct octep_cp_lib_cfg.
+ *
+ * return value: 0 on success, -errno on failure.
+ */
+int octep_cp_lib_init_pem(struct octep_cp_lib_cfg *cfg, int dom_idx);
+
 /* Get library information after initialization.
  *
  * This api will return valid information only after library is initialized.
@@ -320,11 +330,16 @@ int octep_cp_lib_send_event(struct octep_cp_event_info *info);
  */
 int octep_cp_lib_recv_event(struct octep_cp_event_info *info, int num);
 
+/* Uninitialize lib values for a pem
+ *
+ * return value: 0 on success, -errno on failure.
+ */
+int octep_cp_lib_uninit_pem(int dom_idx);
+
 /* Uninitialize cp library.
  *
  * return value: 0 on success, -errno on failure.
  */
 int octep_cp_lib_uninit();
-
 
 #endif /* __OCTEP_CP_LIB_H__ */
