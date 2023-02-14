@@ -14,7 +14,7 @@ git format-patch -n1 -q -o patches
 
 rm -rf patches
 
-if [[ -n $ERR ]]; then
+if [ -n "$ERR" ]; then
 	echo "Checkpatch / git log check failed !!!"
 	exit 1
 fi
