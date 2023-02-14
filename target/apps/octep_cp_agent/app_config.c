@@ -17,7 +17,7 @@ struct app_cfg cfg;
  * pem = { idx, pf* };
  * pf = { idx, if, info, vf* };
  * vf = { idx, if, info };
- * if = { mtu, mac_addr, link_state, rx_state, autoneg, pause_mode, speed,
+ * if = { mac_addr, link_state, rx_state, autoneg, pause_mode, speed,
  *        supported_modes, advertisedd_modes
  * };
  * info = { pkind, hb_interval, hb_miss_count };
@@ -28,7 +28,6 @@ struct app_cfg cfg;
 #define CFG_TOKEN_PFS			"pfs"
 #define CFG_TOKEN_VFS			"vfs"
 #define CFG_TOKEN_IDX			"idx"
-#define CFG_TOKEN_IF_MTU		"mtu"
 #define CFG_TOKEN_IF_MAC_ADDR		"mac_addr"
 #define CFG_TOKEN_IF_LSTATE		"link_state"
 #define CFG_TOKEN_IF_RSTATE		"rx_state"
@@ -69,9 +68,6 @@ static int parse_if(config_setting_t *lcfg, struct if_cfg *iface)
 {
 	config_setting_t *mac;
 	int ival, i, n;
-
-	if (config_setting_lookup_int(lcfg, CFG_TOKEN_IF_MTU, &ival))
-		iface->mtu = ival;
 
 	mac = config_setting_get_member(lcfg, CFG_TOKEN_IF_MAC_ADDR);
 	if (mac) {
@@ -277,10 +273,11 @@ int app_config_init(const char *cfg_file_path)
 
 static int update_fn(struct fn_cfg *fn, struct octep_cp_lib_info *info)
 {
-	fn->iface.max_rx_pktlen = (info->soc_model.flag &
-				   (OCTEP_CP_SOC_MODEL_CN96xx_Ax |
-				    OCTEP_CP_SOC_MODEL_CNF95xxN_A0)) ?
-				   (16 * 1024) : ((64 * 1024) - 1);
+	/* Initialize mtu according to max rx pktlen supported by soc */
+	fn->iface.mtu = (info->soc_model.flag &
+			 (OCTEP_CP_SOC_MODEL_CN96xx_Ax |
+			  OCTEP_CP_SOC_MODEL_CNF95xxN_A0)) ?
+					(16 * 1024) : ((64 * 1024) - 1);
 
 	return 0;
 }

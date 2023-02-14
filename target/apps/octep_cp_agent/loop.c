@@ -82,7 +82,7 @@ static int process_mtu(struct if_cfg *iface,
 	int ret = 0;
 
 	if (req->mtu.cmd == OCTEP_CTRL_NET_CMD_GET) {
-		resp->mtu.val = iface->max_rx_pktlen;
+		resp->mtu.val = iface->mtu;
 
 		printf("APP: Cmd: get mtu : %u\n", resp->mtu.val);
 		ret = mtu_sz;
