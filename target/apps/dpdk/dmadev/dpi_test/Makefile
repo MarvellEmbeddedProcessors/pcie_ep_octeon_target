@@ -13,7 +13,8 @@ ifeq ($(PKG_CONFIG_PATH),)
 $(error "Please provide PKG_CONFIG_PATH=<path to 21.11 libdpdk.pc and its dependencies>.")
 endif
 
-PKGCONF ?= PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config
+PKGCONF ?= PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) PKG_CONFIG_LIBDIR=$(PKG_CONFIG_PATH)  pkg-config --define-variable=prefix=$(PKG_CONFIG_OVERRIDE_PREFIX)  --define-variable=execprefix=$(PKG_CONFIG_OVERRIDE_PREFIX)
+
 
 ifeq ($(shell $(PKGCONF) --atleast-version="21.11.0" libdpdk && echo 0),0)
 ifeq ($(shell $(PKGCONF) --exists libdpdk && echo 0),0)
