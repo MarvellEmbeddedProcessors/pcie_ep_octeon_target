@@ -41,5 +41,7 @@ How to apply rate limit
 
 Prepare the sdp-iq-rl.cfg file and run the rate limit script as below:
 
-  $cd $APP_DIR/ratelimit
+RUN_DIR is /usr/bin on target
+
+  $cd $RUN_DIR
   $sh sdp-iq-rl.sh
