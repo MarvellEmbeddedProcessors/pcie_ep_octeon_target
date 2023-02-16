@@ -13,6 +13,7 @@ SUBDIRS+=drivers/mgmt_net
 else
 SUBDIRS=drivers/octeon_ep
 SUBDIRS+=drivers/octeon_ep_vf
+SUBDIRS+=drivers/cnxk_ep_bb_pf
 endif
 
 SUBDIRS+=drivers/phc
