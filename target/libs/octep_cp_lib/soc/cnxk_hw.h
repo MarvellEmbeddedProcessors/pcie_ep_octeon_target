@@ -25,7 +25,7 @@
 #define CN10K_PCIEEP_VSECST_CTL		(0x418ull)
 
 /* oei trig interrupt register */
-#define SDP0_EPFX_OEI_TRIG(pf)		(0x86E0C0000000ull | (pf << 25))
+#define SDP0_EPFX_OEI_TRIG(sdp, pf)		(0x86E0C0000000ull | (sdp << 36) | (pf << 25))
 
 enum sdp_epf_oei_trig_bit {
 	SDP_EPF_OEI_TRIG_BIT_MBOX,

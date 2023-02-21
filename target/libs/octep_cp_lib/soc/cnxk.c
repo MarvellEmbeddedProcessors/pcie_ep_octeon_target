@@ -3,6 +3,8 @@
  */
 
 #include <stdio.h>
+#include <string.h>
+#include <dirent.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <sys/mman.h>
@@ -96,14 +98,20 @@ static inline int unmap_reg(void* addr, off_t offset, size_t len)
 
 static int open_oei_trig_csr(struct cnxk_pem *pem, struct cnxk_pf *pf)
 {
-	pf->oei_trig_addr = map_reg(SDP0_EPFX_OEI_TRIG(pf->idx),
+	/* Mapping as follows
+	 * PEM idx is 0,1 ->  SDP0
+	 * PEM idx is > 1 ->  SDP1
+	 */
+	pf->oei_trig_addr =
+		map_reg(SDP0_EPFX_OEI_TRIG(((pem->idx > 1) ? 1L : 0), pf->idx),
 				    8,
 				    PROT_READ | PROT_WRITE,
 				    &pf->oei_trig_offset);
 	if (!pf->oei_trig_addr) {
 		CP_LIB_LOG(INFO, CNXK,
 			   "Error mapping pem[%d] pf[%d] oei_trig_addr(%p)\n",
-			   pem->idx, pf->idx, SDP0_EPFX_OEI_TRIG(pf->idx));
+			   pem->idx, pf->idx,
+			   SDP0_EPFX_OEI_TRIG(((pem->idx > 1) ? 1L : 0), pf->idx));
 		return -EIO;
 	}
 	CP_LIB_LOG(INFO, CNXK, "pem[%d] pf[%d] oei_trig_addr %p\n",
@@ -305,6 +313,53 @@ static int uninit_pem(struct cnxk_pem *pem)
 	return 0;
 }
 
+static int find_pem_uiodev(char *name)
+{
+	struct dirent *files;
+	char uiod_name[512];
+	FILE *fd;
+	char namea[16];
+	int i, uio_num, ret;
+	DIR *dir = opendir("/sys/class/uio");
+
+	if (dir == NULL) {
+		printf("/sys/class/uio directory cannot be opened!");
+		return -1;
+	}
+
+	while ((files = readdir(dir))) {
+		if ((!strncmp(files->d_name, ".", 1) || !strncmp(files->d_name, "..", 2)))
+			continue;
+
+		snprintf(uiod_name, sizeof(uiod_name), "%s/%s/%s",
+				"/sys/class/uio", files->d_name, "name");
+		fd = fopen(uiod_name, "r");
+		if (fd == NULL)
+			continue;
+
+		/* Only strlen(name) char need to be compared/read */
+		for (i = 0; (i < strnlen(name, 6)) && !feof(fd); i++)
+			namea[i] = fgetc(fd);
+
+		fclose(fd);
+		namea[i] = 0;
+
+		if (!strncmp(name, namea, strnlen(name, 6))) {
+
+			/* Get uio dev num and return*/
+			ret = sscanf(files->d_name, "uio%d", &uio_num);
+			closedir(dir);
+			if (ret == 0 || ret == EOF)
+				return -1;
+
+			return uio_num;
+		}
+	}
+
+	closedir(dir);
+	return -1;
+}
+
 static int init_pem(struct octep_cp_lib_cfg *cfg, struct cnxk_pem *pem,
 		    struct octep_cp_dom_cfg *dom_cfg)
 {
@@ -312,19 +367,22 @@ static int init_pem(struct octep_cp_lib_cfg *cfg, struct cnxk_pem *pem,
 	struct cnxk_pf *pf;
 	char uio_path[256];
 	int err, j, fd;
-
+	char uio_file[16];
+	int uio_num;
 	pem->idx = dom_cfg->idx;
 	err = check_pem_status(pem);
 	if (err < 0)
 		return err;
 
-	/* TODO: this is temporary mapping, currently there is no way to
-	 * map a /dev/uioX entry to pem->idx, this needs to be fixed
-	 * in the pem_ep driver. This code will have to iterate all /dev/uioX
-	 * devices and identify correct device for the pem potentially
-	 * based on some identifier in uio->name
-	 */
-	sprintf(uio_path, "/dev/uio%lld", pem->idx);
+	snprintf(uio_file, sizeof(uio_file), "PEM%lld", pem->idx);
+	uio_num = find_pem_uiodev(uio_file);
+	if (uio_num < 0) {
+		CP_LIB_LOG(ERR, CNXK, "Get uio dev failed for pem%d\n", pem->idx);
+		return -EINVAL;
+	}
+
+	CP_LIB_LOG(INFO, CNXK, "uiodev num %d  for pem%d\n", uio_num, pem->idx);
+	snprintf(uio_path, sizeof(uio_path), "/dev/uio%d", uio_num);
 	fd = open(uio_path, O_RDONLY | O_NONBLOCK);
 	if (fd < 0)
 		return -errno;
