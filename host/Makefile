@@ -1,5 +1,4 @@
-# SPDX-License-Identifier:           BSD-3-Clause
-# https://spdx.org/licenses
+# SPDX-License-Identifier: GPL-2.0
 # Copyright (C) 2020 Marvell.
 
 OCTEONTX_HOST_ROOT = $(shell pwd)
