@@ -24,6 +24,11 @@ struct data_fn_ops {
 	 */
 	uint16_t (*tx_buffer)(uint16_t port, uint16_t queue,
 			      void *buffer, void *tx_pkt);
+	/* Send any packets queued up for transmission on
+	 * a port and HW queue
+	 */
+	uint16_t (*tx_buffer_flush)(uint16_t port, uint16_t queue,
+				    void *buffer);
 };
 
 /* Per-port statistics struct */

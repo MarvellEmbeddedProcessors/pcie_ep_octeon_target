@@ -5,7 +5,8 @@
 #include <cJSON.h>
 
 #include "compat.h"
-#include "l2fwd_data.h"
+#include "l2fwd_main.h"
+#include "l2fwd_api_server.h"
 #include "server.h"
 #include "json_rpc.h"
 
@@ -37,7 +38,7 @@ static int process_set_fwd_state(int fd, cJSON *params, cJSON *id)
 		return -EINVAL;
 	}
 
-	err = (state == 0) ? l2fwd_data_stop() : l2fwd_data_start();
+	err = l2fwd_ops->set_fwd_state(state);
 	if (err < 0) {
 		json_rpc_send_error(fd,
 				    JSON_RPC_ERROR_CODE_INTERNAL_ERROR,
@@ -53,7 +54,7 @@ static int process_clear_fwd_table(int fd, cJSON *params, cJSON *id)
 {
 	int err;
 
-	err = l2fwd_data_clear_fwd_table();
+	err = l2fwd_ops->clear_fwd_table();
 	if (err < 0) {
 		json_rpc_send_error(fd,
 				    JSON_RPC_ERROR_CODE_INTERNAL_ERROR,
@@ -105,7 +106,7 @@ static int process_add_fwd_pair(int fd, cJSON *params, cJSON *id)
 		return err;
 	}
 
-	err = l2fwd_data_add_fwd_table_entry(&port1, &port2);
+	err = l2fwd_ops->add_fwd_table_entry(&port1, &port2);
 	if (err < 0) {
 		json_rpc_send_error(fd,
 				    JSON_RPC_ERROR_CODE_INTERNAL_ERROR,
@@ -140,7 +141,7 @@ static int process_del_fwd_pair(int fd, cJSON *params, cJSON *id)
 		return err;
 	}
 
-	err = l2fwd_data_del_fwd_table_entry(&port1, &port2);
+	err = l2fwd_ops->del_fwd_table_entry(&port1, &port2);
 	if (err < 0) {
 		json_rpc_send_error(fd,
 				    JSON_RPC_ERROR_CODE_INTERNAL_ERROR,

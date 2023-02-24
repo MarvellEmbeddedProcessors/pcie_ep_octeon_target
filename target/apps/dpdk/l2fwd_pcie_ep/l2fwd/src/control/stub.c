@@ -1,4 +1,8 @@
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright (c) 2022 Marvell.
+ */
 #include "compat.h"
+#include "l2fwd_main.h"
 #include "l2fwd_config.h"
 #include "octep_cp_lib.h"
 #include "octep_ctrl_net.h"
@@ -42,6 +46,13 @@ struct stub_pem {
 /* runtime data */
 static struct stub_pem *stub_data[L2FWD_MAX_PEM];
 
+static inline struct stub_fn_data *get_fn_data(int pem, int pf, int vf)
+{
+	return (vf >= 0) ?
+		stub_data[pem]->pfs[pf]->vfs[vf] :
+		&stub_data[pem]->pfs[pf]->d;
+}
+
 static int free_pems(void)
 {
 	struct stub_pem *pem;
@@ -76,9 +87,11 @@ static int free_pems(void)
 	return 0;
 }
 
-static int init_fn(struct stub_fn_data *fn, struct fn_config *fn_cfg)
+static int init_fn(struct stub_fn_data *fn, struct l2fwd_config_fn *fn_cfg)
 {
-	memcpy(&fn->mac, &fn_cfg->mac.addr_bytes, ETH_ALEN);
+	if (!fn_cfg)
+		return 0;
+
 	fn->mtu = fn_cfg->mtu;
 	fn->autoneg = fn_cfg->autoneg;
 	fn->pause_mode = fn_cfg->pause_mode;
@@ -91,16 +104,13 @@ static int init_fn(struct stub_fn_data *fn, struct fn_config *fn_cfg)
 
 static int init_valid_cfg(int pem_idx, int pf_idx, int vf_idx, void *data)
 {
-	struct fn_config *fn_cfg;
+	struct l2fwd_config_fn *fn_cfg;
 	struct stub_pem *pem;
 	struct stub_pf *pf;
 
 	fn_cfg = (vf_idx < 0) ?
-		  &pem_cfg[pem_idx].pfs[pf_idx].d :
-		  &pem_cfg[pem_idx].pfs[pf_idx].vfs[vf_idx];
-
-	if (!is_zero_dbdf(&fn_cfg->to_wire_dbdf))
-		return 0;
+		  &l2fwd_cfg.pems[pem_idx].pfs[pf_idx].d :
+		  &l2fwd_cfg.pems[pem_idx].pfs[pf_idx].vfs[vf_idx];
 
 	if (!stub_data[pem_idx]) {
 		stub_data[pem_idx] = calloc(1, sizeof(struct stub_pem));
@@ -153,60 +163,60 @@ static int init_pems(void)
 
 static int stub_get_mtu(int pem, int pf, int vf, uint16_t *mtu)
 {
-	if (vf >= 0)
-		*mtu = stub_data[pem]->pfs[pf]->vfs[vf]->mtu;
-	else
-		*mtu = stub_data[pem]->pfs[pf]->d.mtu;
+	struct stub_fn_data *fn;
+
+	fn = get_fn_data(pem, pf, vf);
+	*mtu = fn->mtu;
 
 	return 0;
 }
 
 static int stub_set_mtu(int pem, int pf, int vf, uint16_t mtu)
 {
-	if (vf >= 0)
-		stub_data[pem]->pfs[pf]->vfs[vf]->mtu = mtu;
-	else
-		stub_data[pem]->pfs[pf]->d.mtu = mtu;
+	struct stub_fn_data *fn;
+
+	fn = get_fn_data(pem, pf, vf);
+	fn->mtu = mtu;
 
 	return 0;
 }
 
 static int stub_get_mac(int pem, int pf, int vf, uint8_t *addr)
 {
-	if (vf >= 0)
-		memcpy(addr, &stub_data[pem]->pfs[pf]->vfs[vf]->mac, ETH_ALEN);
-	else
-		memcpy(addr, &stub_data[pem]->pfs[pf]->d.mac, ETH_ALEN);
+	struct stub_fn_data *fn;
+
+	fn = get_fn_data(pem, pf, vf);
+	memcpy(addr, &fn->mac, ETH_ALEN);
 
 	return 0;
 }
 
 static int stub_set_mac(int pem, int pf, int vf, uint8_t *addr)
 {
-	if (vf >= 0)
-		memcpy(&stub_data[pem]->pfs[pf]->vfs[vf]->mac, addr, ETH_ALEN);
-	else
-		memcpy(&stub_data[pem]->pfs[pf]->d.mac, addr, ETH_ALEN);
+	struct stub_fn_data *fn;
+
+	fn = get_fn_data(pem, pf, vf);
+	memcpy(&fn->mac, addr, ETH_ALEN);
 
 	return 0;
 }
 
 static int stub_get_link_state(int pem, int pf, int vf, uint16_t *state)
 {
-	if (vf >= 0)
-		*state = stub_data[pem]->pfs[pf]->vfs[vf]->link_state;
-	else
-		*state = stub_data[pem]->pfs[pf]->d.link_state;
+	struct stub_fn_data *fn;
+
+	fn = get_fn_data(pem, pf, vf);
+	*state = fn->link_state;
 
 	return 0;
 }
 
 static int stub_set_link_state(int pem, int pf, int vf, uint16_t state)
 {
-	if (vf >= 0)
-		stub_data[pem]->pfs[pf]->vfs[vf]->link_state = state;
-	else
-		stub_data[pem]->pfs[pf]->d.link_state = state;
+	struct stub_fn_data *fn;
+
+	fn = get_fn_data(pem, pf, vf);
+	fn->link_state = state;
 
 	return 0;
 }
@@ -216,10 +226,7 @@ static int stub_get_link_info(int pem, int pf, int vf,
 {
 	struct stub_fn_data *fn;
 
-	fn = (vf >= 0) ?
-	      stub_data[pem]->pfs[pf]->vfs[vf] :
-	      &stub_data[pem]->pfs[pf]->d;
-
+	fn = get_fn_data(pem, pf, vf);
 	info->supported_modes = fn->smodes;
 	info->advertised_modes = fn->amodes;
 	info->autoneg = fn->autoneg;
@@ -234,10 +241,7 @@ static int stub_set_link_info(int pem, int pf, int vf,
 {
 	struct stub_fn_data *fn;
 
-	fn = (vf >= 0) ?
-	      stub_data[pem]->pfs[pf]->vfs[vf] :
-	      &stub_data[pem]->pfs[pf]->d;
-
+	fn = get_fn_data(pem, pf, vf);
 	fn->smodes = info->supported_modes;
 	fn->amodes = info->advertised_modes;
 	fn->autoneg = info->autoneg;
@@ -250,7 +254,7 @@ static int stub_set_link_info(int pem, int pf, int vf,
 static inline int reset_vf(int pem_idx, int pf_idx, int vf_idx)
 {
 	return init_fn(stub_data[pem_idx]->pfs[pf_idx]->vfs[vf_idx],
-		       &pem_cfg[pem_idx].pfs[pf_idx].vfs[vf_idx]);
+		       &l2fwd_cfg.pems[pem_idx].pfs[pf_idx].vfs[vf_idx]);
 }
 
 static int reset_pf(int pem_idx, int pf_idx)
@@ -259,7 +263,7 @@ static int reset_pf(int pem_idx, int pf_idx)
 	int vf_idx, err;
 
 	pf = stub_data[pem_idx]->pfs[pf_idx];
-	err = init_fn(&pf->d, &pem_cfg[pem_idx].pfs[pf_idx].d);
+	err = init_fn(&pf->d, &l2fwd_cfg.pems[pem_idx].pfs[pf_idx].d);
 	if (err < 0)
 		return err;
 
@@ -307,6 +311,24 @@ static int stub_reset(int pem, int pf, int vf)
 	return reset_vf(pem, pf, vf);
 }
 
+static int stub_set_port(int pem, int pf, int vf, const struct rte_pci_addr *port)
+{
+	if (!stub_data[pem])
+		return -EINVAL;
+
+	if (!stub_data[pem]->pfs[pf])
+		return -EINVAL;
+
+	if (vf >= 0) {
+		if (!stub_data[pem]->pfs[pf]->vfs[vf])
+			return -EINVAL;
+
+		return init_fn(stub_data[pem]->pfs[pf]->vfs[vf], NULL);
+	}
+
+	return init_fn(&stub_data[pem]->pfs[pf]->d, NULL);
+}
+
 static struct control_fn_ops stub_ctrl_ops = {
 	.get_mtu = stub_get_mtu,
 	.set_mtu = stub_set_mtu,
@@ -318,7 +340,8 @@ static struct control_fn_ops stub_ctrl_ops = {
 	.set_rx_state = stub_set_link_state,
 	.get_link_info = stub_get_link_info,
 	.set_link_info = stub_set_link_info,
-	.reset = stub_reset
+	.reset = stub_reset,
+	.set_port = stub_set_port
 };
 
 int ctrl_stub_init(struct control_fn_ops **ops)

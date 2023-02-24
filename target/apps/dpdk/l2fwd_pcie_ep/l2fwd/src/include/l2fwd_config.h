@@ -1,10 +1,8 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright (c) 2022 Marvell.
  */
-#ifndef __L2FWD_PCIE_EP_CONFIG_H__
+#ifndef __L2FWD_CONFIG_H__
 #define __L2FWD_CONFIG_H__
-
-#include "l2fwd.h"
 
 #define MIN_HB_INTERVAL_MSECS		1000
 #define MAX_HB_INTERVAL_MSECS		15000
@@ -13,7 +11,7 @@
 #define DEFAULT_HB_MISS_COUNT		20
 
 /* pf/vf config */
-struct fn_config {
+struct l2fwd_config_fn {
 	/* config is valid */
 	bool is_valid;
 	/* dbdf mapped to host */
@@ -41,25 +39,32 @@ struct fn_config {
 };
 
 /* pcie mac domain pf configuration */
-struct pf_config {
+struct l2fwd_config_pf {
 	/* pf heartbeat interval in milliseconds */
 	unsigned short hb_interval;
 	/* pf heartbeat miss count */
 	unsigned short hb_miss_count;
 	/* pf config */
-	struct fn_config d;
+	struct l2fwd_config_fn d;
 	/* vf's */
-	struct fn_config vfs[L2FWD_MAX_VF];
+	struct l2fwd_config_fn vfs[L2FWD_MAX_VF];
 };
 
-struct pem_config {
+/* pcie mac domain configuration */
+struct l2fwd_config_pem {
 	/* config is valid */
 	bool is_valid;
 	/* pf indices */
-	struct pf_config pfs[L2FWD_MAX_PF];
+	struct l2fwd_config_pf pfs[L2FWD_MAX_PF];
 };
 
-extern struct pem_config pem_cfg[L2FWD_MAX_PEM];
+/* l2fwd configuration */
+struct l2fwd_config {
+	/* pem indices */
+	struct l2fwd_config_pem pems[L2FWD_MAX_PEM];
+};
+
+extern struct l2fwd_config l2fwd_cfg;
 
 /* Initialize config data.
  *
@@ -83,11 +88,11 @@ static inline int for_each_valid_config_fn(valid_cfg_fn_callback_t fn,
 	int i, j, k, err;
 
 	for (i = 0; i < L2FWD_MAX_PEM; i++) {
-		if (!pem_cfg[i].is_valid)
+		if (!l2fwd_cfg.pems[i].is_valid)
 			continue;
 
 		for (j = 0; j < L2FWD_MAX_PF; j++) {
-			if (!pem_cfg[i].pfs[j].d.is_valid)
+			if (!l2fwd_cfg.pems[i].pfs[j].d.is_valid)
 				continue;
 
 			err = fn(i, j, -1, data);
@@ -95,7 +100,7 @@ static inline int for_each_valid_config_fn(valid_cfg_fn_callback_t fn,
 				return err;
 
 			for (k = 0; k < L2FWD_MAX_VF; k++) {
-				if (!pem_cfg[i].pfs[j].vfs[k].is_valid)
+				if (!l2fwd_cfg.pems[i].pfs[j].vfs[k].is_valid)
 					continue;
 
 				err = fn(i, j, k, data);

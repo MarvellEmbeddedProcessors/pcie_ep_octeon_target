@@ -57,9 +57,20 @@
 
 
 static inline
-struct rte_pci_device *l2fwd_pcie_ep_get_pci_dev(uint16_t port)
+int l2fwd_pcie_ep_get_pci_dev_addr(uint16_t port, struct rte_pci_addr *addr)
 {
-	return RTE_ETH_DEV_TO_PCI(&rte_eth_devices[port]);
+	struct rte_eth_dev_info dev_info;
+	struct rte_pci_device *pdev;
+	int err;
+
+	err = rte_eth_dev_info_get(port, &dev_info);
+	if (err < 0)
+		return err;
+
+	pdev = RTE_DEV_TO_PCI(dev_info.device);
+	*addr = pdev->addr;
+
+	return 0;
 }
 
 static void l2fwd_configure_pkt_len(struct rte_eth_conf *port_conf,
@@ -69,6 +80,25 @@ static void l2fwd_configure_pkt_len(struct rte_eth_conf *port_conf,
 	if (dev_info->max_rx_pktlen > RTE_ETHER_MAX_LEN) {
 		port_conf->rxmode.offloads |= DEV_RX_OFFLOAD_JUMBO_FRAME;
 	}
+}
+
+static inline
+unsigned int l2fwd_pcie_ep_find_port(const struct rte_pci_addr *dbdf)
+{
+	struct rte_pci_addr addr;
+	unsigned int portid;
+	int err;
+
+	RTE_ETH_FOREACH_DEV(portid) {
+		err = l2fwd_pcie_ep_get_pci_dev_addr(portid, &addr);
+		if (err < 0)
+			continue;
+
+		if (!rte_pci_addr_cmp(dbdf, &addr))
+			return portid;
+	}
+
+	return RTE_MAX_ETHPORTS;
 }
 
 #else /* L2FWD_PCIE_EP_RTE_VERSION */
@@ -110,26 +140,63 @@ static void l2fwd_configure_pkt_len(struct rte_eth_conf *port_conf,
 
 #define L2FWD_PCIE_EP_ETHER_ADDR_PRT_FMT    RTE_ETHER_ADDR_PRT_FMT
 
+#if RTE_VERSION_NUM(22, 11, 0, 0) > L2FWD_PCIE_EP_RTE_VERSION
 static inline
-struct rte_pci_device *l2fwd_pcie_ep_get_pci_dev(uint16_t port)
+int l2fwd_pcie_ep_get_pci_dev_addr(uint16_t port, struct rte_pci_addr *addr)
 {
-#if L2FWD_PCIE_EP_RTE_VERSION < RTE_VERSION_NUM(22, 11, 0, 0)
 	struct rte_eth_dev_info dev_info;
-	int ret;
+	struct rte_pci_device *pdev;
+	int err;
 
-	ret = rte_eth_dev_info_get(port, &dev_info);
-	if (ret != 0)
-		return NULL;
-	return RTE_DEV_TO_PCI(dev_info.device);
-#else
-	return NULL;
-#endif
+	err = rte_eth_dev_info_get(port, &dev_info);
+	if (err < 0)
+		return err;
+
+	pdev = RTE_DEV_TO_PCI(dev_info.device);
+	*addr = pdev->addr;
+
+	return 0;
 }
+#else
+static inline
+int l2fwd_pcie_ep_get_pci_dev_addr(uint16_t port, struct rte_pci_addr *addr)
+{
+	struct rte_eth_dev_info dev_info;
+	int err;
+
+	err = rte_eth_dev_info_get(port, &dev_info);
+	if (err < 0)
+		return err;
+
+	/* TODO rte_bus_(rte_dev_bus(dev_info.device)); */
+	return -ENOTSUP;
+}
+#endif
+
 
 static void
 l2fwd_configure_pkt_len(struct rte_eth_conf *port_conf, struct rte_eth_dev_info *dev_info)
 {
 	port_conf->rxmode.mtu = dev_info->max_mtu;
+}
+
+static inline
+unsigned int l2fwd_pcie_ep_find_port(const struct rte_pci_addr *dbdf)
+{
+	struct rte_pci_addr addr;
+	unsigned int portid;
+	int err;
+
+	RTE_ETH_FOREACH_DEV(portid) {
+		err = l2fwd_pcie_ep_get_pci_dev_addr(portid, &addr);
+		if (err < 0)
+			continue;
+
+		if (!rte_pci_addr_cmp(dbdf, &addr))
+			return portid;
+	}
+
+	return RTE_MAX_ETHPORTS;
 }
 
 #endif /* L2FWD_PCIE_EP_RTE_VERSION */

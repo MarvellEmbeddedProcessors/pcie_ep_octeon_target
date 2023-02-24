@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright (c) 2022 Marvell.
  */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
@@ -11,6 +10,7 @@
 
 #include "compat.h"
 #include "l2fwd.h"
+#include "l2fwd_main.h"
 #include "l2fwd_control.h"
 #include "l2fwd_config.h"
 #include "octep_cp_lib.h"
@@ -53,12 +53,16 @@ enum control_state {
 
 /* Runtime vf data */
 struct control_vf {
+	/* to_host_dbdf */
+	struct rte_pci_addr dbdf;
 	/* fn ops */
 	struct control_fn_ops *ops;
 };
 
 /* pcie mac domain pf configuration */
 struct control_pf {
+	/* to_host_dbdf */
+	struct rte_pci_addr dbdf;
 	/* mseconds until next heartbeat */
 	int msecs_to_next_hbeat;
 	/* preset heartbeat info */
@@ -76,6 +80,12 @@ struct control_pem {
 	struct control_pf *pfs[L2FWD_MAX_PF];
 };
 
+/* port map */
+struct port_map {
+	struct rte_pci_addr port1;
+	struct rte_pci_addr port2;
+};
+
 /* runtime data for all pf's and vf's */
 static struct control_pem *run_data[L2FWD_MAX_PEM] = { 0 };
 
@@ -88,25 +98,54 @@ static struct octep_cp_msg rx_msg[RX_BUF_CNT];
 static int max_msg_sz = sizeof(union octep_ctrl_net_max_data);
 
 /* control fn ops */
-static struct control_fn_ops *ops[L2FWD_FN_TYPE_MAX] = { 0 };
+static struct control_fn_ops *fn_ops[L2FWD_FN_TYPE_MAX] = { 0 };
 
 /* current operating state */
 static enum control_state c_state = CONTROL_STATE_UNKNOWN;
 
+/* l2fwd control ops */
+static struct l2fwd_control_ops *l2fwd_ops;
+
 /* template for callback function */
 typedef void (*valid_pf_callback_t)(int pem, int pf, void *ctx);
+
+/* template for callback function */
+typedef void (*valid_fn_callback_t)(int pem, int pf, int vf, void *ctx);
 
 static void iterate_valid_pfs(valid_pf_callback_t fn, void *ctx)
 {
 	int i, j;
 
-	for (i = 0; i < OCTEP_CP_DOM_MAX; i++) {
+	for (i = 0; i < L2FWD_MAX_PEM; i++) {
 		if (!run_data[i])
 			continue;
 
-		for (j = 0; j < OCTEP_CP_PF_PER_DOM_MAX; j++) {
+		for (j = 0; j < L2FWD_MAX_PF; j++) {
 			if (run_data[i]->pfs[j])
 				fn(i, j, ctx);
+		}
+	}
+}
+
+static void iterate_valid_fn(valid_fn_callback_t fn, void *ctx)
+{
+	int i, j, k;
+
+	for (i = 0; i < L2FWD_MAX_PEM; i++) {
+		if (!run_data[i])
+			continue;
+
+		for (j = 0; j < L2FWD_MAX_PF; j++) {
+			if (!run_data[i]->pfs[j])
+				continue;
+
+			fn(i, j, -1, ctx);
+			for (k = 0; k < L2FWD_MAX_VF; k++) {
+				if (!run_data[i]->pfs[j]->vfs[k])
+					continue;
+
+				fn(i, j, k, ctx);
+			}
 		}
 	}
 }
@@ -145,27 +184,35 @@ static int free_pems(void)
 	return 0;
 }
 
-static inline int init_vf(struct control_vf *vf, struct fn_config *vf_cfg)
+static inline int init_vf(int pem_idx, int pf_idx, int vf_idx,
+			  struct control_vf *vf, struct l2fwd_config_fn *vf_cfg)
 {
-	vf->ops = (is_zero_dbdf(&vf_cfg->to_wire_dbdf)) ?
-		   ops[L2FWD_FN_TYPE_STUB] :
-		   ops[L2FWD_FN_TYPE_NIC];
+	vf->dbdf = vf_cfg->to_host_dbdf;
+	if (!L2FWD_FEATURE(l2fwd_user_cfg.features, L2FWD_FEATURE_CTRL_PLANE) ||
+	    is_zero_dbdf(&vf_cfg->to_wire_dbdf))
+		vf->ops = fn_ops[L2FWD_FN_TYPE_STUB];
+	else
+		vf->ops = fn_ops[L2FWD_FN_TYPE_NIC];
+
+	vf->ops->set_mac(pem_idx, pf_idx, vf_idx, vf_cfg->mac.addr_bytes);
 
 	return 0;
 }
 
 static int init_pf(int pem_idx, int pf_idx, struct control_pf *pf,
-		   struct pf_config *pf_cfg)
+		   struct l2fwd_config_pf *pf_cfg)
 {
 	struct octep_cp_event_info_heartbeat *hbeat;
 
-	/**
-	 * Set ops type for all valid interfaces based on to_wire_dbdf.
-	 * stub ops for dbdf == 0000:00:0.0, nic ops for rest.
-	 */
-	pf->ops = (is_zero_dbdf(&pf_cfg->d.to_wire_dbdf)) ?
-		   ops[L2FWD_FN_TYPE_STUB] :
-		   ops[L2FWD_FN_TYPE_NIC];
+	pf->dbdf = pf_cfg->d.to_host_dbdf;
+	if (!L2FWD_FEATURE(l2fwd_user_cfg.features, L2FWD_FEATURE_CTRL_PLANE) ||
+	    is_zero_dbdf(&pf_cfg->d.to_wire_dbdf))
+		pf->ops = fn_ops[L2FWD_FN_TYPE_STUB];
+	else
+		pf->ops = fn_ops[L2FWD_FN_TYPE_NIC];
+
+	pf->ops->set_mac(pem_idx, pf_idx, -1, pf_cfg->d.mac.addr_bytes);
+
 	pf->ctx.s.pem_idx = pem_idx;
 	pf->ctx.s.pf_idx = pf_idx;
 	pf->msecs_to_next_hbeat = pf_cfg->hb_interval;
@@ -205,7 +252,7 @@ static int init_valid_cfg(int pem_idx, int pf_idx, int vf_idx, void *ctx)
 	pf = pem->pfs[pf_idx];
 	if (vf_idx < 0)
 		return init_pf(pem_idx, pf_idx, pf,
-			       &pem_cfg[pem_idx].pfs[pf_idx]);
+			       &l2fwd_cfg.pems[pem_idx].pfs[pf_idx]);
 
 	if (!pf->vfs[vf_idx]) {
 		pf->vfs[vf_idx] = calloc(1, sizeof(struct control_vf));
@@ -217,8 +264,8 @@ static int init_valid_cfg(int pem_idx, int pf_idx, int vf_idx, void *ctx)
 		}
 	}
 
-	return init_vf(pf->vfs[vf_idx],
-		       &pem_cfg[pem_idx].pfs[pf_idx].vfs[vf_idx]);
+	return init_vf(pem_idx, pf_idx, vf_idx, pf->vfs[vf_idx],
+		       &l2fwd_cfg.pems[pem_idx].pfs[pf_idx].vfs[vf_idx]);
 }
 
 static int init_pems(void)
@@ -234,9 +281,26 @@ static int init_pems(void)
 	return 0;
 }
 
+static int update_config_for_soc(int pem_idx, int pf_idx, int vf_idx, void *ctx)
+{
+	struct octep_cp_lib_info *info = (struct octep_cp_lib_info *)ctx;
+	struct l2fwd_config_fn *fn;
+
+	fn = (vf_idx < 0) ? &l2fwd_cfg.pems[pem_idx].pfs[pf_idx].d :
+			    &l2fwd_cfg.pems[pem_idx].pfs[pf_idx].vfs[vf_idx];
+	fn->mtu = (info->soc_model.flag &
+		   (OCTEP_CP_SOC_MODEL_CN96xx_Ax |
+		    OCTEP_CP_SOC_MODEL_CNF95xxN_A0 |
+		    OCTEP_CP_SOC_MODEL_CNF95xxO_A0)) ?
+		   (16 * 1024) : ((64 * 1024) - 1);
+
+	return 0;
+}
+
 /* Initialize octep_cp_lib */
 static int init_octep_cp_lib(void)
 {
+	struct octep_cp_lib_info info;
 	int dom, pf, i, j, err;
 
 	dom = 0;
@@ -244,7 +308,7 @@ static int init_octep_cp_lib(void)
 	for (i = 0; i < OCTEP_CP_DOM_MAX; i++) {
 		pf = 0;
 		for (j = 0; j < OCTEP_CP_PF_PER_DOM_MAX; j++) {
-			if (pem_cfg[i].pfs[j].d.is_valid)
+			if (l2fwd_cfg.pems[i].pfs[j].d.is_valid)
 				cp_lib_cfg.doms[dom].pfs[pf++].idx = j;
 		}
 		if (pf) {
@@ -267,6 +331,18 @@ static int init_octep_cp_lib(void)
 				return -EINVAL;
 			}
 		}
+	}
+
+	err = octep_cp_lib_get_info(&info);
+	if (err < 0) {
+		octep_cp_lib_uninit();
+		return -EINVAL;
+	}
+
+	err = for_each_valid_config_fn(&update_config_for_soc, &info);
+	if (err < 0) {
+		free_pems();
+		return err;
 	}
 
 	return 0;
@@ -328,7 +404,7 @@ static int set_fw_ready(int ready)
 	return 0;
 }
 
-int l2fwd_control_init(void)
+int l2fwd_control_init(struct l2fwd_control_ops *ops)
 {
 	int err;
 
@@ -341,11 +417,11 @@ int l2fwd_control_init(void)
 		return err;
 
 	/* Initialize each type of op */
-	err = ctrl_stub_init(&ops[L2FWD_FN_TYPE_STUB]);
+	err = ctrl_stub_init(&fn_ops[L2FWD_FN_TYPE_STUB]);
 	if (err < 0)
 		goto ctrl_stub_init_fail;
 
-	err = ctrl_nic_init(&ops[L2FWD_FN_TYPE_NIC]);
+	err = ctrl_nic_init(&fn_ops[L2FWD_FN_TYPE_NIC]);
 	if (err < 0)
 		goto ctrl_nic_init_fail;
 
@@ -364,6 +440,7 @@ int l2fwd_control_init(void)
 	ualarm(ALARM_INTERVAL_USECS, 0);
 
 	c_state = CONTROL_STATE_READY;
+	l2fwd_ops = ops;
 	RTE_LOG(INFO, L2FWD_CTRL,
 		"Using single buffer with msg sz %u.\n", max_msg_sz);
 
@@ -393,7 +470,7 @@ static inline void valid_pf_send_hbeat(int pem_idx, int pf_idx, void *ctx)
 	pf = run_data[pem_idx]->pfs[pf_idx];
 	if (pf->msecs_to_next_hbeat <= 0) {
 		octep_cp_lib_send_event(&pf->hbeat);
-		pf->msecs_to_next_hbeat = pem_cfg[pem_idx].pfs[pf_idx].hb_interval;
+		pf->msecs_to_next_hbeat = l2fwd_cfg.pems[pem_idx].pfs[pf_idx].hb_interval;
 	}
 	pf->msecs_to_next_hbeat -= ALARM_INTERVAL_MSECS;
 }
@@ -722,12 +799,12 @@ static int process_get_info(union octep_cp_msg_info *info,
 			    struct octep_ctrl_net_h2f_resp *resp,
 			    struct control_fn_ops *ops)
 {
-	struct pf_config *pf_cfg;
-	struct fn_config *fn_cfg;
+	struct l2fwd_config_pf *pf_cfg;
+	struct l2fwd_config_fn *fn_cfg;
 	int vf_idx;
 
 	vf_idx = (info->s.is_vf) ? info->s.vf_idx : -1;
-	pf_cfg = &pem_cfg[info->s.pem_idx].pfs[info->s.pf_idx];
+	pf_cfg = &l2fwd_cfg.pems[info->s.pem_idx].pfs[info->s.pf_idx];
 	fn_cfg = (vf_idx > 0) ? &pf_cfg->vfs[vf_idx] : &pf_cfg->d;
 
 	resp->info.fw_info.pkind = fn_cfg->pkind;
@@ -834,10 +911,10 @@ static void valid_pf_process_perst(int pem, int pf, void *ctx)
 	if (*perst_pem != pem)
 		return;
 
-	l2fwd_on_before_control_pf_reset(pem, pf);
+	l2fwd_ops->on_before_pf_reset(pem, pf);
 	run_data[pem]->pfs[pf]->ops->reset(pem, pf, -1);
-	init_pf(pem, pf, run_data[pem]->pfs[pf], &pem_cfg[pem].pfs[pf]);
-	l2fwd_on_after_control_pf_reset(pem, pf);
+	init_pf(pem, pf, run_data[pem]->pfs[pf], &l2fwd_cfg.pems[pem].pfs[pf]);
+	l2fwd_ops->on_after_pf_reset(pem, pf);
 }
 
 int l2fwd_control_poll(void)
@@ -861,13 +938,84 @@ int l2fwd_control_poll(void)
 				pem_idx);
 
 			c_state = CONTROL_STATE_IN_PEM_RESET;
-			l2fwd_on_before_control_pem_reset(pem_idx);
+			l2fwd_ops->on_before_pem_reset(pem_idx);
 			iterate_valid_pfs(&valid_pf_process_perst, &pem_idx);
-			l2fwd_on_after_control_pem_reset(pem_idx);
+			l2fwd_ops->on_after_pem_reset(pem_idx);
 			c_state = CONTROL_STATE_READY;
 
 		}
 	}
+
+	return 0;
+}
+
+static void clear_valid_fn_mapping(int pem, int pf, int vf, void *ctx)
+{
+	if (vf < 0) {
+		run_data[pem]->pfs[pf]->ops->set_port(pem, pf, vf, &zero_dbdf);
+		run_data[pem]->pfs[pf]->ops = fn_ops[L2FWD_FN_TYPE_STUB];
+		return;
+	}
+
+	run_data[pem]->pfs[pf]->vfs[vf]->ops->set_port(pem, pf, vf, &zero_dbdf);
+	run_data[pem]->pfs[pf]->vfs[vf]->ops = fn_ops[L2FWD_FN_TYPE_STUB];
+}
+
+int l2fwd_control_clear_port_mapping(void)
+{
+	iterate_valid_fn(clear_valid_fn_mapping, NULL);
+
+	return 0;
+}
+
+static int switch_ops(int pem, int pf, int vf, struct port_map *pm,
+		      struct control_fn_ops **ops)
+{
+	uint8_t mac[ETH_ALEN];
+
+	(*ops)->get_mac(pem, pf, vf, mac);
+	clear_valid_fn_mapping(pem, pf, vf, NULL);
+	if (!rte_pci_addr_cmp(&zero_dbdf, &pm->port2))
+		*ops = fn_ops[L2FWD_FN_TYPE_STUB];
+	else
+		*ops = fn_ops[L2FWD_FN_TYPE_NIC];
+
+	(*ops)->set_port(pem, pf, vf, &pm->port2);
+	(*ops)->set_mac(pem, pf, vf, mac);
+
+	return 0;
+}
+
+static void set_valid_fn_mapping(int pem, int pf, int vf, void *ctx)
+{
+	struct port_map *pm = (struct port_map *)ctx;
+	struct control_pf *cpf;
+	struct control_vf *cvf;
+
+	if (vf < 0) {
+		cpf = run_data[pem]->pfs[pf];
+		if (rte_pci_addr_cmp(&cpf->dbdf, &pm->port1))
+			return;
+
+		switch_ops(pem, pf, vf, pm, &cpf->ops);
+	} else {
+		cvf = run_data[pem]->pfs[pf]->vfs[vf];
+		if (rte_pci_addr_cmp(&cvf->dbdf, &pm->port1))
+			return;
+
+		switch_ops(pem, pf, vf, pm, &cvf->ops);
+	}
+}
+
+int l2fwd_control_set_port_mapping(const struct rte_pci_addr *port1,
+				   const struct rte_pci_addr *port2)
+{
+	struct port_map pm = {
+		.port1 = *port1,
+		.port2 = *port2
+	};
+
+	iterate_valid_fn(clear_valid_fn_mapping, &pm);
 
 	return 0;
 }

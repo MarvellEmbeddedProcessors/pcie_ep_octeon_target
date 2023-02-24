@@ -4,24 +4,6 @@
 #ifndef __L2FWD_DATA_H__
 #define __L2FWD_DATA_H__
 
-enum l2fwd_data_poll_mode {
-	/* Each core polls 1 rx-queue for all ports and
-	 * forwards packets on same tx-queue on destination
-	 * port
-	 */
-	L2FWD_DATA_POLL_MODE_0,
-	/* Each core polls all rx-queues for a given port and
-	 * forwards packets on same tx-queues on destination
-	 * port
-	 */
-	L2FWD_DATA_POLL_MODE_1
-};
-
-struct l2fwd_data_cfg {
-	/* enum l2fwd_pcie_ep_data_poll_mode */
-	int poll_mode;
-};
-
 /* Initialize data plane.
  *
  * Initialize local data for handling data packets.
@@ -29,7 +11,7 @@ struct l2fwd_data_cfg {
  *
  * return value: 0 on success, -errno on failure.
  */
-int l2fwd_data_init(struct l2fwd_data_cfg *cfg);
+int l2fwd_data_init(void);
 
 /* Start data plane.
  *

@@ -7,10 +7,11 @@ APP = l2fwd_pcie_ep
 
 # all source are stored in SRCS-y
 SRCS-y := l2fwd_main.c \
-	l2fwd/control/*.c \
-	l2fwd/data/*.c \
-	l2fwd/config/*.c \
-	l2fwd/api-server/*.c
+	l2fwd/src/l2fwd.c \
+	l2fwd/src/control/*.c \
+	l2fwd/src/data/*.c \
+	l2fwd/src/config/*.c \
+	l2fwd/src/api-server/*.c
 
 PKGCONF ?= pkg-config
 # Build using pkg-config variables if possible
@@ -41,7 +42,7 @@ APP_CFLAGS += $(shell $(PKGCONF) --cflags libdpdk)
 # Add flag to allow experimental API as l2fwd uses rte_ethdev_set_ptype API
 APP_CFLAGS += -DALLOW_EXPERIMENTAL_API
 APP_CFLAGS += $(shell $(PKGCONF) --cflags libconfig)
-APP_CFLAGS += -I$(CURDIR) -I$(CURDIR)/l2fwd/include
+APP_CFLAGS += -I$(CURDIR) -I$(CURDIR)/l2fwd/include -I$(CURDIR)/l2fwd/src/include
 
 APP_LDFLAGS_SHARED = $(LDFLAGS)
 APP_LDFLAGS_SHARED += $(shell $(PKGCONF) --libs libdpdk)

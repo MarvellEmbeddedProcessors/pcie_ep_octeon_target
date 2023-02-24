@@ -1,11 +1,10 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright (c) 2022 Marvell.
  */
-
 #include <stdint.h>
 
 #include "compat.h"
-#include "l2fwd.h"
+#include "l2fwd_main.h"
 #include "l2fwd_data.h"
 #include "l2fwd_config.h"
 #include "data.h"
@@ -41,9 +40,6 @@ static uint16_t nb_txd = TX_DESC_DEFAULT;
 
 /* Common mempool */
 static struct rte_mempool *pktmbuf_pool;
-
-/* data path configuration */
-static struct l2fwd_data_cfg data_cfg = { 0 };
 
 /* poll mode ops */
 static struct poll_mode_ops *pm_ops;
@@ -110,10 +106,11 @@ static int iterate_configured_ports(configured_port_callback_t fn, void *ctx)
 
 static void drop_pkt(uint16_t port, void *m, uint16_t queue)
 {
-	struct rte_eth_dev_tx_buffer *buffer = tx_buffer[port][queue];
+	struct rte_mbuf *mbuf = (struct rte_mbuf *)m;
+	struct rte_eth_dev_tx_buffer *txb;
 
-	buffer->error_callback((struct rte_mbuf **)&m, 1,
-			       buffer->error_userdata);
+	txb = tx_buffer[mbuf->port][queue];
+	txb->error_callback(&mbuf, 1, txb->error_userdata);
 }
 
 static int calculate_mbuf_size(void)
@@ -435,17 +432,17 @@ static int init_valid_cfg(int pem_idx, int pf_idx, int vf_idx, void *ctx)
 {
 	struct data_port_fwd_info *src, *dst;
 	unsigned int src_port, dst_port;
-	struct fn_config *fn;
+	struct l2fwd_config_fn *fn;
 	int err;
 
 	fn = (vf_idx < 0) ?
-	      &pem_cfg[pem_idx].pfs[pf_idx].d :
-	      &pem_cfg[pem_idx].pfs[pf_idx].vfs[vf_idx];
+	      &l2fwd_cfg.pems[pem_idx].pfs[pf_idx].d :
+	      &l2fwd_cfg.pems[pem_idx].pfs[pf_idx].vfs[vf_idx];
 
 	if (is_zero_dbdf(&fn->to_host_dbdf))
 		return 0;
 
-	src_port = find_rte_port(&fn->to_host_dbdf);
+	src_port = l2fwd_pcie_ep_find_port(&fn->to_host_dbdf);
 	if (src_port == RTE_MAX_ETHPORTS) {
 		RTE_LOG(ERR, L2FWD_DATA,
 			"[%d][%d][%d] Device not found ["PCI_PRI_FMT"]\n",
@@ -461,7 +458,7 @@ static int init_valid_cfg(int pem_idx, int pf_idx, int vf_idx, void *ctx)
 	if (err < 0)
 		return err;
 
-	dst_port = find_rte_port(&fn->to_wire_dbdf);
+	dst_port = l2fwd_pcie_ep_find_port(&fn->to_wire_dbdf);
 	dst = &data_fwd_table[dst_port];
 	if (!is_zero_dbdf(&fn->to_wire_dbdf)) {
 		err = validate_port(dst, dst_port, &fn->to_wire_dbdf);
@@ -523,17 +520,11 @@ static struct data_ops ops = {
 	.drop_pkt = drop_pkt
 };
 
-int l2fwd_data_init(struct l2fwd_data_cfg *cfg)
+int l2fwd_data_init(void)
 {
 	int err;
 
-	data_cfg = *cfg;
-
-	if (cfg->poll_mode == L2FWD_DATA_POLL_MODE_0)
-		err = poll_mode_0_init(&ops, &pm_ops);
-	else
-		err = poll_mode_1_init(&ops, &pm_ops);
-
+	err = poll_mode_init(&ops, &pm_ops);
 	if (err < 0)
 		return err;
 
@@ -556,16 +547,13 @@ int l2fwd_data_init(struct l2fwd_data_cfg *cfg)
 	return 0;
 
 fwd_table_init_fail:
-
+	rte_mempool_free(pktmbuf_pool);
 create_mbuf_pool_fail:
 	data_nic_uninit();
 data_nic_init_fail:
 	data_stub_uninit();
 data_stub_init_fail:
-	if (cfg->poll_mode == L2FWD_DATA_POLL_MODE_0)
-		poll_mode_0_uninit();
-	else
-		poll_mode_1_uninit();
+	poll_mode_uninit();
 
 	return err;
 }
@@ -601,6 +589,7 @@ int l2fwd_data_start(void)
 	if (err < 0)
 		goto start_error;
 
+	pm_ops->configure();
 	pm_ops->start();
 
 	return 0;
@@ -623,7 +612,7 @@ int l2fwd_data_start_port(struct rte_pci_addr *dbdf)
 {
 	int port, err;
 
-	port = find_rte_port(dbdf);
+	port = l2fwd_pcie_ep_find_port(dbdf);
 	if (port == RTE_MAX_ETHPORTS)
 		return -ENOENT;
 
@@ -641,7 +630,7 @@ int l2fwd_data_stop_port(struct rte_pci_addr *dbdf)
 {
 	int port;
 
-	port = find_rte_port(dbdf);
+	port = l2fwd_pcie_ep_find_port(dbdf);
 	if (port == RTE_MAX_ETHPORTS)
 		return -ENOENT;
 
@@ -666,6 +655,8 @@ int l2fwd_data_clear_fwd_table(void)
 	for (i = 0; i <= RTE_MAX_ETHPORTS; i++)
 		clear_fwd_entry(&data_fwd_table[i]);
 
+	pm_ops->configure();
+
 	return 0;
 }
 
@@ -674,7 +665,7 @@ int l2fwd_data_add_fwd_table_entry(struct rte_pci_addr *port1,
 {
 	int host_port, wire_port, dst_port, err;
 
-	host_port = find_rte_port(port1);
+	host_port = l2fwd_pcie_ep_find_port(port1);
 	if (host_port == RTE_MAX_ETHPORTS)
 		return -ENOENT;
 
@@ -685,7 +676,7 @@ int l2fwd_data_add_fwd_table_entry(struct rte_pci_addr *port1,
 	if (data_fwd_table[dst_port].running)
 		return -EPERM;
 
-	wire_port = find_rte_port(port2);
+	wire_port = l2fwd_pcie_ep_find_port(port2);
 	if (wire_port == RTE_MAX_ETHPORTS)
 		return -ENOENT;
 
@@ -702,6 +693,7 @@ int l2fwd_data_add_fwd_table_entry(struct rte_pci_addr *port1,
 
 	start_configured_port(host_port, NULL);
 	start_configured_port(wire_port, NULL);
+	pm_ops->configure();
 
 	return 0;
 }
@@ -711,11 +703,11 @@ int l2fwd_data_del_fwd_table_entry(struct rte_pci_addr *port1,
 {
 	int host_port, wire_port;
 
-	host_port = find_rte_port(port1);
+	host_port = l2fwd_pcie_ep_find_port(port1);
 	if (host_port == RTE_MAX_ETHPORTS)
 		return -ENOENT;
 
-	wire_port = find_rte_port(port2);
+	wire_port = l2fwd_pcie_ep_find_port(port2);
 	if (wire_port == RTE_MAX_ETHPORTS)
 		return -ENOENT;
 
@@ -729,56 +721,72 @@ int l2fwd_data_del_fwd_table_entry(struct rte_pci_addr *port1,
 
 	clear_fwd_entry(&data_fwd_table[host_port]);
 	clear_fwd_entry(&data_fwd_table[wire_port]);
+	pm_ops->configure();
+
+	return 0;
+}
+
+static int print_configured_port_stats(unsigned int port, void *ctx)
+{
+	static struct data_port_statistics prev_q_stats[RTE_MAX_ETHPORTS][RTE_MAX_LCORE];
+	static struct data_port_statistics prev_port_stats[RTE_MAX_ETHPORTS];
+	static const char *border = "########################";
+	struct data_port_statistics cur_q_stats[RTE_MAX_LCORE] = { 0 };
+	struct data_port_statistics cur_port_stats = { 0 };
+	int i;
+
+#define PS(x) ((x) / 10)
+	RTE_LOG(INFO, L2FWD_DATA, "\n  %s NIC statistics for port %-2d %s\n",
+		border, port, border);
+
+	for (i = 0; i < num_rx_queues; i++) {
+		cur_port_stats.tx += port_stats[port][i].tx;
+		cur_port_stats.rx += port_stats[port][i].rx;
+		cur_port_stats.dropped += port_stats[port][i].dropped;
+
+		cur_q_stats[i].tx += port_stats[port][i].tx;
+		cur_q_stats[i].rx += port_stats[port][i].rx;
+		cur_q_stats[i].dropped += port_stats[port][i].dropped;
+
+		RTE_LOG(INFO, L2FWD_DATA,
+			"  [%d] RX-pkt: %-10"PRIu64" TX-pkt: %-10"PRIu64
+			" Dropped:  %-"PRIu64"\n",
+			i,
+			PS(cur_q_stats[i].tx - prev_q_stats[port][i].tx),
+			PS(cur_q_stats[i].rx - prev_q_stats[port][i].rx),
+			PS(cur_q_stats[i].dropped - prev_q_stats[port][i].dropped));
+
+	}
+	RTE_LOG(INFO, L2FWD_DATA,
+		"  RX-packets: %-10"PRIu64" TX-packets: %-10"PRIu64" Dropped:  "
+		"%-"PRIu64"\n",
+		PS(cur_port_stats.tx - prev_port_stats[port].tx),
+		PS(cur_port_stats.rx - prev_port_stats[port].rx),
+		PS(cur_port_stats.dropped - prev_port_stats[port].dropped));
+
+	memcpy(&prev_q_stats[port], &cur_q_stats, sizeof(cur_q_stats));
+	memcpy(&prev_port_stats[port], &cur_port_stats, sizeof(cur_port_stats));
 
 	return 0;
 }
 
 int l2fwd_data_print_stats(void)
 {
-	uint16_t port, i;
-	struct data_port_statistics cur_stats[RTE_MAX_ETHPORTS][RTE_MAX_LCORE] = {0};
-	static struct data_port_statistics prev_stats[RTE_MAX_ETHPORTS][RTE_MAX_LCORE];
+	const char top_left[] = { 27, '[', '1', ';', '1', 'H', '\0' };
+	const char clr[] = { 27, '[', '2', 'J', '\0' };
 
-#define PS(x) ((x) / 10)
-
-	/* print statistics */
-	RTE_ETH_FOREACH_DEV(port) {
-		for (i = 0; i < num_rx_queues; i++) {
-			cur_stats[port][i].tx += port_stats[port][i].tx;
-			cur_stats[port][i].rx += port_stats[port][i].rx;
-			cur_stats[port][i].dropped += port_stats[port][i].dropped;
-
-			RTE_LOG(INFO, L2FWD_DATA,
-				"[%"PRIu16"][%d]: tx_pkts: %"PRIu64
-				"/s rx_pkts: %" PRIu64
-				"/s dropped: %" PRIu64
-				"/s  tx_tot: %" PRIu64
-				" rx_tot: %" PRIu64
-				" dr_tot: %" PRIu64 "\n",
-				port, i,
-				PS((cur_stats[port][i].tx -
-				    prev_stats[port][i].tx)),
-				PS((cur_stats[port][i].rx -
-				    prev_stats[port][i].rx)),
-				PS((cur_stats[port][i].dropped -
-				    prev_stats[port][i].dropped)),
-				cur_stats[port][i].tx,
-				cur_stats[port][i].rx,
-				cur_stats[port][i].dropped);
-		}
-	}
-	memcpy(&prev_stats, &cur_stats, sizeof(cur_stats));
+	/* Clear screen and move to top left */
+	RTE_LOG(INFO, L2FWD_DATA, "%s%s", clr, top_left);
+	RTE_LOG(INFO, L2FWD_DATA,
+		"\nPort statistics ====================================");
+	iterate_configured_ports(&print_configured_port_stats, NULL);
 
 	return 0;
 }
 
 int l2fwd_data_uninit(void)
 {
-	if (data_cfg.poll_mode == L2FWD_DATA_POLL_MODE_0)
-		poll_mode_0_uninit();
-	else
-		poll_mode_1_uninit();
-
+	poll_mode_uninit();
 	data_nic_uninit();
 	data_stub_uninit();
 

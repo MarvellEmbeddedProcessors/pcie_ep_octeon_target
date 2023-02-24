@@ -27,12 +27,15 @@ static int sfd;
 /* socket servicing connected client */
 static int cfd;
 
-int l2fwd_api_server_init(void)
+struct l2fwd_api_server_ops *l2fwd_ops;
+
+int l2fwd_api_server_init(struct l2fwd_api_server_ops *ops)
 {
 	sfd = 0;
 	cfd = 0;
 	conn_thread = 0;
 	json_rpc_init(&conn_cb);
+	l2fwd_ops = ops;
 
 	return 0;
 }

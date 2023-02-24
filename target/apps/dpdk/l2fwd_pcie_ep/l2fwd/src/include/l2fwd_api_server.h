@@ -4,6 +4,20 @@
 #ifndef __L2FWD_API_SERVER_H__
 #define __L2FWD_API_SERVER_H__
 
+/* operations to be used by the api server */
+struct l2fwd_api_server_ops {
+	/* Start/Stop data plane and any dependencies */
+	int (*set_fwd_state)(int state);
+	/* Clear data plane table and any dependencies */
+	int (*clear_fwd_table)();
+	/* Add an entry to forwarding table. */
+	int (*add_fwd_table_entry)(struct rte_pci_addr *port1,
+				   struct rte_pci_addr *port2);
+	/* Delete an entry from forwarding table. */
+	int (*del_fwd_table_entry)(struct rte_pci_addr *port1,
+				   struct rte_pci_addr *port2);
+};
+
 /* Initialize api server.
  *
  * Initialize local data for handling api messages.
@@ -11,7 +25,7 @@
  *
  * return value: 0 on success, -errno on failure.
  */
-int l2fwd_api_server_init(void);
+int l2fwd_api_server_init(struct l2fwd_api_server_ops *ops);
 
 /* Start api server.
  *

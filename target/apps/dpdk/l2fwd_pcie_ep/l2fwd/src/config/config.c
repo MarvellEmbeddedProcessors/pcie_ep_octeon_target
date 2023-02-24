@@ -1,14 +1,14 @@
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright (c) 2022 Marvell.
+ */
 #include <stdlib.h>
 #include <errno.h>
 #include <stdint.h>
 #include <string.h>
 #include <libconfig.h>
 
-#include <rte_log.h>
-#include <rte_pci.h>
-
 #include "compat.h"
-#include "l2fwd.h"
+#include "l2fwd_main.h"
 #include "l2fwd_config.h"
 
 #define RTE_LOGTYPE_L2FWD_CONFIG	RTE_LOGTYPE_USER1
@@ -57,7 +57,6 @@
 
 /* if */
 #define CFG_TOKEN_IF_MAC			"mac"
-#define CFG_TOKEN_IF_MTU			"mtu"
 #define CFG_TOKEN_IF_AUTONEG			"autoneg"
 #define CFG_TOKEN_IF_PMODE			"pause_mode"
 #define CFG_TOKEN_IF_SPEED			"speed"
@@ -71,18 +70,17 @@
 #define CFG_TOKEN_PF_HB_INTERVAL		"hb_interval"
 #define CFG_TOKEN_PF_HB_MISS_COUNT		"hb_miss_count"
 
-struct pem_config pem_cfg[L2FWD_MAX_PEM];
+struct l2fwd_config l2fwd_cfg;
 
 static void print_config(void)
 {
-	struct pem_config *pem;
-	struct pf_config *pf;
-	struct fn_config *vf;
-	struct fn_config *fn;
+	struct l2fwd_config_fn *vf, *fn;
+	struct l2fwd_config_pem *pem;
+	struct l2fwd_config_pf *pf;
 	int i, j, k;
 
 	for (i = 0; i < L2FWD_MAX_PEM; i++) {
-		pem = &pem_cfg[i];
+		pem = &l2fwd_cfg.pems[i];
 		for (j = 0; j < L2FWD_MAX_PF; j++) {
 			pf = &pem->pfs[j];
 			if (!pf->d.is_valid)
@@ -95,7 +93,7 @@ static void print_config(void)
 				" pkind: [%d] to_host_dbdf: ["PCI_PRI_FMT"]"
 				" to_wire_dbdf: ["PCI_PRI_FMT"]\n"
 				" mac: ["L2FWD_PCIE_EP_ETHER_ADDR_PRT_FMT"]"
-				" mtu: [%u] autoneg: [%u] pause: [%u]\n"
+				" autoneg: [%u] pause: [%u]\n"
 				" speed: [%u] smodes: [%llx] amodes: [%llx]\n",
 				i, j,
 				pf->hb_interval, pf->hb_miss_count,
@@ -107,7 +105,7 @@ static void print_config(void)
 				fn->mac.addr_bytes[0], fn->mac.addr_bytes[1],
 				fn->mac.addr_bytes[2], fn->mac.addr_bytes[3],
 				fn->mac.addr_bytes[4], fn->mac.addr_bytes[5],
-				fn->mtu, fn->autoneg, fn->pause_mode, fn->speed,
+				fn->autoneg, fn->pause_mode, fn->speed,
 				fn->smodes, fn->amodes);
 
 			for (k = 0; k < L2FWD_MAX_VF; k++) {
@@ -120,7 +118,7 @@ static void print_config(void)
 					" pkind: [%d] to_host_dbdf: ["PCI_PRI_FMT"]"
 					" to_wire_dbdf: ["PCI_PRI_FMT"]\n"
 					" mac: ["L2FWD_PCIE_EP_ETHER_ADDR_PRT_FMT"]"
-					" mtu: [%u] autoneg: [%u] pause: [%u]\n"
+					" autoneg: [%u] pause: [%u]\n"
 					" speed: [%u] smodes: [%llx]"
 					" amodes: [%llx]\n",
 					i, j, k,
@@ -136,7 +134,7 @@ static void print_config(void)
 					vf->mac.addr_bytes[0], vf->mac.addr_bytes[1],
 					vf->mac.addr_bytes[2], vf->mac.addr_bytes[3],
 					vf->mac.addr_bytes[4], vf->mac.addr_bytes[5],
-					vf->mtu, vf->autoneg, vf->pause_mode,
+					vf->autoneg, vf->pause_mode,
 					vf->speed, vf->smodes, vf->amodes);
 			}
 		}
@@ -156,7 +154,7 @@ static inline int set_default_mac(struct rte_ether_addr *mac, int pem, int pf,
 	return 0;
 }
 
-static int parse_fn_base(config_setting_t *lcfg, struct fn_config *fn)
+static int parse_fn_base(config_setting_t *lcfg, struct l2fwd_config_fn *fn)
 {
 	int err, ival;
 	const char *c;
@@ -193,7 +191,6 @@ static int parse_fn_base(config_setting_t *lcfg, struct fn_config *fn)
 	if (err == CONFIG_TRUE)
 		rte_ether_unformat_addr(c, &fn->mac);
 
-	config_setting_lookup_int(lcfg, CFG_TOKEN_IF_MTU, &fn->mtu);
 	config_setting_lookup_int(lcfg, CFG_TOKEN_IF_AUTONEG, &fn->autoneg);
 	config_setting_lookup_int(lcfg, CFG_TOKEN_IF_PMODE, &fn->pause_mode);
 	config_setting_lookup_int(lcfg, CFG_TOKEN_IF_SPEED, (int *)&fn->speed);
@@ -204,7 +201,7 @@ static int parse_fn_base(config_setting_t *lcfg, struct fn_config *fn)
 	return 0;
 }
 
-static int parse_pf(config_setting_t *pf, struct pf_config *pfcfg,
+static int parse_pf(config_setting_t *pf, struct l2fwd_config_pf *pfcfg,
 		    int pem_idx, int pf_idx)
 {
 	config_setting_t *vfs, *vf;
@@ -215,7 +212,7 @@ static int parse_pf(config_setting_t *pf, struct pf_config *pfcfg,
 		return err;
 
 	if (rte_is_zero_ether_addr(&pfcfg->d.mac))
-		set_default_mac(&pfcfg->d.mac, pem_idx, pf_idx, 0xff);
+		set_default_mac(&pfcfg->d.mac, pem_idx + 1, pf_idx + 1, 0);
 
 	err = config_setting_lookup_int(pf, CFG_TOKEN_PF_HB_INTERVAL, &ival);
 	pfcfg->hb_interval = (err == CONFIG_TRUE) ?
@@ -254,16 +251,16 @@ static int parse_pf(config_setting_t *pf, struct pf_config *pfcfg,
 
 			if (rte_is_zero_ether_addr(&pfcfg->vfs[idx].mac))
 				set_default_mac(&pfcfg->vfs[idx].mac,
-						pem_idx,
-						pf_idx,
-						idx);
+						pem_idx + 1,
+						pf_idx + 1,
+						idx + 1);
 		}
 	}
 
 	return 0;
 }
 
-static int parse_pem(config_setting_t *pem, struct pem_config *pemcfg,
+static int parse_pem(config_setting_t *pem, struct l2fwd_config_pem *pemcfg,
 		     int pem_idx)
 {
 	config_setting_t *pfs, *pf;
@@ -333,7 +330,7 @@ static int parse_pems(config_setting_t *pems)
 			continue;
 
 		for (idx = sidx; idx <= eidx; idx++) {
-			err = parse_pem(pem, &pem_cfg[idx], idx - sidx);
+			err = parse_pem(pem, &l2fwd_cfg.pems[idx], idx);
 			if (!err)
 				valid_pems++;
 		}
@@ -348,7 +345,7 @@ int l2fwd_config_init(const char *file_path)
 	config_t fcfg;
 	int err;
 
-	memset(pem_cfg, 0, sizeof(struct pem_config) * L2FWD_MAX_PEM);
+	memset(&l2fwd_cfg, 0, sizeof(struct l2fwd_config));
 
 	RTE_LOG(DEBUG, L2FWD_CONFIG, "config file : %s\n", file_path);
 	config_init(&fcfg);
@@ -388,7 +385,7 @@ int l2fwd_config_init(const char *file_path)
 
 int l2fwd_config_uninit(void)
 {
-	memset(pem_cfg, 0, sizeof(struct pem_config) * L2FWD_MAX_PEM);
+	memset(&l2fwd_cfg, 0, sizeof(struct l2fwd_config));
 
 	return 0;
 }

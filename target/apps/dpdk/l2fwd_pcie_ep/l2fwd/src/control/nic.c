@@ -1,4 +1,8 @@
+/* SPDX-License-Identifier: BSD-3-Clause
+ * Copyright (c) 2022 Marvell.
+ */
 #include "compat.h"
+#include "l2fwd_main.h"
 #include "l2fwd_config.h"
 #include "octep_cp_lib.h"
 #include "octep_ctrl_net.h"
@@ -24,6 +28,13 @@ struct nic_pem {
 
 /* runtime data */
 static struct nic_pem *nic_data[L2FWD_MAX_PEM] = { 0 };
+
+static inline struct nic_fn_data *get_fn_data(int pem, int pf, int vf)
+{
+	return (vf >= 0) ?
+		nic_data[pem]->pfs[pf]->vfs[vf] :
+		&nic_data[pem]->pfs[pf]->d;
+}
 
 static int free_pems(void)
 {
@@ -59,39 +70,25 @@ static int free_pems(void)
 	return 0;
 }
 
-static int init_fn(int pem, int pf, int vf, struct nic_fn_data *fn,
-		   struct fn_config *fn_cfg)
+static int init_fn(int pem, int pf, int vf, const struct rte_pci_addr *dbdf)
 {
+	struct nic_fn_data *fn;
 
-	fn->portid = find_rte_port(&fn_cfg->to_wire_dbdf);
-	if (fn->portid == RTE_MAX_ETHPORTS) {
-		RTE_LOG(ERR, L2FWD_CTRL_NIC,
-			"[%d][%d][%d]: Device not found ["PCI_PRI_FMT"]\n",
-			pem, pf, vf,
-			fn_cfg->to_wire_dbdf.domain,
-			fn_cfg->to_wire_dbdf.bus,
-			fn_cfg->to_wire_dbdf.devid,
-			fn_cfg->to_wire_dbdf.function);
-		return -EIO;
-	}
-
-	rte_eth_dev_default_mac_addr_set(fn->portid, &fn_cfg->mac);
+	fn = get_fn_data(pem, pf, vf);
+	fn->portid = l2fwd_pcie_ep_find_port(dbdf);
 
 	return 0;
 }
 
 static int init_valid_cfg(int pem_idx, int pf_idx, int vf_idx, void *data)
 {
-	struct fn_config *fn_cfg;
+	struct l2fwd_config_fn *fn_cfg;
 	struct nic_pem *pem;
 	struct nic_pf *pf;
 
 	fn_cfg = (vf_idx < 0) ?
-		  &pem_cfg[pem_idx].pfs[pf_idx].d :
-		  &pem_cfg[pem_idx].pfs[pf_idx].vfs[vf_idx];
-
-	if (is_zero_dbdf(&fn_cfg->to_wire_dbdf))
-		return 0;
+		  &l2fwd_cfg.pems[pem_idx].pfs[pf_idx].d :
+		  &l2fwd_cfg.pems[pem_idx].pfs[pf_idx].vfs[vf_idx];
 
 	if (!nic_data[pem_idx]) {
 		nic_data[pem_idx] = calloc(1, sizeof(struct nic_pem));
@@ -114,7 +111,7 @@ static int init_valid_cfg(int pem_idx, int pf_idx, int vf_idx, void *data)
 	}
 	pf = pem->pfs[pf_idx];
 	if (vf_idx < 0)
-		return init_fn(pem_idx, pf_idx, vf_idx, &pf->d, fn_cfg);
+		return init_fn(pem_idx, pf_idx, vf_idx, &fn_cfg->to_wire_dbdf);
 
 	if (!pf->vfs[vf_idx]) {
 		pf->vfs[vf_idx] = calloc(1, sizeof(struct nic_fn_data));
@@ -126,7 +123,7 @@ static int init_valid_cfg(int pem_idx, int pf_idx, int vf_idx, void *data)
 		}
 	}
 
-	return init_fn(pem_idx, pf_idx, vf_idx, pf->vfs[vf_idx], fn_cfg);
+	return init_fn(pem_idx, pf_idx, vf_idx, &fn_cfg->to_wire_dbdf);
 }
 
 static int init_pems(void)
@@ -146,9 +143,7 @@ static int nic_get_mtu(int pem, int pf, int vf, uint16_t *mtu)
 {
 	struct nic_fn_data *fn;
 
-	fn = (vf >= 0) ?
-	      nic_data[pem]->pfs[pf]->vfs[vf] :
-	      &nic_data[pem]->pfs[pf]->d;
+	fn = get_fn_data(pem, pf, vf);
 
 	return rte_eth_dev_get_mtu(fn->portid, mtu);
 }
@@ -157,9 +152,7 @@ static int nic_set_mtu(int pem, int pf, int vf, uint16_t mtu)
 {
 	struct nic_fn_data *fn;
 
-	fn = (vf >= 0) ?
-	      nic_data[pem]->pfs[pf]->vfs[vf] :
-	      &nic_data[pem]->pfs[pf]->d;
+	fn = get_fn_data(pem, pf, vf);
 
 	return rte_eth_dev_set_mtu(fn->portid, mtu);
 }
@@ -170,10 +163,7 @@ static int nic_get_mac(int pem, int pf, int vf, uint8_t *addr)
 	struct rte_ether_addr mac;
 	int err;
 
-	fn = (vf >= 0) ?
-	      nic_data[pem]->pfs[pf]->vfs[vf] :
-	      &nic_data[pem]->pfs[pf]->d;
-
+	fn = get_fn_data(pem, pf, vf);
 	err = rte_eth_macaddr_get(fn->portid, &mac);
 	if (!err)
 		memcpy(addr, &mac.addr_bytes, ETH_ALEN);
@@ -186,10 +176,7 @@ static int nic_set_mac(int pem, int pf, int vf, uint8_t *addr)
 	struct rte_ether_addr mac;
 	struct nic_fn_data *fn;
 
-	fn = (vf >= 0) ?
-	      nic_data[pem]->pfs[pf]->vfs[vf] :
-	      &nic_data[pem]->pfs[pf]->d;
-
+	fn = get_fn_data(pem, pf, vf);
 	memcpy(&mac.addr_bytes, addr, ETH_ALEN);
 
 	return rte_eth_dev_default_mac_addr_set(fn->portid, &mac);
@@ -201,10 +188,7 @@ static int nic_get_link_state(int pem, int pf, int vf, uint16_t *state)
 	struct nic_fn_data *fn;
 	int err;
 
-	fn = (vf >= 0) ?
-	      nic_data[pem]->pfs[pf]->vfs[vf] :
-	      &nic_data[pem]->pfs[pf]->d;
-
+	fn = get_fn_data(pem, pf, vf);
 	err = rte_eth_link_get_nowait(fn->portid, &link);
 	if (!err)
 		*state = link.link_status;
@@ -216,9 +200,7 @@ static int nic_set_link_state(int pem, int pf, int vf, uint16_t state)
 {
 	struct nic_fn_data *fn;
 
-	fn = (vf >= 0) ?
-	      nic_data[pem]->pfs[pf]->vfs[vf] :
-	      &nic_data[pem]->pfs[pf]->d;
+	fn = get_fn_data(pem, pf, vf);
 
 	return (state) ?
 	       rte_eth_dev_set_link_up(fn->portid) :
@@ -233,9 +215,7 @@ static int nic_get_link_info(int pem, int pf, int vf,
 	struct nic_fn_data *fn;
 	int err;
 
-	fn = (vf >= 0) ?
-	      nic_data[pem]->pfs[pf]->vfs[vf] :
-	      &nic_data[pem]->pfs[pf]->d;
+	fn = get_fn_data(pem, pf, vf);
 
 /*
  *	err = rte_eth_dev_conf_get(fn->portid, &conf);
@@ -265,19 +245,22 @@ static int nic_set_link_info(int pem, int pf, int vf,
 
 static inline int reset_vf(int pem_idx, int pf_idx, int vf_idx)
 {
-	return init_fn(pem_idx, pf_idx, vf_idx,
-		       nic_data[pem_idx]->pfs[pf_idx]->vfs[vf_idx],
-		       &pem_cfg[pem_idx].pfs[pf_idx].vfs[vf_idx]);
+	struct l2fwd_config_fn *fn_cfg;
+
+	fn_cfg = &l2fwd_cfg.pems[pem_idx].pfs[pf_idx].vfs[vf_idx];
+
+	return init_fn(pem_idx, pf_idx, vf_idx, &fn_cfg->to_wire_dbdf);
 }
 
 static int reset_pf(int pem_idx, int pf_idx)
 {
+	struct l2fwd_config_fn *fn_cfg;
 	struct nic_pf *pf;
 	int vf_idx, err;
 
 	pf = nic_data[pem_idx]->pfs[pf_idx];
-	err = init_fn(pem_idx, pf_idx, -1, &pf->d,
-		      &pem_cfg[pem_idx].pfs[pf_idx].d);
+	fn_cfg = &l2fwd_cfg.pems[pem_idx].pfs[pf_idx].d;
+	err = init_fn(pem_idx, pf_idx, -1, &fn_cfg->to_wire_dbdf);
 	if (err < 0)
 		return err;
 
@@ -325,6 +308,22 @@ static int nic_reset(int pem, int pf, int vf)
 	return reset_vf(pem, pf, vf);
 }
 
+static int nic_set_port(int pem, int pf, int vf, const struct rte_pci_addr *port)
+{
+	if (!nic_data[pem])
+		return -EINVAL;
+
+	if (!nic_data[pem]->pfs[pf])
+		return -EINVAL;
+
+	if (vf >= 0 && !nic_data[pem]->pfs[pf]->vfs[vf])
+		return -EINVAL;
+
+	init_fn(pem, pf, vf, port);
+
+	return 0;
+}
+
 static struct control_fn_ops nic_ctrl_ops = {
 	.get_mtu = nic_get_mtu,
 	.set_mtu = nic_set_mtu,
@@ -336,7 +335,8 @@ static struct control_fn_ops nic_ctrl_ops = {
 	.set_rx_state = nic_set_link_state,
 	.get_link_info = nic_get_link_info,
 	.set_link_info = nic_set_link_info,
-	.reset = nic_reset
+	.reset = nic_reset,
+	.set_port = nic_set_port
 };
 
 int ctrl_nic_init(struct control_fn_ops **ops)

@@ -17,6 +17,7 @@ struct control_fn_ops {
 	int (*get_link_info)(int pem, int pf, int vf, struct octep_ctrl_net_link_info *info);
 	int (*set_link_info)(int pem, int pf, int vf, struct octep_ctrl_net_link_info *info);
 	int (*reset)(int pem, int pf, int vf);
+	int (*set_port)(int pem, int pf, int vf, const struct rte_pci_addr *port);
 };
 
 /** Stub/Virtual ctrl_net interface operations */

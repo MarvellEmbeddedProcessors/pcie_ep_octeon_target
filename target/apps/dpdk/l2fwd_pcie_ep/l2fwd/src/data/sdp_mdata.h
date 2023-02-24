@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright (c) 2022 Marvell.
  */
-
 #ifndef __SDP_MDATA_H__
 #define __SDP_MDATA_H__
 
