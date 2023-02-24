@@ -36,6 +36,7 @@ static inline int is_zero_dbdf(const struct rte_pci_addr *dbdf)
  */
 static inline unsigned int find_rte_port(struct rte_pci_addr *dbdf)
 {
+#if L2FWD_PCIE_EP_RTE_VERSION < RTE_VERSION_NUM(22, 11, 0, 0)
 	struct rte_eth_dev_info dev_info;
 	struct rte_pci_device *pci_dev;
 	unsigned int portid;
@@ -50,8 +51,10 @@ static inline unsigned int find_rte_port(struct rte_pci_addr *dbdf)
 		if (!rte_pci_addr_cmp(dbdf, &pci_dev->addr))
 			return portid;
 	}
-
 	return RTE_MAX_ETHPORTS;
+#else
+	return RTE_MAX_ETHPORTS;
+#endif
 }
 
 /* Control plane calls this before resetting pem */

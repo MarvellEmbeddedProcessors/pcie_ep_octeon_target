@@ -63,7 +63,9 @@ static uint8_t default_key[] = {
 static struct rte_eth_conf default_port_conf = {
 	.rxmode = {
 		.mq_mode = L2FWD_PCIE_EP_ETH_MQ_RX_RSS,
+#if L2FWD_PCIE_EP_RTE_VERSION  < RTE_VERSION_NUM(22, 11, 0, 0)
 		.split_hdr_size = 0,
+#endif
 		.offloads = (L2FWD_PCIE_EP_ETH_RX_OFFLOAD_TCP_CKSUM |
 			     L2FWD_PCIE_EP_ETH_RX_OFFLOAD_IPV4_CKSUM |
 			     L2FWD_PCIE_EP_ETH_RX_OFFLOAD_UDP_CKSUM),
