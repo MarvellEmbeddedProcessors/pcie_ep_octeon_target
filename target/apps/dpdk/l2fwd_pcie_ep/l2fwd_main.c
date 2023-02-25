@@ -10,6 +10,7 @@
 #include <rte_ethdev.h>
 #include <rte_bus_pci.h>
 
+#include "compat.h"
 #include "l2fwd.h"
 #include "l2fwd_control.h"
 #include "l2fwd_data.h"
