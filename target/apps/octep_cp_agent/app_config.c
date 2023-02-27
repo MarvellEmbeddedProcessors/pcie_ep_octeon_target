@@ -274,9 +274,11 @@ int app_config_init(const char *cfg_file_path)
 static int update_fn(struct fn_cfg *fn, struct octep_cp_lib_info *info)
 {
 	/* Initialize mtu according to max rx pktlen supported by soc */
+	/* Errata IPBUNIXTX-35039 */
 	fn->iface.mtu = (info->soc_model.flag &
 			 (OCTEP_CP_SOC_MODEL_CN96xx_Ax |
-			  OCTEP_CP_SOC_MODEL_CNF95xxN_A0)) ?
+			  OCTEP_CP_SOC_MODEL_CNF95xxN_A0 |
+			  OCTEP_CP_SOC_MODEL_CNF95xxO_A0)) ?
 					(16 * 1024) : ((64 * 1024) - 1);
 
 	return 0;
