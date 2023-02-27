@@ -380,7 +380,6 @@ static void clear_fwd_entry(struct data_port_fwd_info *fwd)
 static int connect_ports(unsigned int port, unsigned int dst_port)
 {
 	struct data_port_fwd_info *fwd = NULL;
-	struct rte_pci_device *pci_dev;
 	int err;
 
 	if (port < RTE_MAX_ETHPORTS) {
@@ -388,9 +387,8 @@ static int connect_ports(unsigned int port, unsigned int dst_port)
 		if (err < 0)
 			return err;
 
-		pci_dev = l2fwd_pcie_ep_get_pci_dev(port);
 		fwd = &data_fwd_table[port];
-		fwd->offload = (pci_dev->id.device_id == 0xa0f7);
+		fwd->offload = false;
 		fwd->fn_ops = fn_ops[L2FWD_FN_TYPE_NIC];
 		fwd->dst = dst_port;
 	}
@@ -403,9 +401,8 @@ static int connect_ports(unsigned int port, unsigned int dst_port)
 			return err;
 		}
 
-		pci_dev = l2fwd_pcie_ep_get_pci_dev(dst_port);
 		fwd = &data_fwd_table[dst_port];
-		fwd->offload = (pci_dev->id.device_id == 0xa0f7);
+		fwd->offload = false;
 		fwd->fn_ops = fn_ops[L2FWD_FN_TYPE_NIC];
 		fwd->dst = port;
 	}
