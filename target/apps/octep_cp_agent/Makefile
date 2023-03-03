@@ -27,11 +27,11 @@ INSTALL_DIR = $(INSTALL_PATH)/bin
 all: static shared install
 .PHONY: shared static install clean
 
-static:
+shared:
 	$(info ====Building $(SHARED_BIN)====)
 	$(CC) $(APP_CFLAGS) $(SRCS) -o $(SHARED_BIN) $(LDFLAGS_SHARED)
 
-shared:
+static:
 	$(info ====Building $(STATIC_BIN)====)
 	$(CC) $(APP_CFLAGS) $(SRCS) -o $(STATIC_BIN) $(LDFLAGS_STATIC)
 
