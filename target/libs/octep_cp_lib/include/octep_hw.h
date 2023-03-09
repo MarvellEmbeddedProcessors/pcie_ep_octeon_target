@@ -115,28 +115,122 @@ struct octep_iface_tx_stats {
 	uint64_t ctl;
 };
 
+#ifndef BIT_ULL
+#define BIT_ULL(nr) (1ULL << (nr))
+#endif
+
+/* default front data size for offloads */
+#define OCTEP_DEFAULT_FSZ		24
+
+/* Tx offload flags */
+#define OCTEP_TX_OFFLOAD_VLAN_INSERT	BIT_ULL(0)
+#define OCTEP_TX_OFFLOAD_IPV4_CKSUM	BIT_ULL(1)
+#define OCTEP_TX_OFFLOAD_UDP_CKSUM	BIT_ULL(2)
+#define OCTEP_TX_OFFLOAD_TCP_CKSUM	BIT_ULL(3)
+#define OCTEP_TX_OFFLOAD_SCTP_CKSUM	BIT_ULL(4)
+#define OCTEP_TX_OFFLOAD_TCP_TSO	BIT_ULL(5)
+#define OCTEP_TX_OFFLOAD_UDP_TSO	BIT_ULL(6)
+
+#define OCTEP_TX_OFFLOAD_CKSUM		(OCTEP_TX_OFFLOAD_IPV4_CKSUM | \
+					 OCTEP_TX_OFFLOAD_UDP_CKSUM | \
+					 OCTEP_TX_OFFLOAD_TCP_CKSUM)
+
+#define OCTEP_TX_OFFLOAD_TSO		(OCTEP_TX_OFFLOAD_TCP_TSO | \
+					 OCTEP_TX_OFFLOAD_UDP_TSO)
+
+#define OCTEP_TX_IP_CSUM(flags)		((flags) & \
+					 (OCTEP_TX_OFFLOAD_IPV4_CKSUM | \
+					  OCTEP_TX_OFFLOAD_TCP_CKSUM | \
+					  OCTEP_TX_OFFLOAD_UDP_CKSUM))
+
+#define OCTEP_TX_TSO(flags)		((flags) & \
+					 (OCTEP_TX_OFFLOAD_TCP_TSO | \
+					  OCTEP_TX_OFFLOAD_UDP_TSO))
+
+/* Rx offload flags */
+#define OCTEP_RX_OFFLOAD_VLAN_STRIP	BIT_ULL(0)
+#define OCTEP_RX_OFFLOAD_IPV4_CKSUM	BIT_ULL(1)
+#define OCTEP_RX_OFFLOAD_UDP_CKSUM	BIT_ULL(2)
+#define OCTEP_RX_OFFLOAD_TCP_CKSUM	BIT_ULL(3)
+
+#define OCTEP_RX_OFFLOAD_CKSUM		(OCTEP_RX_OFFLOAD_IPV4_CKSUM | \
+					 OCTEP_RX_OFFLOAD_UDP_CKSUM | \
+					 OCTEP_RX_OFFLOAD_TCP_CKSUM)
+
+#define OCTEP_RX_IP_CSUM(flags)		((flags) & \
+					 (OCTEP_RX_OFFLOAD_IPV4_CKSUM | \
+					  OCTEP_RX_OFFLOAD_TCP_CKSUM | \
+					  OCTEP_RX_OFFLOAD_UDP_CKSUM))
+
+/* bit 0 is vlan strip */
+#define OCTEP_RX_CSUM_IP_VERIFIED	BIT_ULL(1)
+#define OCTEP_RX_CSUM_L4_VERIFIED	BIT_ULL(2)
+
+#define OCTEP_RX_CSUM_VERIFIED(flags)	((flags) & \
+					 (OCTEP_RX_CSUM_L4_VERIFIED | \
+					  OCTEP_RX_CSUM_IP_VERIFIED))
+
 /* Info from firmware */
 struct octep_fw_info {
 	/* interface pkind */
-	uint16_t pkind;
+	uint8_t pkind;
 
-	/* pf heartbeat interval in milliseconds */
+	/* front size data */
+	uint8_t fsz;
+
+	/* heartbeat interval in milliseconds */
 	uint16_t hb_interval;
 
-	/* pf heartbeat miss count */
+	/* heartbeat miss count */
 	uint16_t hb_miss_count;
 
 	/* reserved */
 	uint16_t reserved1;
 
-	/* supported offloads */
-	uint64_t offloads[2];
+	/* supported rx offloads OCTEP_RX_OFFLOAD_* */
+	uint16_t rx_offloads;
+
+	/* supported tx offloads OCTEP_TX_OFFLOAD_* */
+	uint16_t tx_offloads;
+
+	/* reserved */
+	uint32_t reserved_offloads;
+
+	/* extra offloads */
+	uint64_t ext_offloads;
 
 	/* supported features */
 	uint64_t features[2];
 
 	/* reserved */
 	uint64_t reserved2[3];
+};
+
+/* Header in packet data while sending packet to host received from network */
+struct octep_rx_mdata {
+	/* Reserved. */
+	uint64_t rsvd:48;
+
+	/* offload flags OCTEP_RX_CSUM_* */
+	uint16_t rx_ol_flags;
+};
+
+/* Header in packet data sending packet to network received from host */
+struct octep_tx_mdata {
+	/* offload flags OCTEP_TX_OFFLOAD_ */
+	uint16_t ol_flags;
+
+	/* gso size */
+	uint16_t gso_size;
+
+	/* gso flags */
+	uint16_t gso_segs;
+
+	/* reserved */
+	uint16_t rsvd1;
+
+	/* reserved */
+	uint64_t rsvd2;
 };
 
 #endif /* __OCTEP_HW_H__ */
