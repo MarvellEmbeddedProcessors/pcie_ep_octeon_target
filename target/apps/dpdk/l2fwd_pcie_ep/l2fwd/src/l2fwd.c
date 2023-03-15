@@ -46,6 +46,12 @@ static void control_on_after_vf_reset(int pem, int pf, int vf)
 {
 }
 
+static void control_on_offloads_update(int pem, int pf, int vf)
+{
+	if (L2FWD_FEATURE(l2fwd_user_cfg.features, L2FWD_FEATURE_DATA_PLANE))
+		l2fwd_data_update_offloads(pem, pf, vf);
+}
+
 static struct l2fwd_control_ops control_ops = {
 	.on_before_pem_reset = control_on_before_pem_reset,
 	.on_after_pem_reset = control_on_after_pem_reset,
@@ -53,6 +59,7 @@ static struct l2fwd_control_ops control_ops = {
 	.on_after_pf_reset = control_on_after_pf_reset,
 	.on_before_vf_reset = control_on_before_vf_reset,
 	.on_after_vf_reset = control_on_after_vf_reset,
+	.on_offloads_update = control_on_offloads_update,
 };
 
 static int api_server_set_fwd_state(int state)

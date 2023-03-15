@@ -4,6 +4,7 @@
 #include "compat.h"
 #include "l2fwd_main.h"
 #include "l2fwd_config.h"
+#include "octep_hw.h"
 #include "data.h"
 
 #define RTE_LOGTYPE_L2FWD_DATA_STUB	RTE_LOGTYPE_USER1

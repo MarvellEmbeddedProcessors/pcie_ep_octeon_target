@@ -44,13 +44,15 @@ enum octep_ctrl_net_h2f_cmd {
 	OCTEP_CTRL_NET_H2F_CMD_LINK_INFO,
 	OCTEP_CTRL_NET_H2F_CMD_GET_INFO,
 	OCTEP_CTRL_NET_H2F_CMD_DEV_REMOVE,
+	OCTEP_CTRL_NET_H2F_CMD_OFFLOADS,
 	OCTEP_CTRL_NET_H2F_CMD_MAX
 };
 
 /* Control plane version in which OCTEP_CTRL_NET_H2F_CMD was added */
 static const uint32_t octep_ctrl_net_h2f_cmd_versions[OCTEP_CTRL_NET_H2F_CMD_MAX] = {
 	[OCTEP_CTRL_NET_H2F_CMD_INVALID ... OCTEP_CTRL_NET_H2F_CMD_DEV_REMOVE] =
-		OCTEP_CP_VERSION(1, 0, 0)
+		OCTEP_CP_VERSION(1, 0, 0),
+	[OCTEP_CTRL_NET_H2F_CMD_OFFLOADS] = OCTEP_CP_VERSION(1, 0, 1)
 };
 
 /* Supported fw to host commands */
@@ -126,6 +128,26 @@ struct octep_ctrl_net_h2f_req_cmd_link_info {
 	struct octep_ctrl_net_link_info info;
 };
 
+/* offloads */
+struct octep_ctrl_net_offloads {
+	/* supported rx offloads OCTEP_RX_OFFLOAD_* */
+	uint16_t rx_offloads;
+	/* supported tx offloads OCTEP_TX_OFFLOAD_* */
+	uint16_t tx_offloads;
+	/* reserved */
+	uint32_t reserved_offloads;
+	/* extra offloads */
+	uint64_t ext_offloads;
+};
+
+/* get/set offloads */
+struct octep_ctrl_net_h2f_req_cmd_offloads {
+	/* enum octep_ctrl_net_cmd */
+	uint16_t cmd;
+	/* struct octep_ctrl_net_offloads */
+	struct octep_ctrl_net_offloads offloads;
+};
+
 /* Host to fw request data */
 struct octep_ctrl_net_h2f_req {
 	union octep_ctrl_net_req_hdr hdr;
@@ -135,6 +157,7 @@ struct octep_ctrl_net_h2f_req {
 		struct octep_ctrl_net_h2f_req_cmd_state link;
 		struct octep_ctrl_net_h2f_req_cmd_state rx;
 		struct octep_ctrl_net_h2f_req_cmd_link_info link_info;
+		struct octep_ctrl_net_h2f_req_cmd_offloads offloads;
 	};
 } __attribute__((__packed__));
 
@@ -192,6 +215,7 @@ struct octep_ctrl_net_h2f_resp {
 		struct octep_ctrl_net_h2f_resp_cmd_state rx;
 		struct octep_ctrl_net_link_info link_info;
 		struct octep_ctrl_net_h2f_resp_cmd_get_info info;
+		struct octep_ctrl_net_offloads offloads;
 	};
 }__attribute__((__packed__));
 

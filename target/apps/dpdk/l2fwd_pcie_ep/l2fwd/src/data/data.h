@@ -4,10 +4,11 @@
 #ifndef __DATA_H__
 #define __DATA_H__
 
-#define MAX_PKT_BURST		32
+#define MAX_PKT_BURST           32
 
 /* operations to be used by the function */
 struct data_ops {
+	/* drop packet and free resources */
 	void (*drop_pkt)(uint16_t port, void *m, uint16_t queue);
 };
 
@@ -42,12 +43,16 @@ struct data_port_statistics {
 struct data_port_fwd_info {
 	/* port fn ops */
 	struct data_fn_ops *fn_ops;
+	/* prepare packet received over interface before forwarding */
+	void (*prepare_rx_pkt)(void *m, struct octep_tx_mdata **mdata);
+	/* prepare packet before sending over interface */
+	void (*prepare_tx_pkt)(void *m, struct octep_tx_mdata *mdata);
 	/* forwarding port id */
 	unsigned int dst;
-	/* port supports offloads */
-	bool offload;
 	/* this entry is active */
 	bool running;
+	/* port address */
+	struct rte_pci_addr addr;
 };
 
 /* tx buffers */

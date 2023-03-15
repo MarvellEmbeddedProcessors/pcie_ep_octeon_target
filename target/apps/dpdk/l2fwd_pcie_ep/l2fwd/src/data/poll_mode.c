@@ -2,6 +2,7 @@
  * Copyright (c) 2022 Marvell.
  */
 #include "compat.h"
+#include "octep_hw.h"
 #include "data.h"
 #include "poll_mode.h"
 
@@ -92,8 +93,12 @@ static int per_core_fn(void *dummy)
 			out_ps = &port_stats[out_port][q];
 			txb = tx_buffer[out_port][q];
 			for (j = 0; j < nb_rx; j++) {
+				struct octep_tx_mdata *mdata = NULL;
+
 				m = pkts_burst[j];
 				rte_prefetch0(rte_pktmbuf_mtod(m, void *));
+				in->prepare_rx_pkt(m, &mdata);
+				out->prepare_tx_pkt(m, mdata);
 				sent = out_ops->tx_buffer(out_port,
 							  q,
 							  txb,

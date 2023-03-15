@@ -20,6 +20,12 @@ struct l2fwd_config_fn {
 	struct rte_pci_addr to_wire_dbdf;
 	/* interface pkind */
 	unsigned short pkind;
+	/* offloads enabled */
+	int offloads;
+	/* rx offloads */
+	unsigned short rx_offloads;
+	/* tx_offloads */
+	unsigned short tx_offloads;
 
 	/* Below config is applicable if (to_wire_dbdf == 0000:00:00.00) */
 	/* device mac address */
@@ -111,6 +117,13 @@ static inline int for_each_valid_config_fn(valid_cfg_fn_callback_t fn,
 	}
 
 	return 0;
+}
+
+static inline struct l2fwd_config_fn *l2fwd_config_get_fn(int pem, int pf, int vf)
+{
+	return (vf > 0) ? &l2fwd_cfg.pems[pem].pfs[pf].vfs[vf] :
+			  &l2fwd_cfg.pems[pem].pfs[pf].d;
+
 }
 
 /* UnInitialize config data.

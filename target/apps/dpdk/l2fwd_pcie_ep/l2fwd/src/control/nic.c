@@ -12,6 +12,12 @@
 
 struct nic_fn_data {
 	unsigned int portid;
+	/* rx offload flags */
+	unsigned short rx_offloads;
+	/* tx offload flags */
+	unsigned short tx_offloads;
+	/* ext offload flags */
+	unsigned long long ext_offloads;
 };
 
 struct nic_pf {
@@ -70,12 +76,9 @@ static int free_pems(void)
 	return 0;
 }
 
-static int init_fn(int pem, int pf, int vf, const struct rte_pci_addr *dbdf)
+static int init_fn(struct nic_fn_data *fn, struct l2fwd_config_fn *fn_cfg)
 {
-	struct nic_fn_data *fn;
-
-	fn = get_fn_data(pem, pf, vf);
-	fn->portid = l2fwd_pcie_ep_find_port(dbdf);
+	fn->portid = l2fwd_pcie_ep_find_port(&fn_cfg->to_wire_dbdf);
 
 	return 0;
 }
@@ -111,7 +114,7 @@ static int init_valid_cfg(int pem_idx, int pf_idx, int vf_idx, void *data)
 	}
 	pf = pem->pfs[pf_idx];
 	if (vf_idx < 0)
-		return init_fn(pem_idx, pf_idx, vf_idx, &fn_cfg->to_wire_dbdf);
+		return init_fn(&pf->d, fn_cfg);
 
 	if (!pf->vfs[vf_idx]) {
 		pf->vfs[vf_idx] = calloc(1, sizeof(struct nic_fn_data));
@@ -123,7 +126,7 @@ static int init_valid_cfg(int pem_idx, int pf_idx, int vf_idx, void *data)
 		}
 	}
 
-	return init_fn(pem_idx, pf_idx, vf_idx, &fn_cfg->to_wire_dbdf);
+	return init_fn(pf->vfs[vf_idx], fn_cfg);
 }
 
 static int init_pems(void)
@@ -246,10 +249,12 @@ static int nic_set_link_info(int pem, int pf, int vf,
 static inline int reset_vf(int pem_idx, int pf_idx, int vf_idx)
 {
 	struct l2fwd_config_fn *fn_cfg;
+	struct nic_fn_data *fn;
 
+	fn = get_fn_data(pem_idx, pf_idx, vf_idx);
 	fn_cfg = &l2fwd_cfg.pems[pem_idx].pfs[pf_idx].vfs[vf_idx];
 
-	return init_fn(pem_idx, pf_idx, vf_idx, &fn_cfg->to_wire_dbdf);
+	return init_fn(fn, fn_cfg);
 }
 
 static int reset_pf(int pem_idx, int pf_idx)
@@ -260,7 +265,7 @@ static int reset_pf(int pem_idx, int pf_idx)
 
 	pf = nic_data[pem_idx]->pfs[pf_idx];
 	fn_cfg = &l2fwd_cfg.pems[pem_idx].pfs[pf_idx].d;
-	err = init_fn(pem_idx, pf_idx, -1, &fn_cfg->to_wire_dbdf);
+	err = init_fn(&pf->d, fn_cfg);
 	if (err < 0)
 		return err;
 
@@ -310,6 +315,9 @@ static int nic_reset(int pem, int pf, int vf)
 
 static int nic_set_port(int pem, int pf, int vf, const struct rte_pci_addr *port)
 {
+	struct l2fwd_config_fn *fn_cfg;
+	struct nic_fn_data *fn;
+
 	if (!nic_data[pem])
 		return -EINVAL;
 
@@ -319,7 +327,36 @@ static int nic_set_port(int pem, int pf, int vf, const struct rte_pci_addr *port
 	if (vf >= 0 && !nic_data[pem]->pfs[pf]->vfs[vf])
 		return -EINVAL;
 
-	init_fn(pem, pf, vf, port);
+	fn = get_fn_data(pem, pf, vf);
+	fn_cfg = (vf < 0) ?
+		  &l2fwd_cfg.pems[pem].pfs[pf].d :
+		  &l2fwd_cfg.pems[pem].pfs[pf].vfs[vf];
+
+	return init_fn(fn, fn_cfg);
+}
+
+static int nic_get_offloads(int pem, int pf, int vf,
+			    struct octep_ctrl_net_offloads *offloads)
+{
+	struct nic_fn_data *fn;
+
+	fn = get_fn_data(pem, pf, vf);
+	offloads->rx_offloads = fn->rx_offloads;
+	offloads->tx_offloads = fn->tx_offloads;
+	offloads->ext_offloads = fn->ext_offloads;
+
+	return 0;
+}
+
+static int nic_set_offloads(int pem, int pf, int vf,
+			    struct octep_ctrl_net_offloads *offloads)
+{
+	struct nic_fn_data *fn;
+
+	fn = get_fn_data(pem, pf, vf);
+	fn->rx_offloads = offloads->rx_offloads;
+	fn->tx_offloads = offloads->tx_offloads;
+	fn->ext_offloads = offloads->ext_offloads;
 
 	return 0;
 }
@@ -336,7 +373,9 @@ static struct control_fn_ops nic_ctrl_ops = {
 	.get_link_info = nic_get_link_info,
 	.set_link_info = nic_set_link_info,
 	.reset = nic_reset,
-	.set_port = nic_set_port
+	.set_port = nic_set_port,
+	.get_offloads = nic_get_offloads,
+	.set_offloads = nic_set_offloads,
 };
 
 int ctrl_nic_init(struct control_fn_ops **ops)

@@ -10,6 +10,7 @@
 #include "compat.h"
 #include "l2fwd_main.h"
 #include "l2fwd_config.h"
+#include "octep_hw.h"
 
 #define RTE_LOGTYPE_L2FWD_CONFIG	RTE_LOGTYPE_USER1
 
@@ -22,9 +23,10 @@
  * int idx, end_idx, mtu, hb_interval, hb_miss_count = 0...n
  * char[] to_host_dbdf, to_wire_dbdf = "xxxx:xx:x.x"
  * char[] mac = xx:xx:xx:xx:xx:xx
- * bool autoneg, pause_mode = 0/1
+ * bool autoneg, pause_mode, offloads = 0/1
  * long supported_modes, advertised_modes = 0...n
  * int pkind = 0/57/59
+ * int offloads
  *
  * if vf[mac] is not specified, it will be derived from pf[mac]
  * vf[mac] will start from (pf[mac] + 1)
@@ -35,7 +37,7 @@
  * id = { idx, [end_idx] };
  * dbdfs = { [to_host_dbdf], [to_wire_dbdf] };
  * if = { [mac], [mtu], [autoneg], [pause_mode], [speed], [supported_modes], [advertised_modes] };
- * fn_base = { id, [pkind], [dbdfs], [if] };
+ * fn_base = { id, [pkind], [dbdfs], [if], [offloads] };
  * soc = { pem };
  * pem = { id, pf };
  * pf = { fn_base, [hb_interval], [hb_miss_count], [vf] };
@@ -65,6 +67,7 @@
 
 /* fn_base */
 #define CFG_TOKEN_FN_BASE_PKIND			"pkind"
+#define CFG_TOKEN_FN_BASE_OFFLOADS		"offloads"
 
 /* info */
 #define CFG_TOKEN_PF_HB_INTERVAL		"hb_interval"
@@ -89,19 +92,20 @@ static void print_config(void)
 			fn = &pf->d;
 			RTE_LOG(DEBUG, L2FWD_CONFIG,
 				"[%d]:[%d]\n"
-				" hbi: [%u msec] hbmiss: [%u]\n"
-				" pkind: [%d] to_host_dbdf: ["PCI_PRI_FMT"]"
+				" hbi: [%u msec] hbmiss: [%u]"
+				" pkind: [%d] offloads: [%d %x %x]\n"
+				" to_host_dbdf: ["PCI_PRI_FMT"]"
 				" to_wire_dbdf: ["PCI_PRI_FMT"]\n"
-				" mac: ["L2FWD_PCIE_EP_ETHER_ADDR_PRT_FMT"]"
-				" autoneg: [%u] pause: [%u]\n"
+				" mac: ["L2FWD_PCIE_EP_ETHER_ADDR_PRT_FMT"]\n"
+				" autoneg: [%u] pause: [%u]"
 				" speed: [%u] smodes: [%llx] amodes: [%llx]\n",
 				i, j,
-				pf->hb_interval, pf->hb_miss_count,
-				fn->pkind, fn->to_host_dbdf.domain,
-				fn->to_host_dbdf.bus, fn->to_host_dbdf.devid,
-				fn->to_host_dbdf.function, fn->to_wire_dbdf.domain,
-				fn->to_wire_dbdf.bus, fn->to_wire_dbdf.devid,
-				fn->to_wire_dbdf.function,
+				pf->hb_interval, pf->hb_miss_count, fn->pkind,
+				fn->offloads, fn->rx_offloads, fn->tx_offloads,
+				fn->to_host_dbdf.domain, fn->to_host_dbdf.bus,
+				fn->to_host_dbdf.devid, fn->to_host_dbdf.function,
+				fn->to_wire_dbdf.domain, fn->to_wire_dbdf.bus,
+				fn->to_wire_dbdf.devid, fn->to_wire_dbdf.function,
 				fn->mac.addr_bytes[0], fn->mac.addr_bytes[1],
 				fn->mac.addr_bytes[2], fn->mac.addr_bytes[3],
 				fn->mac.addr_bytes[4], fn->mac.addr_bytes[5],
@@ -115,14 +119,16 @@ static void print_config(void)
 
 				RTE_LOG(DEBUG, L2FWD_CONFIG,
 					"[%d]:[%d]:[%d]\n"
-					" pkind: [%d] to_host_dbdf: ["PCI_PRI_FMT"]"
+					" pkind: [%d] offloads: [%d %x %x]\n"
+					" to_host_dbdf: ["PCI_PRI_FMT"]"
 					" to_wire_dbdf: ["PCI_PRI_FMT"]\n"
-					" mac: ["L2FWD_PCIE_EP_ETHER_ADDR_PRT_FMT"]"
-					" autoneg: [%u] pause: [%u]\n"
+					" mac: ["L2FWD_PCIE_EP_ETHER_ADDR_PRT_FMT"]\n"
+					" autoneg: [%u] pause: [%u]"
 					" speed: [%u] smodes: [%llx]"
 					" amodes: [%llx]\n",
 					i, j, k,
-					vf->pkind,
+					vf->pkind, vf->offloads,
+					vf->rx_offloads, vf->tx_offloads,
 					vf->to_host_dbdf.domain,
 					vf->to_host_dbdf.bus,
 					vf->to_host_dbdf.devid,
@@ -162,6 +168,15 @@ static int parse_fn_base(config_setting_t *lcfg, struct l2fwd_config_fn *fn)
 	err = config_setting_lookup_int(lcfg, CFG_TOKEN_FN_BASE_PKIND, &ival);
 	if (err == CONFIG_TRUE)
 		fn->pkind = ival;
+
+	/* offloads are enabled by default */
+	fn->offloads = 1;
+	config_setting_lookup_int(lcfg, CFG_TOKEN_FN_BASE_OFFLOADS,
+				  &fn->offloads);
+	if (fn->offloads) {
+		fn->rx_offloads = OCTEP_RX_OFFLOAD_CKSUM;
+		fn->tx_offloads = OCTEP_TX_OFFLOAD_CKSUM | OCTEP_TX_OFFLOAD_TSO;
+	}
 
 	err = config_setting_lookup_string(lcfg,
 					   CFG_TOKEN_DBDF_TO_HOST_DBDF,

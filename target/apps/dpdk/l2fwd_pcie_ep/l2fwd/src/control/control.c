@@ -22,11 +22,16 @@
 /* Control plane version */
 #define CP_VERSION_MAJOR		1
 #define CP_VERSION_MINOR		0
-#define CP_VERSION_VARIANT		0
+#define CP_VERSION_VARIANT_MIN		0
+#define CP_VERSION_VARIANT_CUR		1
 
-#define CP_VERSION_CURRENT		(OCTEP_CP_VERSION(CP_VERSION_MAJOR, \
+#define CP_VERSION_MIN			(OCTEP_CP_VERSION(CP_VERSION_MAJOR, \
 							  CP_VERSION_MINOR, \
-							  CP_VERSION_VARIANT))
+							  CP_VERSION_VARIANT_MIN))
+
+#define CP_VERSION_MAX			(OCTEP_CP_VERSION(CP_VERSION_MAJOR, \
+							  CP_VERSION_MINOR, \
+							  CP_VERSION_VARIANT_CUR))
 
 /* ctrl-net response sizes */
 #define CTRL_NET_RESP_MTU_SZ		sizeof(struct octep_ctrl_net_h2f_resp_cmd_mtu)
@@ -36,6 +41,7 @@
 #define CTRL_NET_RESP_IF_STATS_SZ	sizeof(struct octep_ctrl_net_h2f_resp_cmd_get_stats)
 #define CTRL_NET_RESP_INFO_SZ		sizeof(struct octep_ctrl_net_h2f_resp_cmd_get_info)
 #define CTRL_NET_RESP_HDR_SZ		sizeof(union octep_ctrl_net_resp_hdr)
+#define CTRL_NET_RESP_OFFLOADS_SZ	sizeof(struct octep_ctrl_net_offloads)
 
 #define ALARM_INTERVAL_MSECS			100
 #define ALARM_INTERVAL_USECS			(ALARM_INTERVAL_MSECS * 1000)
@@ -197,14 +203,22 @@ static int free_pems(void)
 static inline int init_vf(int pem_idx, int pf_idx, int vf_idx,
 			  struct control_vf *vf, struct l2fwd_config_fn *vf_cfg)
 {
+	struct octep_ctrl_net_offloads offloads = { 0 };
+
 	vf->dbdf = vf_cfg->to_host_dbdf;
 	if (!L2FWD_FEATURE(l2fwd_user_cfg.features, L2FWD_FEATURE_CTRL_PLANE) ||
-	    is_zero_dbdf(&vf_cfg->to_wire_dbdf))
+	    is_zero_dbdf(&vf_cfg->to_wire_dbdf)) {
 		vf->ops = fn_ops[L2FWD_FN_TYPE_STUB];
-	else
+	} else {
 		vf->ops = fn_ops[L2FWD_FN_TYPE_NIC];
+	}
 
+	if (vf_cfg->offloads) {
+		offloads.rx_offloads = vf_cfg->rx_offloads;
+		offloads.tx_offloads = vf_cfg->tx_offloads;
+	}
 	vf->ops->set_mac(pem_idx, pf_idx, vf_idx, vf_cfg->mac.addr_bytes);
+	vf->ops->set_offloads(pem_idx, pf_idx, vf_idx, &offloads);
 
 	return 0;
 }
@@ -212,16 +226,23 @@ static inline int init_vf(int pem_idx, int pf_idx, int vf_idx,
 static int init_pf(int pem_idx, int pf_idx, struct control_pf *pf,
 		   struct l2fwd_config_pf *pf_cfg)
 {
+	struct octep_ctrl_net_offloads offloads = { 0 };
 	struct octep_cp_event_info_heartbeat *hbeat;
 
 	pf->dbdf = pf_cfg->d.to_host_dbdf;
 	if (!L2FWD_FEATURE(l2fwd_user_cfg.features, L2FWD_FEATURE_CTRL_PLANE) ||
-	    is_zero_dbdf(&pf_cfg->d.to_wire_dbdf))
+	    is_zero_dbdf(&pf_cfg->d.to_wire_dbdf)) {
 		pf->ops = fn_ops[L2FWD_FN_TYPE_STUB];
-	else
+	} else {
 		pf->ops = fn_ops[L2FWD_FN_TYPE_NIC];
+	}
 
+	if (pf_cfg->d.offloads) {
+		offloads.rx_offloads = pf_cfg->d.rx_offloads;
+		offloads.tx_offloads = pf_cfg->d.tx_offloads;
+	}
 	pf->ops->set_mac(pem_idx, pf_idx, -1, pf_cfg->d.mac.addr_bytes);
+	pf->ops->set_offloads(pem_idx, pf_idx, -1, &offloads);
 
 	pf->ctx.s.pem_idx = pem_idx;
 	pf->ctx.s.pf_idx = pf_idx;
@@ -328,8 +349,8 @@ static int init_octep_cp_lib(void)
 			cp_lib_cfg.ndoms++;
 		}
 	}
-	cp_lib_cfg.min_version = CP_VERSION_CURRENT;
-	cp_lib_cfg.max_version = CP_VERSION_CURRENT;
+	cp_lib_cfg.min_version = CP_VERSION_MIN;
+	cp_lib_cfg.max_version = CP_VERSION_MAX;
 	err =  octep_cp_lib_init(&cp_lib_cfg);
 	if (err < 0)
 		return err;
@@ -810,15 +831,32 @@ static int process_get_info(union octep_cp_msg_info *info,
 			    struct octep_ctrl_net_h2f_resp *resp,
 			    struct control_fn_ops *ops)
 {
+	struct octep_ctrl_net_offloads offloads;
 	struct l2fwd_config_pf *pf_cfg;
 	struct l2fwd_config_fn *fn_cfg;
-	int vf_idx;
+	int vf_idx, err;
 
 	vf_idx = (info->s.is_vf) ? info->s.vf_idx : -1;
+	err = ops->get_offloads(info->s.pem_idx,
+				 info->s.pf_idx,
+				 vf_idx,
+				 &offloads);
+	if (err < 0) {
+		RTE_LOG(ERR, L2FWD_CTRL,
+			"[%d][%d][%d]: Get offloads failed %d\n",
+			info->s.pem_idx, info->s.pf_idx, vf_idx, err);
+		resp->hdr.s.reply = OCTEP_CTRL_NET_REPLY_GENERIC_FAIL;
+		return 0;
+	}
+	resp->info.fw_info.rx_offloads = offloads.rx_offloads;
+	resp->info.fw_info.tx_offloads = offloads.tx_offloads;
+	resp->info.fw_info.ext_offloads = offloads.ext_offloads;
+
 	pf_cfg = &l2fwd_cfg.pems[info->s.pem_idx].pfs[info->s.pf_idx];
-	fn_cfg = (vf_idx > 0) ? &pf_cfg->vfs[vf_idx] : &pf_cfg->d;
+	fn_cfg = l2fwd_config_get_fn(info->s.pem_idx, info->s.pf_idx, vf_idx);
 
 	resp->info.fw_info.pkind = fn_cfg->pkind;
+	resp->info.fw_info.fsz = OCTEP_DEFAULT_FSZ;
 	if (vf_idx > 0) {
 		resp->info.fw_info.hb_interval = 0;
 		resp->info.fw_info.hb_miss_count = 0;
@@ -829,13 +867,80 @@ static int process_get_info(union octep_cp_msg_info *info,
 
 	resp->hdr.s.reply = OCTEP_CTRL_NET_REPLY_OK;
 	RTE_LOG(DEBUG, L2FWD_CTRL,
-		"[%d][%d][%d]: Get info pkind:%x hbi:%u hbmiss:%u\n",
+		"[%d][%d][%d]: Get info pkind:%x fsz: %d rx_offloads:%x"
+		" tx_offloads:%x ext_offloads:%lx hbi:%u hbmiss:%u\n",
 		info->s.pem_idx, info->s.pf_idx, vf_idx,
 		resp->info.fw_info.pkind,
+		resp->info.fw_info.fsz,
+		resp->info.fw_info.rx_offloads,
+		resp->info.fw_info.tx_offloads,
+		resp->info.fw_info.ext_offloads,
 		resp->info.fw_info.hb_interval,
 		resp->info.fw_info.hb_miss_count);
 
 	return CTRL_NET_RESP_INFO_SZ;
+}
+
+static int process_offloads(union octep_cp_msg_info *info,
+			    struct octep_ctrl_net_h2f_req *req,
+			    struct octep_ctrl_net_h2f_resp *resp,
+			    struct control_fn_ops *ops)
+{
+	struct octep_ctrl_net_offloads offloads;
+	struct l2fwd_config_fn *fn_cfg;
+	int vf_idx, err;
+
+	vf_idx = (info->s.is_vf) ? info->s.vf_idx : -1;
+	if (req->offloads.cmd == OCTEP_CTRL_NET_CMD_GET) {
+		err = ops->get_offloads(info->s.pem_idx,
+					 info->s.pf_idx,
+					 vf_idx,
+					 &offloads);
+		if (err < 0) {
+			RTE_LOG(ERR, L2FWD_CTRL,
+				"[%d][%d][%d]: Get offloads failed %d\n",
+				info->s.pem_idx, info->s.pf_idx, vf_idx, err);
+			resp->hdr.s.reply = OCTEP_CTRL_NET_REPLY_GENERIC_FAIL;
+			return 0;
+		}
+		resp->offloads = offloads;
+		RTE_LOG(DEBUG, L2FWD_CTRL,
+			"[%d][%d][%d]: Get offloads "
+			"rx:0x%x tx:0x%x ext:0x%lx\n",
+			info->s.pem_idx, info->s.pf_idx, vf_idx,
+			resp->offloads.rx_offloads,
+			resp->offloads.tx_offloads,
+			resp->offloads.ext_offloads);
+		resp->hdr.s.reply = OCTEP_CTRL_NET_REPLY_OK;
+		return CTRL_NET_RESP_OFFLOADS_SZ;
+	}
+
+	offloads = req->offloads.offloads;
+	err = ops->set_offloads(info->s.pem_idx,
+				info->s.pf_idx,
+				vf_idx,
+				&offloads);
+	if (err < 0) {
+		RTE_LOG(ERR, L2FWD_CTRL,
+			"[%d][%d][%d]: Set offloads failed %d\n",
+			info->s.pem_idx, info->s.pf_idx, vf_idx, err);
+		resp->hdr.s.reply = OCTEP_CTRL_NET_REPLY_GENERIC_FAIL;
+		return 0;
+	}
+	RTE_LOG(DEBUG, L2FWD_CTRL,
+		"[%d][%d][%d]: Set offloads "
+		"rx:0x%x tx:0x%x ext:0x%lx\n",
+		info->s.pem_idx, info->s.pf_idx, vf_idx,
+		offloads.rx_offloads,
+		offloads.tx_offloads,
+		offloads.ext_offloads);
+	resp->hdr.s.reply = OCTEP_CTRL_NET_REPLY_OK;
+	fn_cfg = l2fwd_config_get_fn(info->s.pem_idx, info->s.pf_idx, vf_idx);
+	fn_cfg->rx_offloads = offloads.rx_offloads;
+	fn_cfg->tx_offloads = offloads.tx_offloads;
+	l2fwd_ops->on_offloads_update(info->s.pem_idx, info->s.pf_idx, vf_idx);
+
+	return 0;
 }
 
 static int process_msg(union octep_cp_msg_info *ctx, struct octep_cp_msg *msg,
@@ -897,6 +1002,9 @@ static int process_msg(union octep_cp_msg_info *ctx, struct octep_cp_msg *msg,
 		break;
 	case OCTEP_CTRL_NET_H2F_CMD_GET_INFO:
 		resp_sz += process_get_info(info, req, &resp, ops);
+		break;
+	case OCTEP_CTRL_NET_H2F_CMD_OFFLOADS:
+		resp_sz += process_offloads(info, req, &resp, ops);
 		break;
 	default:
 		RTE_LOG(ERR, L2FWD_CTRL,

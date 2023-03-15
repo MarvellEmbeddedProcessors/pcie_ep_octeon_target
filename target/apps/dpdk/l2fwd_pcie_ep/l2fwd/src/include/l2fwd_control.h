@@ -18,6 +18,8 @@ struct l2fwd_control_ops {
 	void (*on_before_vf_reset)(int pem, int pf, int vf);
 	/* Called by control after resetting vf */
 	void (*on_after_vf_reset)(int pem, int pf, int vf);
+	/* Called by control after offload flags changed */
+	void (*on_offloads_update)(int pem, int pf, int vf);
 };
 
 /* Initialize control plane.
