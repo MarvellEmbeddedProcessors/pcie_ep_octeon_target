@@ -53,15 +53,17 @@ PREFIX_DIR is the
 ```bash
 
   cd $APP_DIR
-  make PKG_CONFIG_PATH=<path to libconfig binaries> CP_LIB_DIR=<path to liboctep_cp.*>
+  make CC=$(CROSS_COMPILE)gcc LD=$(CROSS_COMPILE)ld
+  CFLAGS="-I<path to octep_cp_lib/bin/include> -I<path to libconfig/include"
+  LDFLAGS="-L<path to liboctep_cp -L<path to libconfig>"
 ```
 
 Optional parameters for make are
 
 - PLAT=<aarch64(default)/x86_64>
+- INSTALL_PATH=<$APP_DIR/bin(default)>
 
-
-Following artifacts will be available in ``APP_DIR``:
+Following artifacts will be available in `INSTALL_PATH/bin`:
 
 - octep_cp_agent
 - octep_cp_agent-shared
@@ -72,8 +74,8 @@ How to run application {#section5}
 Copy following files to a directory RUN_DIR
 
 $CP_LIB_DIR/liboctep_cp.so
-$APP_DIR/octep_cp_agent
-$APP_DIR/octep_cp_agent-shared
+$INSTALL_PATH/bin/octep_cp_agent
+$INSTALL_PATH/bin/octep_cp_agent-shared
 $APP_DIR/*.cfg
 
 Run the app as follows
@@ -82,3 +84,16 @@ Run the app as follows
 
   cd $RUN_DIR
   ./octep_cp_agent `pwd`/app.cfg
+
+  Optional parameters
+  -y <milliseconds> yield cpu for msecs between subsequent calls to msg poll (default: 1ms)
+  -m <1-n> Max control messages and events to be polled at one time (default: 6)
+
+  htop with -y 1
+  729 root       20   0 51400 27068   376 S  0.0  0.1  0:00.01 ./octep_cp_agent
+
+  htop with -y 2
+  731 root       20   0 51400 27084   392 S  0.0  0.1  0:00.02 ./octep_cp_agent
+
+  htop with -y 4
+  733 root       20   0 51400 27080   392 S  0.0  0.1  0:00.01 ./octep_cp_agent

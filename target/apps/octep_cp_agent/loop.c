@@ -15,10 +15,8 @@
 #include "loop.h"
 #include "app_config.h"
 
-#define LOOP_RX_BUF_CNT			6
-
-static struct octep_cp_msg rx_msg[LOOP_RX_BUF_CNT];
-static int rx_num = LOOP_RX_BUF_CNT;
+static struct octep_cp_msg *rx_msg;
+static int rx_num;
 static int max_msg_sz = sizeof(union octep_ctrl_net_max_data);
 static struct app_cfg loop_cfg = { 0 };
 
@@ -51,7 +49,7 @@ int loop_init_pem(int dom_idx)
 	return 0;
 }
 
-int loop_init()
+int loop_init(int max_msgs)
 {
 	int i, ret;
 	struct octep_cp_msg *msg;
@@ -63,6 +61,11 @@ int loop_init()
 		if (ret)
 			return ret;
 	}
+
+	rx_num = max_msgs;
+	rx_msg = calloc(rx_num, sizeof(struct octep_cp_msg));
+	if (!rx_msg)
+		return -ENOMEM;
 
 	for (i=0; i<rx_num; i++) {
 		msg = &rx_msg[i];
@@ -81,13 +84,14 @@ int loop_init()
 	return 0;
 
 mem_alloc_fail:
-	for (i=0 ;i<LOOP_RX_BUF_CNT; i++) {
+	for (i = 0; i < rx_num; i++) {
 		msg = &rx_msg[i];
 		if (msg->sg_list[0].msg)
 			free(msg->sg_list[0].msg);
 		msg->sg_list[0].sz = 0;
 		msg->sg_num = 0;
 	}
+	free(rx_msg);
 
 	return -ENOMEM;
 }
@@ -374,6 +378,7 @@ int loop_uninit()
 			free(rx_msg[i].sg_list[0].msg);
 		rx_msg[i].sg_list[0].sz = 0;
 	}
+	free(rx_msg);
 
 	return 0;
 }
