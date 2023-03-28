@@ -568,6 +568,19 @@ static int start_configured_port(unsigned int port, void *ctx)
 			port, strerror(-err));
 		return err;
 	}
+
+	/* This is required for interfaces to work with bridge on the host.
+	 * Correct way to deal with it is for the host to set
+	 * promiscuous mode through host ndo_ops.
+	 * Remove this when we support ndo_ops to set IFF_PROMISC
+	 */
+	RTE_LOG(INFO, L2FWD_DATA, "Setting promiscuous mode (%u)\n", port);
+	err = rte_eth_promiscuous_enable(port);
+	if (err < 0)
+		RTE_LOG(ERR, L2FWD_DATA,
+			"Failed to set promiscuous mode (%u): %s\n",
+			 port, strerror(-err));
+
 	data_fwd_table[port].running = true;
 
 	return 0;
