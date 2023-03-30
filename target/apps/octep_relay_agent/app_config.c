@@ -28,6 +28,7 @@ struct app_cfg cfg;
 #define CFG_TOKEN_PFS			"pfs"
 #define CFG_TOKEN_VFS			"vfs"
 #define CFG_TOKEN_IDX			"idx"
+#define CFG_TOKEN_PLUGIN_CONTROLLED	"plugin_controlled"
 #define CFG_TOKEN_IF_MAC_ADDR		"mac_addr"
 #define CFG_TOKEN_IF_LSTATE		"link_state"
 #define CFG_TOKEN_IF_RSTATE		"rx_state"
@@ -117,6 +118,10 @@ static int parse_info(config_setting_t *lcfg, struct octep_fw_info *info)
 static int parse_fn(config_setting_t *lcfg, struct fn_cfg *fn)
 {
 	int err;
+
+	if (config_setting_lookup_bool(lcfg, CFG_TOKEN_PLUGIN_CONTROLLED,
+				      (int *) &fn->plugin_controlled) == CONFIG_FALSE)
+		fn->plugin_controlled = false;
 
 	err = parse_if(lcfg, &fn->iface);
 	if (err)

@@ -54,6 +54,8 @@ struct if_cfg {
 
 /* function config */
 struct fn_cfg {
+	/* Plugin control override flag */
+	bool plugin_controlled;
 	/* network interface data */
 	struct if_cfg iface;
 	/* network interface stats */
