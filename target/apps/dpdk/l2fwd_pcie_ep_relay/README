@@ -1,0 +1,43 @@
+How to test l2fwd_pcie_ep application
+======================================
+
+l2fwd_pcie_ep can be used to forward packets between CGX/RPM interfaces and SDP
+
+#. Apply sdk-ext-pcie-ep-l2fwd.patch to sdk-ext-pcie-ep extension.
+#. Apply pcie_ep_octeontx-l2fwd.patch to pcie_ep_octeontx package.
+#. Build sdk image and install it on Octeon.
+#. Make sure /usr/bin/l2fwd_pcie_ep, /usr/bin/cn98xx-l2fwd-pem0-pf0-3.cfg and
+   /usr/bin/l2fwd_pcie_ep_setup.sh are present in rootfs.
+#. Build host drivers.
+#. Load the drivers on Host in following order:
+    .. code-block:: shell-session
+
+    | # insmod octeon_ep.ko
+    | # insmod octeon_ep_vf.ko
+    | # echo 1 > /sys/bus/pci/devices/<PF pci bdf>/sriov_numvfs
+    | Modify the number of VFs that are desired.
+    | This example shows the PF and 1 VF enabled. Max supported num_vfs can be found from sriov_numvfs.
+    | # ifconfig <host-pf-iface> up
+
+#. On Octeon linux shell console:
+
+#. Edit /usr/bin/l2fwd_pcie_ep_setup.sh and change the values of SDP_NIX_VF0 and
+   ETH_PF0 to appropriate values.
+#. Similarly edit /usr/bin/cn98xx-l2fwd-pem0-pf0-3.cfg and set to_host_dbdf to
+   SDP_NIX_VF0 and to_wire_dbdf to ETH_PF0.
+#. Run following command
+    .. code-block:: shell-session
+       # /usr/bin/l2fwd_pcie_ep_setup.sh
+
+#. Run l2fwd_pcie_ep as below
+#. /usr/bin/l2fwd_pcie_ep -l0-8 --main-lcore=0 -a $SDP_NIX_VF0 -a $ETH_PF0 -- -f /usr/bin/cn98xx-l2fwd-pem0-pf0-3.cfg -d 8
+
+
+How to test json-rpc api
+=========================
+#. Example script /usr/bin/l2fwd_pcie_ep_api_client.py is provided in the rootfs.
+   This script exercises all api's supported by the application.
+#. Run the script as follows:
+    .. code-block:: shell-session
+
+    | # python /usr/bin/l2fwd_pcie_ep_api_client.py
