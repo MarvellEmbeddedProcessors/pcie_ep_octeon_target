@@ -199,7 +199,7 @@ static int process_link_info(struct if_cfg *iface,
 			     struct octep_ctrl_net_h2f_req *req,
 			     struct octep_ctrl_net_h2f_resp *resp)
 {
-	int ret;
+	int ret = 0;
 
 	if (req->link_info.cmd == OCTEP_CTRL_NET_CMD_GET) {
 		resp->link_info.supported_modes = iface->supported_modes;
@@ -249,6 +249,8 @@ static int process_dev_remove(union octep_cp_msg_info *fn_ctx,
 	printf("\nCmd: device remove\n");
 
 	orig_fn = app_config_get_fn(&cfg, fn_ctx);
+	if (!orig_fn)
+		goto ret;
 	memcpy(fn, orig_fn, sizeof(struct fn_cfg));
 	if (fn_ctx->s.is_vf)
 		goto ret;
@@ -261,7 +263,8 @@ static int process_dev_remove(union octep_cp_msg_info *fn_ctx,
 		vf_ctx.s.vf_idx = i;
 		fn = app_config_get_fn(&loop_cfg, &vf_ctx);
 		orig_fn = app_config_get_fn(&cfg, &vf_ctx);
-		memcpy(fn, orig_fn, sizeof(struct fn_cfg));
+		if (orig_fn && fn)
+			memcpy(fn, orig_fn, sizeof(struct fn_cfg));
 	}
 
 ret:
@@ -276,7 +279,8 @@ static int process_msg(union octep_cp_msg_info *ctx, struct octep_cp_msg* msg)
 	struct octep_ctrl_net_h2f_resp resp = { 0 };
 	struct octep_cp_msg resp_msg;
 	struct fn_cfg *fn;
-	int err, resp_sz;
+	int resp_sz;
+	int err = 0;
 
 	fn = app_config_get_fn(&loop_cfg, &msg->info);
 	if (!fn) {
@@ -333,7 +337,7 @@ static int process_msg(union octep_cp_msg_info *ctx, struct octep_cp_msg* msg)
 	fn->ifstats.rx_stats.pkts++;
 	fn->ifstats.rx_stats.octets += msg->info.s.sz;
 
-	return 0;
+	return err;
 }
 
 int loop_process_msgs()
