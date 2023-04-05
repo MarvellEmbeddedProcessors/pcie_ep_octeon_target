@@ -15,6 +15,12 @@ License Text:   https://spdx.org/licenses/GPL-2.0.html
 Project URL:    N/A
 Directories:    host/drivers
 
+Component:      host-apps
+License:        Apache-2.0 (SPDX-License-Identifier: Apache-2.0)
+License Text:   https://spdx.org/licenses/Apache-2.0.html
+Project URL:    N/A
+Directories:    host/apps
+
 Component:      target-drivers
 License:        GPL-2.0
 License Text:   https://spdx.org/licenses/GPL-2.0.html
