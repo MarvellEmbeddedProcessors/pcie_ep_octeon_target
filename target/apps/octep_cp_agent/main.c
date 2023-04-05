@@ -108,7 +108,7 @@ static int set_fw_ready_for_pem(int dom_idx, int ready)
 
 	info.e = OCTEP_CP_EVENT_TYPE_FW_READY;
 	info.u.fw_ready.ready = ready;
-	info.u.fw_ready.dom_idx = dom_idx;
+	info.u.fw_ready.dom_idx = cp_lib_cfg.doms[dom_idx].idx;
 	for (j = 0; j < cp_lib_cfg.doms[dom_idx].npfs; j++) {
 		info.u.fw_ready.pf_idx = cp_lib_cfg.doms[dom_idx].pfs[j].idx;
 		octep_cp_lib_send_event(&info);

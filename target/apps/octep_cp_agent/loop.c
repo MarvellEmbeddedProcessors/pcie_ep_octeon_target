@@ -44,7 +44,9 @@ int loop_init_pem(int dom_idx)
 	}
 
 	/* copy over global config into local runtime config */
-	memcpy(&loop_cfg.pems[dom_idx], &cfg.pems[dom_idx], sizeof(struct pem_cfg));
+	memcpy(&loop_cfg.pems[cp_lib_cfg.doms[dom_idx].idx],
+	       &cfg.pems[cp_lib_cfg.doms[dom_idx].idx],
+	       sizeof(struct pem_cfg));
 
 	return 0;
 }
