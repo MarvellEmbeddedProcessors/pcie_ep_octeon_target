@@ -15,6 +15,7 @@
 #include "l2fwd_config.h"
 #include "octep_cp_lib.h"
 #include "octep_ctrl_net.h"
+#include "octep_plugin_client.h"
 #include "control.h"
 
 #define RTE_LOGTYPE_L2FWD_CTRL	RTE_LOGTYPE_USER1
@@ -96,6 +97,9 @@ static struct octep_cp_lib_cfg cp_lib_cfg = { 0 };
 static struct octep_cp_msg rx_msg[RX_BUF_CNT];
 
 static int max_msg_sz = sizeof(union octep_ctrl_net_max_data);
+
+/* Plugin client related structure declarations */
+static struct octep_plugin_info plugin_info = { 0 };
 
 /* control fn ops */
 static struct control_fn_ops *fn_ops[L2FWD_FN_TYPE_MAX] = { 0 };
@@ -404,6 +408,47 @@ static int set_fw_ready(int ready)
 	return 0;
 }
 
+static int ctrl_dev_register(void)
+{
+	struct octep_plugin_dev_id dev = { 0 };
+	int i, j, k, ret;
+
+	for (i = 0; i < L2FWD_MAX_PEM; i++) {
+		if (!l2fwd_cfg.pems[i].is_valid)
+			continue;
+		for (j = 0; j < L2FWD_MAX_PF; j++) {
+			if (l2fwd_cfg.pems[i].pfs[j].d.plugin_controlled) {
+				dev.pem = i;
+				dev.pf = j;
+				dev.vf = OCTEP_PLUGIN_INVALID_VF_IDX;
+				ret = octep_plugin_client_dev_register(&dev);
+				if (ret) {
+					printf("Err: Failed dev reg for pem%d[%d]\n",
+					       i, j);
+					return ret;
+				}
+				continue;
+			}
+
+			for (k = 0; k < L2FWD_MAX_VF; k++) {
+				if (!l2fwd_cfg.pems[i].pfs[j].vfs[k].plugin_controlled)
+					continue;
+				dev.pem = i;
+				dev.pf = j;
+				dev.vf = k;
+				ret = octep_plugin_client_dev_register(&dev);
+				if (ret) {
+					printf("Err: Failed dev reg for pem%d[%d][%d]\n",
+					       i, j, k);
+					return ret;
+				}
+			}
+		}
+	}
+
+	return 0;
+}
+
 int l2fwd_control_init(struct l2fwd_control_ops *ops)
 {
 	int err;
@@ -433,11 +478,15 @@ int l2fwd_control_init(struct l2fwd_control_ops *ops)
 	if (err < 0)
 		goto init_rx_buf_fail;
 
-	err = set_fw_ready(1);
+	err = octep_plugin_client_init(&plugin_info);
 	if (err < 0)
-		goto set_fw_ready_fail;
+		goto plugin_client_init_fail;
 
-	ualarm(ALARM_INTERVAL_USECS, 0);
+	err = octep_plugin_client_start();
+	if (err < 0)
+		goto plugin_client_init_fail;
+
+	err = ctrl_dev_register();
 
 	c_state = CONTROL_STATE_READY;
 	l2fwd_ops = ops;
@@ -446,7 +495,7 @@ int l2fwd_control_init(struct l2fwd_control_ops *ops)
 
 	return 0;
 
-set_fw_ready_fail:
+plugin_client_init_fail:
 	uninit_rx_buf();
 init_rx_buf_fail:
 pem_init_fail:
@@ -506,25 +555,35 @@ static inline struct control_fn_ops *get_fn_ops(union octep_cp_msg_info *info)
 	return run_data[pem]->pfs[pf]->ops;
 }
 
-static inline int send_response(union octep_cp_msg_info *pf_ctx,
+static inline int octep_plugin_client_send_resp(union octep_cp_msg_info *pf_ctx,
 				union octep_cp_msg_info *msg_ctx,
 				struct octep_ctrl_net_h2f_resp *resp,
 				int resp_sz)
 {
-	struct octep_cp_msg resp_msg;
+	struct octep_plugin_msg reply;
+	struct octep_cp_msg *resp_msg;
 	int err, msg_sz;
 
+	resp_msg = (struct octep_cp_msg *) &reply.data;
 	/* copy over sender context (pem/pf/vf) */
 	msg_sz = CTRL_NET_RESP_HDR_SZ + resp_sz;
-	resp_msg.sg_num = 1;
-	resp_msg.info = *msg_ctx;
-	resp_msg.info.s.sz = msg_sz;
-	resp_msg.sg_list[0].sz = msg_sz;
-	resp_msg.sg_list[0].msg = resp;
+	resp_msg->sg_num = 1;
+	resp_msg->info = *msg_ctx;
+	resp_msg->info.s.sz = msg_sz;
+	resp_msg->sg_list[0].sz = msg_sz;
+	resp_msg->sg_list[0].msg = resp;
 
-	err = octep_cp_lib_send_msg_resp(pf_ctx, &resp_msg, 1);
+	reply.hdr.id = OCTEP_PLUGIN_C2S_MSG_CTRL_NET_RESP;
+	reply.hdr.dev_id.pem = pf_ctx->s.pem_idx;
+	reply.hdr.dev_id.pf = pf_ctx->s.pf_idx;
+	if (!msg_ctx->s.is_vf)
+		reply.hdr.dev_id.vf = OCTEP_PLUGIN_INVALID_VF_IDX;
+	else
+		reply.hdr.dev_id.vf = msg_ctx->s.vf_idx;
 
-	return (err == 1) ? 0 : err;
+	reply.hdr.sz = sizeof(struct octep_cp_msg);
+	err = octep_plugin_client_send_notification(&reply);
+	return err;
 }
 
 static int process_mtu(union octep_cp_msg_info *info,
@@ -595,7 +654,7 @@ static int process_mac(union octep_cp_msg_info *info,
 			return 0;
 		}
 
-		RTE_LOG(DEBUG, L2FWD_CTRL,
+		RTE_LOG(INFO, L2FWD_CTRL,
 			"[%d][%d][%d]: Get mac "L2FWD_PCIE_EP_ETHER_ADDR_PRT_FMT"\n",
 			info->s.pem_idx, info->s.pf_idx, vf_idx,
 			resp->mac.addr[0], resp->mac.addr[1],
@@ -616,7 +675,7 @@ static int process_mac(union octep_cp_msg_info *info,
 		resp->hdr.s.reply = OCTEP_CTRL_NET_REPLY_GENERIC_FAIL;
 		return 0;
 	}
-	RTE_LOG(DEBUG, L2FWD_CTRL,
+	RTE_LOG(INFO, L2FWD_CTRL,
 		"[%d][%d][%d]: Set mac "L2FWD_PCIE_EP_ETHER_ADDR_PRT_FMT"\n",
 		info->s.pem_idx, info->s.pf_idx, vf_idx,
 		req->mac.addr[0], req->mac.addr[1], req->mac.addr[2],
@@ -845,7 +904,7 @@ static int process_msg(union octep_cp_msg_info *ctx, struct octep_cp_msg *msg)
 			info->s.pem_idx, info->s.pf_idx,
 			(info->s.is_vf) ? info->s.vf_idx : -1);
 		resp.hdr.s.reply = OCTEP_CTRL_NET_REPLY_INVALID_PARAM;
-		send_response(ctx, info, &resp, 0);
+		octep_plugin_client_send_resp(ctx, info, &resp, 0);
 		return 0;
 	}
 	switch (req->hdr.s.cmd) {
@@ -879,9 +938,42 @@ static int process_msg(union octep_cp_msg_info *ctx, struct octep_cp_msg *msg)
 		resp.hdr.s.reply = OCTEP_CTRL_NET_REPLY_INVALID_PARAM;
 		break;
 	}
-	send_response(ctx, info, &resp, resp_sz);
+	octep_plugin_client_send_resp(ctx, info, &resp, resp_sz);
 
 	return 0;
+}
+
+static int ctrl_client_recv_msg(union octep_cp_msg_info *ctx,
+				struct octep_cp_msg *buf,
+				int num_msgs)
+{
+	struct octep_plugin_msg msg = { 0 };
+	struct octep_cp_msg *cp_msg;
+	int i, ret, j, num = 0;
+
+	if (!ctx || !buf || num_msgs <= 0)
+		return -EINVAL;
+
+	for (i = 0; i < num_msgs; i++) {
+		ret = octep_plugin_client_poll(&msg);
+		if (ret < 0)
+			return ret;
+		if (ret == 0)
+			break;
+
+		cp_msg = (struct octep_cp_msg *) &msg.data;
+		for (j = 0; j < cp_msg->sg_num; j++) {
+			memcpy(buf[i].sg_list[j].msg, cp_msg->sg_list[j].msg,
+			       cp_msg->sg_list[j].sz);
+			cp_msg->sg_list[j].msg = buf[i].sg_list[j].msg;
+		}
+
+		memcpy(&buf[i], &msg.data, msg.hdr.sz);
+		memset(&msg, 0, sizeof(msg));
+		num++;
+	}
+
+	return num;
 }
 
 static void valid_pf_process_msg(int pem, int pf, void *ctx)
@@ -893,7 +985,7 @@ static void valid_pf_process_msg(int pem, int pf, void *ctx)
 		return;
 
 	msg_ctx = &run_data[pem]->pfs[pf]->ctx;
-	ret = octep_cp_lib_recv_msg(msg_ctx, rx_msg, RX_BUF_CNT);
+	ret = ctrl_client_recv_msg(msg_ctx, rx_msg, RX_BUF_CNT);
 	if (ret < 0)
 		return;
 
@@ -919,8 +1011,9 @@ static void valid_pf_process_perst(int pem, int pf, void *ctx)
 
 int l2fwd_control_poll(void)
 {
-	struct octep_cp_event_info info[L2FWD_MAX_PEM];
+	/* struct octep_cp_event_info info[L2FWD_MAX_PEM];
 	int ret, e, pem_idx;
+	*/
 
 	/* poll each pf for up to RX_BUF_CNT followed by events */
 	iterate_valid_pfs(&valid_pf_process_msg, NULL);
@@ -928,24 +1021,7 @@ int l2fwd_control_poll(void)
 	if (c_state != CONTROL_STATE_READY)
 		return -EAGAIN;
 
-	ret = octep_cp_lib_recv_event(info, L2FWD_MAX_PEM);
-	for (e = 0; e < ret; e++) {
-		if (info[e].e == OCTEP_CP_EVENT_TYPE_PERST) {
-			pem_idx = info[e].u.perst.dom_idx;
-
-			RTE_LOG(INFO, L2FWD_CTRL,
-				"[%d]: PERST event\n",
-				pem_idx);
-
-			c_state = CONTROL_STATE_IN_PEM_RESET;
-			l2fwd_ops->on_before_pem_reset(pem_idx);
-			iterate_valid_pfs(&valid_pf_process_perst, &pem_idx);
-			l2fwd_ops->on_after_pem_reset(pem_idx);
-			c_state = CONTROL_STATE_READY;
-
-		}
-	}
-
+	/* TODO: Receive events implementation */
 	return 0;
 }
 
@@ -1022,7 +1098,9 @@ int l2fwd_control_set_port_mapping(const struct rte_pci_addr *port1,
 
 int l2fwd_control_uninit(void)
 {
-	set_fw_ready(0);
+	/* set_fw_ready(0); */
+	octep_plugin_client_stop();
+	octep_plugin_client_uninit();
 	octep_cp_lib_uninit();
 	ctrl_nic_uninit();
 	ctrl_stub_uninit();

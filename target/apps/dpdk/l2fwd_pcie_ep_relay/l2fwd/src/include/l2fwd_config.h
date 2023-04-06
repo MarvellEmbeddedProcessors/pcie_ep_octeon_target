@@ -14,6 +14,8 @@
 struct l2fwd_config_fn {
 	/* config is valid */
 	bool is_valid;
+	/* Plugin control override flag */
+	bool plugin_controlled;
 	/* dbdf mapped to host */
 	struct rte_pci_addr to_host_dbdf;
 	/* dbdf mapped to local interface */

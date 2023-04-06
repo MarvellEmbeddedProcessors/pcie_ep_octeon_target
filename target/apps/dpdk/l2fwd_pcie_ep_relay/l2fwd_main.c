@@ -47,14 +47,6 @@ static void signal_handler(int signum)
 static void l2fwd_pcie_ep_usage(const char *prgname)
 {
 	printf("%s [EAL options] --\n"
-	       "  -a <1/0> Toggle api server feature (default: 0)\n"
-	       "     0: Disabled\n"
-	       "     1: Run on tcp port 8888\n"
-	       "  -c <1/0> Toggle control plane feature (default: 1)\n"
-	       "     0: Run in virtual mode for configured sdp interfaces\n"
-	       "        Real interface paired with sdp will not be managed\n"
-	       "     1: Run in real mode for configured sdp interfaces\n"
-	       "        Real interface paired with sdp will be managed\n"
 	       "  -d <1/0> Toggle data plane feature (default: 1)\n"
 	       "     0: Disabled\n"
 	       "     1: Run with configured forwarding interface pairs\n"
@@ -65,8 +57,6 @@ static void l2fwd_pcie_ep_usage(const char *prgname)
 }
 
 static const char short_options[] =
-	"a:"  /* api server feature */
-	"c:"  /* control plane feature */
 	"d:"  /* data plane feature */
 	"f:"  /* configuration file */
 	"s:"  /* statistics printing */
@@ -99,20 +89,6 @@ static int l2fwd_pcie_ep_parse_args(int argc, char **argv)
 	while ((opt = getopt_long(argc, argvopt, short_options,
 				  lgopts, &option_index)) != EOF) {
 		switch (opt) {
-		case 'a':
-			val = atoi(optarg);
-			if (val)
-				l2fwd_cfg.features |= L2FWD_FEATURE_API_SERVER;
-			else
-				l2fwd_cfg.features &= ~L2FWD_FEATURE_API_SERVER;
-			break;
-		case 'c':
-			val = atoi(optarg);
-			if (val)
-				l2fwd_cfg.features |= L2FWD_FEATURE_CTRL_PLANE;
-			else
-				l2fwd_cfg.features &= ~L2FWD_FEATURE_CTRL_PLANE;
-			break;
 		case 'd':
 			val = atoi(optarg);
 			if (val)
@@ -138,6 +114,8 @@ static int l2fwd_pcie_ep_parse_args(int argc, char **argv)
 		}
 	}
 
+	l2fwd_cfg.features &= ~L2FWD_FEATURE_API_SERVER;
+	l2fwd_cfg.features |= L2FWD_FEATURE_CTRL_PLANE;
 	if (optind >= 0)
 		argv[optind-1] = prgname;
 

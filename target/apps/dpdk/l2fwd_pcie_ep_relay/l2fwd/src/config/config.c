@@ -70,6 +70,9 @@
 #define CFG_TOKEN_PF_HB_INTERVAL		"hb_interval"
 #define CFG_TOKEN_PF_HB_MISS_COUNT		"hb_miss_count"
 
+/* Plugin client */
+#define CFG_TOKEN_PLUGIN_CONTROLLED		"plugin_controlled"
+
 struct l2fwd_config l2fwd_cfg;
 
 static void print_config(void)
@@ -162,6 +165,10 @@ static int parse_fn_base(config_setting_t *lcfg, struct l2fwd_config_fn *fn)
 	err = config_setting_lookup_int(lcfg, CFG_TOKEN_FN_BASE_PKIND, &ival);
 	if (err == CONFIG_TRUE)
 		fn->pkind = ival;
+
+	if (config_setting_lookup_bool(lcfg, CFG_TOKEN_PLUGIN_CONTROLLED,
+				       (int *) &fn->plugin_controlled) == CONFIG_FALSE)
+		fn->plugin_controlled = false;
 
 	err = config_setting_lookup_string(lcfg,
 					   CFG_TOKEN_DBDF_TO_HOST_DBDF,
