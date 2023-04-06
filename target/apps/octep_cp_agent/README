@@ -88,12 +88,4 @@ Run the app as follows
   Optional parameters
   -y <milliseconds> yield cpu for msecs between subsequent calls to msg poll (default: 1ms)
   -m <1-n> Max control messages and events to be polled at one time (default: 6)
-
-  htop with -y 1
-  729 root       20   0 51400 27068   376 S  0.0  0.1  0:00.01 ./octep_cp_agent
-
-  htop with -y 2
-  731 root       20   0 51400 27084   392 S  0.0  0.1  0:00.02 ./octep_cp_agent
-
-  htop with -y 4
-  733 root       20   0 51400 27080   392 S  0.0  0.1  0:00.01 ./octep_cp_agent
+  htop can be used to check cpu usage by the app
