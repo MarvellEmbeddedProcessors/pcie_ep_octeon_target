@@ -10,15 +10,15 @@ endif
 CC ?= $(CROSS_COMPILE)gcc
 LD ?= $(CROSS_COMPILE)ld
 
-NAME_PREFIX=octep_cp
+NAME_PREFIX=octep_relay
 APP_NAME=$(NAME_PREFIX)_agent
 
-SRCS = main.c loop.c app_config.c
+SRCS = main.c loop.c app_config.c octep_plugin_server.c
 APP_CFLAGS = $(CFLAGS) -O3 -Werror -Wall -I$(CURDIR)/compat/$(PLAT)
 
-LDFLAGS_SHARED = $(LDFLAGS) -loctep_cp -lconfig -lrt
+LDFLAGS_SHARED = $(LDFLAGS) -loctep_cp -lconfig -lrt -lpthread
 
-LDFLAGS_STATIC = $(LDFLAGS) -l:liboctep_cp.a -lconfig -lrt
+LDFLAGS_STATIC = $(LDFLAGS) -l:liboctep_cp.a -lconfig -lrt -lpthread
 
 STATIC_BIN = $(APP_NAME)
 SHARED_BIN = $(APP_NAME)-shared

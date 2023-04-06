@@ -6,6 +6,7 @@
 
 #include "octep_cp_lib.h"
 #include "app_config.h"
+#include "octep_plugin_server.h"
 
 struct app_cfg cfg;
 
@@ -122,6 +123,8 @@ static int parse_fn(config_setting_t *lcfg, struct fn_cfg *fn)
 	if (config_setting_lookup_bool(lcfg, CFG_TOKEN_PLUGIN_CONTROLLED,
 				      (int *) &fn->plugin_controlled) == CONFIG_FALSE)
 		fn->plugin_controlled = false;
+
+	fn->client_id = OCTEP_PLUGIN_INVALID_CLIENT_ID;
 
 	err = parse_if(lcfg, &fn->iface);
 	if (err)

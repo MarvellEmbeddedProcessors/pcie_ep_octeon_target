@@ -13,6 +13,7 @@
 #include "octep_cp_lib.h"
 #include "loop.h"
 #include "app_config.h"
+#include "octep_plugin_server.h"
 
 /* Control plane version */
 #define CP_VERSION_MAJOR		1
@@ -44,6 +45,7 @@ static int process_events(void)
 		return n;
 
 	for (i = 0; i < n; i++) {
+		octep_plugin_relay_process_event(&e[i]);
 		if (e[i].e == OCTEP_CP_EVENT_TYPE_PERST) {
 			printf("APP: Event: perst on dom[%d]\n",
 			       e[i].u.perst.dom_idx);
@@ -173,6 +175,7 @@ int main(int argc, char *argv[])
 
 	signal(SIGINT, sigint_handler);
 	signal(SIGALRM, sigint_handler);
+	octep_plugin_relay_server_init();
 
 	timer_create(CLOCK_REALTIME, NULL, &tim);
 
@@ -225,6 +228,7 @@ int main(int argc, char *argv[])
 	}
 	set_fw_ready(0);
 
+	octep_plugin_relay_server_uninit();
 	octep_cp_lib_uninit();
 	loop_uninit();
 

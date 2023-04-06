@@ -56,6 +56,11 @@ struct if_cfg {
 struct fn_cfg {
 	/* Plugin control override flag */
 	bool plugin_controlled;
+	/* Plugin client id of master client app
+	 * Valid only if plugin_controlled boolean
+	 * is set
+	 */
+	int client_id;
 	/* network interface data */
 	struct if_cfg iface;
 	/* network interface stats */

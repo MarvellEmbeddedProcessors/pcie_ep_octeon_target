@@ -14,6 +14,7 @@
 #include "octep_hw.h"
 #include "loop.h"
 #include "app_config.h"
+#include "octep_plugin_server.h"
 
 #define LOOP_RX_BUF_CNT			6
 
@@ -271,11 +272,17 @@ static int process_msg(union octep_cp_msg_info *ctx, struct octep_cp_msg *msg)
 	struct fn_cfg *fn;
 	int err, resp_sz;
 
+	if (octep_plugin_relay_process_msg(msg) == 0)
+		return 0;
+
 	fn = app_config_get_fn(&loop_cfg, &msg->info);
 	if (!fn) {
 		printf("APP: Invalid msg[%lx]\n", msg->info.words[0]);
 		return err;
 	}
+
+	if (fn->plugin_controlled)
+		return -EINVAL;
 
 	req = (struct octep_ctrl_net_h2f_req *)msg->sg_list[0].msg;
 	resp.hdr.words[0] = req->hdr.words[0];
@@ -339,7 +346,9 @@ int loop_process_msgs(void)
 		ctx.s.pem_idx = cp_lib_cfg.doms[i].idx;
 		for (j = 0; j < cp_lib_cfg.doms[i].npfs; j++) {
 			ctx.s.pf_idx = cp_lib_cfg.doms[i].pfs[j].idx;
+			octep_plugin_ctrl_net_lock();
 			ret = octep_cp_lib_recv_msg(&ctx, rx_msg, rx_num);
+			octep_plugin_ctrl_net_unlock();
 			for (m = 0; m < ret; m++) {
 				msg = &rx_msg[m];
 				process_msg(&ctx, msg);
