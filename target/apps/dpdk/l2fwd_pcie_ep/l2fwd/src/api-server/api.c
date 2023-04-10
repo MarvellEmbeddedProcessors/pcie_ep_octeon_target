@@ -21,6 +21,7 @@
 
 #define L2FWD_ADD_FWD_PAIR_PARAM_PORT1		"port1"
 #define L2FWD_ADD_FWD_PAIR_PARAM_PORT2		"port2"
+#define L2FWD_ADD_FWD_PAIR_PARAM_MAC		"mac"
 
 static int process_set_fwd_state(int fd, cJSON *params, cJSON *id)
 {
@@ -83,9 +84,27 @@ static int get_pci_addr_param(cJSON *params, const char *param, int index,
 	return 0;
 }
 
+static int get_mac_addr_param(cJSON *params, const char *param, int index,
+			      struct rte_ether_addr *addr)
+{
+	char *str_addr;
+	int err;
+
+	err = json_rpc_get_str_param(params, param, index, &str_addr);
+	if (err < 0)
+		return err;
+
+	err = rte_ether_unformat_addr(str_addr, addr);
+	if (err < 0)
+		return err;
+
+	return 0;
+}
+
 static int process_add_fwd_pair(int fd, cJSON *params, cJSON *id)
 {
 	struct rte_pci_addr port1, port2;
+	struct rte_ether_addr mac;
 	int err;
 
 	err = get_pci_addr_param(params, L2FWD_ADD_FWD_PAIR_PARAM_PORT1, 0, &port1);
@@ -106,7 +125,9 @@ static int process_add_fwd_pair(int fd, cJSON *params, cJSON *id)
 		return err;
 	}
 
-	err = l2fwd_ops->add_fwd_table_entry(&port1, &port2);
+	/* mac is optional parameter */
+	err = get_mac_addr_param(params, L2FWD_ADD_FWD_PAIR_PARAM_MAC, 1, &mac);
+	err = l2fwd_ops->add_fwd_table_entry(&port1, &port2, (!err) ? &mac : NULL);
 	if (err < 0) {
 		json_rpc_send_error(fd,
 				    JSON_RPC_ERROR_CODE_INTERNAL_ERROR,

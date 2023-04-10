@@ -82,7 +82,9 @@ struct control_pem {
 
 /* port map */
 struct port_map {
+	/* to_host_dbdf */
 	struct rte_pci_addr port1;
+	/* to_wire_dbdf */
 	struct rte_pci_addr port2;
 };
 
@@ -110,7 +112,7 @@ static struct l2fwd_control_ops *l2fwd_ops;
 typedef void (*valid_pf_callback_t)(int pem, int pf, void *ctx);
 
 /* template for callback function */
-typedef void (*valid_fn_callback_t)(int pem, int pf, int vf, void *ctx);
+typedef int (*valid_fn_callback_t)(int pem, int pf, int vf, void *ctx);
 
 static void iterate_valid_pfs(valid_pf_callback_t fn, void *ctx)
 {
@@ -127,9 +129,9 @@ static void iterate_valid_pfs(valid_pf_callback_t fn, void *ctx)
 	}
 }
 
-static void iterate_valid_fn(valid_fn_callback_t fn, void *ctx)
+static int iterate_valid_fn(valid_fn_callback_t fn, void *ctx)
 {
-	int i, j, k;
+	int i, j, k, err;
 
 	for (i = 0; i < L2FWD_MAX_PEM; i++) {
 		if (!run_data[i])
@@ -139,15 +141,21 @@ static void iterate_valid_fn(valid_fn_callback_t fn, void *ctx)
 			if (!run_data[i]->pfs[j])
 				continue;
 
-			fn(i, j, -1, ctx);
+			err = fn(i, j, -1, ctx);
+			if (err)
+				return err;
 			for (k = 0; k < L2FWD_MAX_VF; k++) {
 				if (!run_data[i]->pfs[j]->vfs[k])
 					continue;
 
-				fn(i, j, k, ctx);
+				err = fn(i, j, k, ctx);
+				if (err)
+					return err;
 			}
 		}
 	}
+
+	return 0;
 }
 
 static int free_pems(void)
@@ -949,16 +957,18 @@ int l2fwd_control_poll(void)
 	return 0;
 }
 
-static void clear_valid_fn_mapping(int pem, int pf, int vf, void *ctx)
+static int clear_valid_fn_mapping(int pem, int pf, int vf, void *ctx)
 {
 	if (vf < 0) {
 		run_data[pem]->pfs[pf]->ops->set_port(pem, pf, vf, &zero_dbdf);
 		run_data[pem]->pfs[pf]->ops = fn_ops[L2FWD_FN_TYPE_STUB];
-		return;
+		return 0;
 	}
 
 	run_data[pem]->pfs[pf]->vfs[vf]->ops->set_port(pem, pf, vf, &zero_dbdf);
 	run_data[pem]->pfs[pf]->vfs[vf]->ops = fn_ops[L2FWD_FN_TYPE_STUB];
+
+	return 0;
 }
 
 int l2fwd_control_clear_port_mapping(void)
@@ -968,10 +978,25 @@ int l2fwd_control_clear_port_mapping(void)
 	return 0;
 }
 
-static int switch_ops(int pem, int pf, int vf, struct port_map *pm,
-		      struct control_fn_ops **ops)
+static int set_valid_fn_mapping(int pem, int pf, int vf, void *ctx)
 {
+	struct port_map *pm = (struct port_map *)ctx;
+	struct control_fn_ops **ops;
 	uint8_t mac[ETH_ALEN];
+
+	if (vf < 0) {
+		if (rte_pci_addr_cmp(&run_data[pem]->pfs[pf]->dbdf,
+				     &pm->port1))
+			return 0;
+
+		ops = &run_data[pem]->pfs[pf]->ops;
+	} else {
+		if (rte_pci_addr_cmp(&run_data[pem]->pfs[pf]->vfs[vf]->dbdf,
+				     &pm->port1))
+			return 0;
+
+		ops = &run_data[pem]->pfs[pf]->vfs[vf]->ops;
+	}
 
 	(*ops)->get_mac(pem, pf, vf, mac);
 	clear_valid_fn_mapping(pem, pf, vf, NULL);
@@ -983,28 +1008,7 @@ static int switch_ops(int pem, int pf, int vf, struct port_map *pm,
 	(*ops)->set_port(pem, pf, vf, &pm->port2);
 	(*ops)->set_mac(pem, pf, vf, mac);
 
-	return 0;
-}
-
-static void set_valid_fn_mapping(int pem, int pf, int vf, void *ctx)
-{
-	struct port_map *pm = (struct port_map *)ctx;
-	struct control_pf *cpf;
-	struct control_vf *cvf;
-
-	if (vf < 0) {
-		cpf = run_data[pem]->pfs[pf];
-		if (rte_pci_addr_cmp(&cpf->dbdf, &pm->port1))
-			return;
-
-		switch_ops(pem, pf, vf, pm, &cpf->ops);
-	} else {
-		cvf = run_data[pem]->pfs[pf]->vfs[vf];
-		if (rte_pci_addr_cmp(&cvf->dbdf, &pm->port1))
-			return;
-
-		switch_ops(pem, pf, vf, pm, &cvf->ops);
-	}
+	return -EIO;
 }
 
 int l2fwd_control_set_port_mapping(const struct rte_pci_addr *port1,
@@ -1014,10 +1018,26 @@ int l2fwd_control_set_port_mapping(const struct rte_pci_addr *port1,
 		.port1 = *port1,
 		.port2 = *port2
 	};
+	int err;
 
-	iterate_valid_fn(clear_valid_fn_mapping, &pm);
+	err = iterate_valid_fn(set_valid_fn_mapping, &pm);
+	if (err)
+		return 0;
 
-	return 0;
+	return -ENODEV;
+}
+
+int l2fwd_control_init_fn(int pem, int pf, int vf)
+{
+	if (vf < 0) {
+		if (!l2fwd_cfg.pems[pem].pfs[pf].d.is_valid)
+			return -EINVAL;
+	} else {
+		if (!l2fwd_cfg.pems[pem].pfs[pf].vfs[vf].is_valid)
+			return -EINVAL;
+	}
+
+	return init_valid_cfg(pem, pf, vf, NULL);
 }
 
 int l2fwd_control_uninit(void)

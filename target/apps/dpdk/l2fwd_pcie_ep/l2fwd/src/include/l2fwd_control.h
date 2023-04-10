@@ -58,6 +58,14 @@ int l2fwd_control_clear_port_mapping(void);
 int l2fwd_control_set_port_mapping(const struct rte_pci_addr *port1,
 				   const struct rte_pci_addr *port2);
 
+/* Initialize control plane function.
+ *
+ * Reload function configuration and reset runtime data.
+ *
+ * return value: 0 on success, -errno on failure.
+ */
+int l2fwd_control_init_fn(int pem, int pf, int vf);
+
 /* UnInitialize control plane.
  *
  * UnInitialize local data for handling control messages.
