@@ -3,8 +3,6 @@ How to test l2fwd_pcie_ep application
 
 l2fwd_pcie_ep can be used to forward packets between CGX/RPM interfaces and SDP
 
-#. Apply sdk-ext-pcie-ep-l2fwd.patch to sdk-ext-pcie-ep extension.
-#. Apply pcie_ep_octeontx-l2fwd.patch to pcie_ep_octeontx package.
 #. Build sdk image and install it on Octeon.
 #. Make sure /usr/bin/l2fwd_pcie_ep, /usr/bin/cn98xx-l2fwd-pem0-pf0-3.cfg and
    /usr/bin/l2fwd_pcie_ep_setup.sh are present in rootfs.
