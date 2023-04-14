@@ -17,18 +17,22 @@ l2fwd_pcie_ep can be used to forward packets between CGX/RPM interfaces and SDP
     | This example shows the PF and 1 VF enabled. Max supported num_vfs can be found from sriov_numvfs.
     | # ifconfig <host-pf-iface> up
 
-#. On Octeon linux shell console:
 
-#. Edit /usr/bin/l2fwd_pcie_ep_setup.sh and change the values of SDP_NIX_VF0 and
-   ETH_PF0 to appropriate values.
-#. Similarly edit /usr/bin/cn98xx-l2fwd-pem0-pf0-3.cfg and set to_host_dbdf to
-   SDP_NIX_VF0 and to_wire_dbdf to ETH_PF0.
+On Octeon linux shell console
+-----------------------------
+#. Edit /usr/bin/l2fwd_pcie_ep_setup.sh:
+	Change the values of SDP_NIX_VF0 and ETH_PF0 to appropriate values.
+	Change hugepage setting as per requirement(2MB/512MB).
+
+#. Edit /usr/bin/cn98xx-l2fwd-pem0-pf0-3.cfg:
+	Set to_host_dbdf SDP_NIX_VF0 and to_wire_dbdf to ETH_PF0.
+
 #. Run following command
     .. code-block:: shell-session
-       # /usr/bin/l2fwd_pcie_ep_setup.sh
+	# /usr/bin/l2fwd_pcie_ep_setup.sh
 
 #. Run l2fwd_pcie_ep as below
-#. /usr/bin/l2fwd_pcie_ep -l0-8 --main-lcore=0 -a $SDP_NIX_VF0 -a $ETH_PF0 -- -f /usr/bin/cn98xx-l2fwd-pem0-pf0-3.cfg -d 8
+	#/usr/bin/l2fwd_pcie_ep -l0-8 --main-lcore=0 -a $SDP_NIX_VF0 -a $ETH_PF0 -- -f /usr/bin/cn98xx-l2fwd-pem0-pf0-3.cfg -d 8
 
 
 How to test json-rpc api
