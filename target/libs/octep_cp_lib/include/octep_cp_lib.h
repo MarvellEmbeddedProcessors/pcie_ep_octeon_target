@@ -207,6 +207,8 @@ struct octep_cp_pf_info {
 	int idx;
 	/* Maximum supported message size */
 	uint16_t max_msg_sz;
+	/* Host control plane version of type OCTEP_CP_VERSION */
+	uint32_t host_version;
 };
 
 /* pcie mac domain information */
@@ -221,8 +223,6 @@ struct octep_cp_dom_info {
 
 /* library information */
 struct octep_cp_lib_info {
-	/* Host control plane version of type OCTEP_CP_VERSION */
-	uint32_t host_version;
 	/* Detected soc */
 	struct octep_cp_soc_model soc_model;
 	/* number of pcie mac domains */
@@ -254,6 +254,10 @@ int octep_cp_lib_init_pem(struct octep_cp_lib_cfg *cfg, int dom_idx);
 /* Get library information after initialization.
  *
  * This api will return valid information only after library is initialized.
+ * pf host version is available after the host is initialized. pf host version is
+ * retrieved when available in octep_cp_lib_recv_msg api. So if a valid pf host
+ * version is required then get_info api should be called after receiving first
+ * message from host.
  *
  * @param info: [IN/OUT] non-null pointer to struct octep_cp_lib_info.
  *

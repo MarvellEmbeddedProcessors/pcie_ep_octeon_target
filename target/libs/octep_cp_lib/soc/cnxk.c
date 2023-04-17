@@ -521,6 +521,7 @@ int cnxk_get_info(struct octep_cp_lib_info *info)
 			pf_info = &dom_info->pfs[j];
 			pf_info->idx = j;
 			pf_info->max_msg_sz = pf->mbox.h2fq.sz;
+			pf_info->host_version = (uint32_t)pf->mbox.host_version;
 			dom_info->npfs++;
 		}
 		info->ndoms++;

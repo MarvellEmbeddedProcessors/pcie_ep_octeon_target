@@ -50,18 +50,19 @@ static inline int is_host_ready(struct octep_ctrl_mbox *mbox)
 {
 	uint64_t val;
 
+	if (!mbox->host_version)
+		mbox->host_version = cp_read64_fd(OCTEP_CTRL_MBOX_INFO_HOST_VERSION(mbox->barmem),
+						  mbox->bar4_fd);
+
+	if (!mbox->host_version)
+		return 0;
+
 	val = cp_read64_fd(OCTEP_CTRL_MBOX_INFO_HOST_STATUS(mbox->barmem),
 			   mbox->bar4_fd);
 	if (val != OCTEP_CTRL_MBOX_STATUS_READY)
 		return 0;
 
-	if (mbox->host_version)
-		return 1;
-
-	mbox->host_version = cp_read64_fd(OCTEP_CTRL_MBOX_INFO_HOST_VERSION(mbox->barmem),
-					  mbox->bar4_fd);
-
-	return (!mbox->host_version);
+	return 1;
 }
 
 static inline uint32_t octep_ctrl_mbox_circq_inc(uint32_t index, uint32_t inc,
