@@ -83,7 +83,9 @@ Run the app as follows
 ```bash
 
   cd $RUN_DIR
-  ./octep_cp_agent `pwd`/app.cfg
+  ./octep_cp_agent `pwd`/<soc>.cfg
+
+  <soc> has to replaced with soc name of the target on which the app is to be run.
 
   Optional parameters
   -y <milliseconds> yield cpu for msecs between subsequent calls to msg poll (default: 1ms)
