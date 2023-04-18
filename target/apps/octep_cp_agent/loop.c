@@ -19,6 +19,7 @@ static struct octep_cp_msg *rx_msg;
 static int rx_num;
 static int max_msg_sz = sizeof(union octep_ctrl_net_max_data);
 static struct app_cfg loop_cfg = { 0 };
+static uint32_t host_versions[OCTEP_CP_DOM_MAX][OCTEP_CP_PF_PER_DOM_MAX];
 
 extern struct octep_cp_lib_cfg cp_lib_cfg;
 
@@ -45,6 +46,10 @@ int loop_init_pem(int dom_idx)
 	memcpy(&loop_cfg.pems[cp_lib_cfg.doms[dom_idx].idx],
 	       &cfg.pems[cp_lib_cfg.doms[dom_idx].idx],
 	       sizeof(struct pem_cfg));
+
+	memset(&host_versions[dom_idx],
+	       0,
+	       sizeof(uint32_t) * OCTEP_CP_PF_PER_DOM_MAX);
 
 	return 0;
 }
@@ -78,6 +83,9 @@ int loop_init(int max_msgs)
 	}
 
 	loop_cfg.npem = cfg.npem;
+	memset(&host_versions,
+	       0,
+	       sizeof(uint32_t) * OCTEP_CP_DOM_MAX * OCTEP_CP_PF_PER_DOM_MAX);
 
 	printf("APP: using single buffer with msg sz %u.\n", max_msg_sz);
 
@@ -279,13 +287,14 @@ ret:
 
 }
 
-static int process_msg(union octep_cp_msg_info *ctx, struct octep_cp_msg* msg)
+static int process_msg(union octep_cp_msg_info *ctx, struct octep_cp_msg *msg,
+		       uint32_t host_version)
 {
 	struct octep_ctrl_net_h2f_req *req;
 	struct octep_ctrl_net_h2f_resp resp = { 0 };
 	struct octep_cp_msg resp_msg;
 	struct fn_cfg *fn;
-	int resp_sz;
+	int resp_sz, cmd;
 	int err = 0;
 
 	fn = app_config_get_fn(&loop_cfg, &msg->info);
@@ -298,7 +307,12 @@ static int process_msg(union octep_cp_msg_info *ctx, struct octep_cp_msg* msg)
 	resp.hdr.words[0] = req->hdr.words[0];
 	fn->iface.host_if_id = req->hdr.s.sender;
 	resp_sz = resp_hdr_sz;
-	switch (req->hdr.s.cmd) {
+	cmd = req->hdr.s.cmd;
+
+	if (host_version < octep_ctrl_net_h2f_cmd_versions[cmd])
+		cmd = OCTEP_CTRL_NET_H2F_CMD_INVALID;
+
+	switch (cmd) {
 		case OCTEP_CTRL_NET_H2F_CMD_MTU:
 			resp_sz += process_mtu(&fn->iface, req, &resp);
 			break;
@@ -323,6 +337,14 @@ static int process_msg(union octep_cp_msg_info *ctx, struct octep_cp_msg* msg)
 		case OCTEP_CTRL_NET_H2F_CMD_DEV_REMOVE:
 			resp_sz += process_dev_remove(&msg->info, fn, &resp);
 			break;
+		case OCTEP_CTRL_NET_H2F_CMD_INVALID:
+			printf("APP: Out of range Cmd : %u host version %u"
+			       " cmd version %u\n",
+			       req->hdr.s.cmd,
+			       host_version,
+			       octep_ctrl_net_h2f_cmd_versions[req->hdr.s.cmd]);
+			resp.hdr.s.reply = OCTEP_CTRL_NET_REPLY_UNSUPPORTED;
+			break;
 		default:
 			printf("APP: Unhandled Cmd : %u\n", req->hdr.s.cmd);
 			resp_sz = 0;
@@ -346,10 +368,65 @@ static int process_msg(union octep_cp_msg_info *ctx, struct octep_cp_msg* msg)
 	return err;
 }
 
+static uint32_t get_host_version(int pem_idx, int pf_idx)
+{
+	struct octep_cp_lib_info info;
+	struct octep_cp_dom_info *dom;
+	struct octep_cp_pf_info *pf;
+	int i, j, err;
+
+	if (!host_versions[pem_idx][pf_idx]) {
+		err = octep_cp_lib_get_info(&info);
+		if (err)
+			return 0;
+
+		for (i = 0; i < info.ndoms; i++) {
+			dom = &info.doms[i];
+			for (j = 0; j < dom->npfs; j++) {
+				pf = &dom->pfs[j];
+				host_versions[dom->idx][pf->idx] = pf->host_version;
+			}
+		}
+	}
+
+	return host_versions[pem_idx][pf_idx];
+}
+
+static int reply_error(union octep_cp_msg_info *ctx, struct octep_cp_msg *msg)
+{
+	struct octep_ctrl_net_h2f_resp resp = { 0 };
+	struct octep_cp_msg resp_msg = { 0 };
+	struct octep_ctrl_net_h2f_req *req;
+	struct fn_cfg *fn;
+
+	req = (struct octep_ctrl_net_h2f_req *)msg->sg_list[0].msg;
+	resp.hdr.words[0] = req->hdr.words[0];
+	resp.hdr.s.reply = OCTEP_CTRL_NET_REPLY_UNSUPPORTED;
+
+	resp_msg.info = msg->info;
+	resp_msg.info.s.sz = resp_hdr_sz;
+
+	resp_msg.sg_num = 1;
+	resp_msg.sg_list[0].sz = resp_hdr_sz;
+	resp_msg.sg_list[0].msg = &resp;
+
+	octep_cp_lib_send_msg_resp(ctx, &resp_msg, 1);
+	fn = app_config_get_fn(&loop_cfg, &msg->info);
+	if (fn) {
+		fn->ifstats.tx_stats.pkts++;
+		fn->ifstats.tx_stats.octs += resp_hdr_sz;
+		fn->ifstats.rx_stats.pkts++;
+		fn->ifstats.rx_stats.octets += msg->info.s.sz;
+	}
+
+	return 0;
+}
+
 int loop_process_msgs()
 {
 	union octep_cp_msg_info ctx;
 	struct octep_cp_msg* msg;
+	uint32_t host_version;
 	int ret, i, j, m;
 
 	for (i = 0; i < cp_lib_cfg.ndoms; i++) {
@@ -357,9 +434,16 @@ int loop_process_msgs()
 		for (j = 0; j < cp_lib_cfg.doms[i].npfs; j++) {
 			ctx.s.pf_idx = cp_lib_cfg.doms[i].pfs[j].idx;
 			ret = octep_cp_lib_recv_msg(&ctx, rx_msg, rx_num);
+			host_version = get_host_version(ctx.s.pem_idx, ctx.s.pf_idx);
+
+			if (host_version < cp_lib_cfg.min_version ||
+			    host_version > cp_lib_cfg.max_version)
+				host_version = 0;
+
 			for (m = 0; m < ret; m++) {
 				msg = &rx_msg[m];
-				process_msg(&ctx, msg);
+				(host_version) ? process_msg(&ctx, msg, host_version) :
+						 reply_error(&ctx, msg);
 				/* library will overwrite msg size in header so reset it */
 				msg->info.s.sz = max_msg_sz;
 			}
@@ -380,10 +464,18 @@ int loop_uninit()
 	}
 	free(rx_msg);
 
+	memset(&host_versions,
+	       0,
+	       sizeof(uint32_t) * OCTEP_CP_DOM_MAX * OCTEP_CP_PF_PER_DOM_MAX);
+
 	return 0;
 }
 
 int loop_uninit_pem(int dom_idx)
 {
+	memset(&host_versions[dom_idx],
+	       0,
+	       sizeof(uint32_t) * OCTEP_CP_PF_PER_DOM_MAX);
+
 	return 0;
 }
