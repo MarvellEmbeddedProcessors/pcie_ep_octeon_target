@@ -73,6 +73,8 @@ struct control_pf {
 	struct control_fn_ops *ops;
 	/* vf's */
 	struct control_vf *vfs[L2FWD_MAX_VF];
+	/* host version */
+	uint32_t host_version;
 };
 
 struct control_pem {
@@ -225,6 +227,7 @@ static int init_pf(int pem_idx, int pf_idx, struct control_pf *pf,
 	pf->ctx.s.pf_idx = pf_idx;
 	pf->msecs_to_next_hbeat = pf_cfg->hb_interval;
 	pf->hbeat.e = OCTEP_CP_EVENT_TYPE_HEARTBEAT;
+	pf->host_version = 0;
 
 	hbeat = &pf->hbeat.u.hbeat;
 	hbeat->dom_idx = pem_idx;
@@ -835,27 +838,44 @@ static int process_get_info(union octep_cp_msg_info *info,
 	return CTRL_NET_RESP_INFO_SZ;
 }
 
-static int process_msg(union octep_cp_msg_info *ctx, struct octep_cp_msg *msg)
+static int process_msg(union octep_cp_msg_info *ctx, struct octep_cp_msg *msg,
+		       uint32_t host_version)
 {
 	union octep_cp_msg_info *info = &msg->info;
 	struct octep_ctrl_net_h2f_resp resp;
 	struct octep_ctrl_net_h2f_req *req;
 	struct control_fn_ops *ops;
-	int resp_sz = 0;
+	int resp_sz = 0, pem_idx, pf_idx;
 
 	/* Copy correct header in response */
 	req = (struct octep_ctrl_net_h2f_req *)msg->sg_list[0].msg;
 	resp.hdr.words[0] = req->hdr.words[0];
+	pem_idx = info->s.pem_idx;
+	pf_idx = info->s.pf_idx;
 	ops = get_fn_ops(info);
 	if (!ops) {
 		RTE_LOG(DEBUG, L2FWD_CTRL,
 			"[%d][%d][%d]: Request for invalid interface\n",
-			info->s.pem_idx, info->s.pf_idx,
+			pem_idx, pf_idx,
 			(info->s.is_vf) ? info->s.vf_idx : -1);
 		resp.hdr.s.reply = OCTEP_CTRL_NET_REPLY_INVALID_PARAM;
 		send_response(ctx, info, &resp, 0);
 		return 0;
 	}
+
+	if (host_version < run_data[pem_idx]->pfs[pf_idx]->host_version) {
+		RTE_LOG(ERR, L2FWD_CTRL,
+			"[%d][%d][%d]: Out of range cmd : %u host version %u"
+			" cmd version %u\n",
+			pem_idx, pf_idx,
+			(info->s.is_vf) ? info->s.vf_idx : -1,
+			req->hdr.s.cmd, host_version,
+			run_data[pem_idx]->pfs[pf_idx]->host_version);
+		resp.hdr.s.reply = OCTEP_CTRL_NET_REPLY_UNSUPPORTED;
+		send_response(ctx, info, &resp, 0);
+		return 0;
+	}
+
 	switch (req->hdr.s.cmd) {
 	case OCTEP_CTRL_NET_H2F_CMD_MTU:
 		resp_sz += process_mtu(info, req, &resp, ops);
@@ -881,7 +901,7 @@ static int process_msg(union octep_cp_msg_info *ctx, struct octep_cp_msg *msg)
 	default:
 		RTE_LOG(ERR, L2FWD_CTRL,
 			"[%d][%d][%d]: Unhandled Cmd : %u\n",
-			info->s.pem_idx, info->s.pf_idx,
+			pem_idx, pf_idx,
 			(info->s.is_vf) ? info->s.vf_idx : -1,
 			req->hdr.s.cmd);
 		resp.hdr.s.reply = OCTEP_CTRL_NET_REPLY_INVALID_PARAM;
@@ -892,9 +912,56 @@ static int process_msg(union octep_cp_msg_info *ctx, struct octep_cp_msg *msg)
 	return 0;
 }
 
+static uint32_t get_host_version(int pem_idx, int pf_idx)
+{
+	struct octep_cp_lib_info info;
+	struct octep_cp_dom_info *dom;
+	struct octep_cp_pf_info *pf;
+	struct control_pf *pf_data;
+	int i, j;
+
+	pf_data = run_data[pem_idx]->pfs[pf_idx];
+	if (!pf_data->host_version) {
+		octep_cp_lib_get_info(&info);
+		for (i = 0; i < info.ndoms; i++) {
+			dom = &info.doms[i];
+			if (dom->idx != pem_idx)
+				continue;
+
+			for (j = 0; j < dom->npfs; j++) {
+				pf = &dom->pfs[j];
+				if (pf->idx != pf_idx)
+					continue;
+
+				pf_data->host_version = pf->host_version;
+				break;
+			}
+			break;
+		}
+	}
+
+	return pf_data->host_version;
+}
+
+static int process_invalid_host_version(union octep_cp_msg_info *ctx,
+					struct octep_cp_msg *msg)
+{
+	struct octep_ctrl_net_h2f_resp resp = { 0 };
+	struct octep_ctrl_net_h2f_req *req;
+
+	req = (struct octep_ctrl_net_h2f_req *)msg->sg_list[0].msg;
+	resp.hdr.words[0] = req->hdr.words[0];
+	resp.hdr.s.reply = OCTEP_CTRL_NET_REPLY_UNSUPPORTED;
+
+	send_response(ctx, &msg->info, &resp, 0);
+
+	return 0;
+}
+
 static void valid_pf_process_msg(int pem, int pf, void *ctx)
 {
 	union octep_cp_msg_info *msg_ctx;
+	uint32_t host_version;
 	int ret, m;
 
 	if (c_state != CONTROL_STATE_READY)
@@ -905,8 +972,14 @@ static void valid_pf_process_msg(int pem, int pf, void *ctx)
 	if (ret < 0)
 		return;
 
+	host_version = get_host_version(pem, pf);
 	for (m = 0; m < ret; m++) {
-		process_msg(msg_ctx, &rx_msg[m]);
+		if (host_version < cp_lib_cfg.min_version ||
+		    host_version > cp_lib_cfg.max_version)
+			process_invalid_host_version(msg_ctx, &rx_msg[m]);
+		else
+			process_msg(msg_ctx, &rx_msg[m], host_version);
+
 		/* library will overwrite msg size in header so reset it */
 		rx_msg[ret].info.s.sz = max_msg_sz;
 	}
