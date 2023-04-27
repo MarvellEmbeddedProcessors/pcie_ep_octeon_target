@@ -186,6 +186,7 @@ l2fwd_api_server_start_fail:
 
 int l2fwd_poll(void)
 {
+	l2fwd_data_poll();
 	return l2fwd_control_poll();
 }
 

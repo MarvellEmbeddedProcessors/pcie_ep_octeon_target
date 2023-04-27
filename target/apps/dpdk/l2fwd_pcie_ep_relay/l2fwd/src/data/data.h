@@ -48,6 +48,8 @@ struct data_port_fwd_info {
 	bool offload;
 	/* this entry is active */
 	bool running;
+	/* The link state of the external port */
+	bool wire_link_state;
 };
 
 /* tx buffers */

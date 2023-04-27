@@ -9,6 +9,9 @@
 #include "l2fwd_config.h"
 #include "data.h"
 #include "poll_mode.h"
+#include "octep_ctrl_net.h"
+#include "octep_cp_lib.h"
+#include "octep_plugin_client.h"
 
 #define RTE_LOGTYPE_L2FWD_DATA	RTE_LOGTYPE_USER1
 
@@ -143,7 +146,7 @@ static int calculate_mbuf_size(void)
 		max_pktlen = RTE_MAX(dev_info.max_rx_pktlen, max_pktlen);
 	}
 	return ((max_pktlen / nb_min_segs) +
-		((max_pktlen % nb_min_segs) != 0) +
+		(max_pktlen % nb_min_segs) +
 		RTE_PKTMBUF_HEADROOM);
 }
 
@@ -594,6 +597,73 @@ static int stop_configured_port(unsigned int port, void *ctx)
 	return 0;
 }
 
+static int update_link_status(int pem_idx, int pf_idx, int vf_idx, void *ctx)
+{
+	struct octep_ctrl_net_f2h_req req = { 0 };
+	struct octep_plugin_msg notif = { 0 };
+	unsigned int host_port, ext_port;
+	struct rte_eth_link eth_link;
+	struct l2fwd_config_fn *fn;
+	struct octep_cp_msg *msg;
+
+	fn = (vf_idx < 0) ?
+	      &l2fwd_cfg.pems[pem_idx].pfs[pf_idx].d :
+	      &l2fwd_cfg.pems[pem_idx].pfs[pf_idx].vfs[vf_idx];
+
+
+	/* Return if fn does not point to any external port */
+	if (is_zero_dbdf(&fn->to_host_dbdf) || is_zero_dbdf(&fn->to_wire_dbdf))
+		return 0;
+
+	host_port = l2fwd_pcie_ep_find_port(&fn->to_host_dbdf);
+	if (data_fwd_table[host_port].dst == RTE_MAX_ETHPORTS ||
+	    data_fwd_table[host_port].fn_ops != fn_ops[L2FWD_FN_TYPE_NIC])
+		return 0;
+
+	ext_port = data_fwd_table[host_port].dst;
+	if (rte_eth_link_get_nowait(ext_port, &eth_link))
+		return 0;
+
+	/* Initially wire link state will be down, so on detecting up,
+	 * a notification will be sent. Notifications should only be sent
+	 * if new link state is different from previous one.
+	 */
+	if (data_fwd_table[host_port].wire_link_state == eth_link.link_status)
+		return 0;
+
+	notif.hdr.id = OCTEP_PLUGIN_C2S_MSG_CTRL_NET_NOTIFY;
+	msg = (struct octep_cp_msg *) &notif.data;
+	msg->sg_num = 1;
+	msg->info.s.pem_idx = pem_idx;
+	notif.hdr.dev_id.pem = pem_idx;
+	msg->info.s.pf_idx = pf_idx;
+	notif.hdr.dev_id.pf = pf_idx;
+	if (vf_idx == -1) {
+		msg->info.s.is_vf = 0;
+		msg->info.s.vf_idx = -1;
+		notif.hdr.dev_id.vf = OCTEP_PLUGIN_INVALID_VF_IDX;
+	} else {
+		msg->info.s.is_vf = 1;
+		msg->info.s.vf_idx = vf_idx;
+		notif.hdr.dev_id.vf = vf_idx;
+	}
+	notif.hdr.sz = sizeof(struct octep_cp_msg);
+
+	msg->info.s.sz = sizeof(struct octep_ctrl_net_f2h_req);
+	msg->sg_list[0].sz = sizeof(struct octep_ctrl_net_f2h_req);
+	req.hdr.s.cmd = OCTEP_CTRL_NET_F2H_CMD_LINK_STATUS;
+	req.link.state = eth_link.link_status;
+	msg->sg_list[0].msg = &req;
+	notif.hdr.sz = sizeof(struct octep_cp_msg);
+
+	octep_plugin_client_send_notification(&notif);
+	data_fwd_table[host_port].wire_link_state = eth_link.link_status;
+
+	RTE_LOG(INFO, L2FWD_DATA, "port%d: link %s\n", ext_port,
+		eth_link.link_status ? "up" : "down");
+	return 0;
+}
+
 int l2fwd_data_start(void)
 {
 	int err;
@@ -619,6 +689,11 @@ int l2fwd_data_stop(void)
 	iterate_configured_ports(&stop_configured_port, NULL);
 
 	return 0;
+}
+
+void l2fwd_data_poll(void)
+{
+	for_each_valid_config_fn(&update_link_status, NULL);
 }
 
 int l2fwd_data_start_port(struct rte_pci_addr *dbdf)

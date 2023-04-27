@@ -80,4 +80,12 @@ int l2fwd_data_print_stats(void);
  */
 int l2fwd_data_uninit(void);
 
+/* Run polling functions concerning dataplane
+ *
+ * @param void
+ *
+ * return value: void
+ */
+void l2fwd_data_poll(void);
+
 #endif /* __L2FWD_DATA_H__ */
