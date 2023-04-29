@@ -119,8 +119,13 @@ struct octep_iface_tx_stats {
 #define BIT_ULL(nr) (1ULL << (nr))
 #endif
 
-/* default front data size for offloads */
-#define OCTEP_DEFAULT_FSZ		24
+/* fsz and pkind for offloads */
+#define OCTEP_FSZ_OL_SUPPORTED	 24
+#define OCTEP_PKIND_OL_SUPPORTED 57
+
+/* fsz and pkind for no offloads */
+#define OCTEP_FSZ_OL_UNSUPPORTED   0
+#define OCTEP_PKIND_OL_UNSUPPORTED 0
 
 /* Tx offload flags */
 #define OCTEP_TX_OFFLOAD_VLAN_INSERT	BIT_ULL(0)

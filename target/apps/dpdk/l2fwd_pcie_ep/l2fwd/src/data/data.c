@@ -140,13 +140,11 @@ static void prepare_offload_rx_pkt(void *m, struct octep_tx_mdata **mdata)
 
 	*mdata = rte_pktmbuf_mtod(mbuf, struct octep_tx_mdata *);
 
-	/* host is configured with fsz=OCTEP_DEFAULT_FSZ so we pull
-	 * OCTEP_DEFAULT_FSZ bytes from incoming packet.
-	 */
-	rte_pktmbuf_adj(mbuf, OCTEP_DEFAULT_FSZ);
+	rte_pktmbuf_adj(mbuf, OCTEP_FSZ_OL_SUPPORTED);
 }
 
-static void prepare_offload_tx_pkt(void *m, struct octep_tx_mdata *mdata)
+static void
+prepare_offload_tx_pkt(void *m, struct octep_tx_mdata *mdata)
 {
 	struct rte_mbuf *mbuf = (struct rte_mbuf *)m;
 	struct octep_rx_mdata *rx_mdata;
@@ -500,22 +498,28 @@ static int set_offload_fn(int pem_idx, int pf_idx, int vf_idx, void *ctx)
 
 	fn = l2fwd_config_get_fn(pem_idx, pf_idx, vf_idx);
 	if (!rte_pci_addr_cmp(&fn->to_host_dbdf, &fwd->addr)) {
-		/* we have to pull fsz from packet regardless of offloads */
-		fwd->prepare_rx_pkt = prepare_offload_rx_pkt;
+		fwd->prepare_rx_pkt = prepare_stub_rx_pkt;
 		fwd->prepare_tx_pkt = prepare_stub_tx_pkt;
-		if (fn->offloads) {
-			if (fn->tx_offloads)
-				fwd->prepare_tx_pkt = prepare_offload_tx_pkt;
+		/* if offloads are supported, mdata is always present
+		 * for traffic to/from host
+		 */
+		if (fn->offloads_supported) {
+			/* we have to pull fsz from host tx */
+			fwd->prepare_rx_pkt = prepare_offload_rx_pkt;
+			/* we have to add metadata to host rx */
+			fwd->prepare_tx_pkt = prepare_offload_tx_pkt;
 		}
 		ret = -EIO;
 	} else if (!rte_pci_addr_cmp(&fn->to_wire_dbdf, &fwd->addr)) {
 		fwd->prepare_rx_pkt = prepare_stub_rx_pkt;
 		fwd->prepare_tx_pkt = prepare_stub_tx_pkt;
-		if (fn->offloads) {
-			/* to_wire will set packet flags for hardware offload */
+		if (fn->offloads_supported) {
+			/*
+			 * these offloads will be done based on runtime
+			 * selection by host
+			 */
 			if (fn->rx_offloads)
 				fwd->prepare_rx_pkt = prepare_nic_rx_pkt;
-
 			if (fn->tx_offloads)
 				fwd->prepare_tx_pkt = prepare_nic_tx_pkt;
 		}
@@ -960,10 +964,6 @@ int l2fwd_data_update_offloads(int pem_idx, int pf_idx, int vf_idx)
 	fn_cfg = l2fwd_config_get_fn(pem_idx, pf_idx, vf_idx);
 	if (!fn_cfg)
 		return -EINVAL;
-
-	port = l2fwd_pcie_ep_find_port(&fn_cfg->to_host_dbdf);
-	if (port < RTE_MAX_ETHPORTS)
-		set_offload_fn(pem_idx, pf_idx, vf_idx, &data_fwd_table[port]);
 
 	port = l2fwd_pcie_ep_find_port(&fn_cfg->to_wire_dbdf);
 	if (port < RTE_MAX_ETHPORTS)

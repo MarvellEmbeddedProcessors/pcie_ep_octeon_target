@@ -25,7 +25,6 @@
  * char[] mac = xx:xx:xx:xx:xx:xx
  * bool autoneg, pause_mode, offloads = 0/1
  * long supported_modes, advertised_modes = 0...n
- * int pkind = 0/57/59
  * int offloads
  *
  * if vf[mac] is not specified, it will be derived from pf[mac]
@@ -37,7 +36,7 @@
  * id = { idx, [end_idx] };
  * dbdfs = { [to_host_dbdf], [to_wire_dbdf] };
  * if = { [mac], [mtu], [autoneg], [pause_mode], [speed], [supported_modes], [advertised_modes] };
- * fn_base = { id, [pkind], [dbdfs], [if], [offloads] };
+ * fn_base = { id, [dbdfs], [if], [offloads] };
  * soc = { pem };
  * pem = { id, pf };
  * pf = { fn_base, [hb_interval], [hb_miss_count], [vf] };
@@ -66,8 +65,7 @@
 #define CFG_TOKEN_IF_AMODES			"advertised_modes"
 
 /* fn_base */
-#define CFG_TOKEN_FN_BASE_PKIND			"pkind"
-#define CFG_TOKEN_FN_BASE_OFFLOADS		"offloads"
+#define CFG_TOKEN_FN_BASE_OFFLOADS "offloads"
 
 /* info */
 #define CFG_TOKEN_PF_HB_INTERVAL		"hb_interval"
@@ -93,24 +91,21 @@ static void print_config(void)
 			RTE_LOG(DEBUG, L2FWD_CONFIG,
 				"[%d]:[%d]\n"
 				" hbi: [%u msec] hbmiss: [%u]"
-				" pkind: [%d] offloads: [%d %x %x]\n"
-				" to_host_dbdf: ["PCI_PRI_FMT"]"
-				" to_wire_dbdf: ["PCI_PRI_FMT"]\n"
-				" mac: ["L2FWD_PCIE_EP_ETHER_ADDR_PRT_FMT"]\n"
+				" offloads: [%d %x %x]\n"
+				" to_host_dbdf: [" PCI_PRI_FMT "]"
+				" to_wire_dbdf: [" PCI_PRI_FMT "]\n"
+				" mac: [" L2FWD_PCIE_EP_ETHER_ADDR_PRT_FMT "]\n"
 				" autoneg: [%u] pause: [%u]"
 				" speed: [%u] smodes: [%llx] amodes: [%llx]\n",
-				i, j,
-				pf->hb_interval, pf->hb_miss_count, fn->pkind,
-				fn->offloads, fn->rx_offloads, fn->tx_offloads,
+				i, j, pf->hb_interval, pf->hb_miss_count, fn->offloads_supported,
+				fn->rx_offloads_supported, fn->tx_offloads_supported,
 				fn->to_host_dbdf.domain, fn->to_host_dbdf.bus,
 				fn->to_host_dbdf.devid, fn->to_host_dbdf.function,
 				fn->to_wire_dbdf.domain, fn->to_wire_dbdf.bus,
 				fn->to_wire_dbdf.devid, fn->to_wire_dbdf.function,
-				fn->mac.addr_bytes[0], fn->mac.addr_bytes[1],
-				fn->mac.addr_bytes[2], fn->mac.addr_bytes[3],
-				fn->mac.addr_bytes[4], fn->mac.addr_bytes[5],
-				fn->autoneg, fn->pause_mode, fn->speed,
-				fn->smodes, fn->amodes);
+				fn->mac.addr_bytes[0], fn->mac.addr_bytes[1], fn->mac.addr_bytes[2],
+				fn->mac.addr_bytes[3], fn->mac.addr_bytes[4], fn->mac.addr_bytes[5],
+				fn->autoneg, fn->pause_mode, fn->speed, fn->smodes, fn->amodes);
 
 			for (k = 0; k < L2FWD_MAX_VF; k++) {
 				vf = &pf->vfs[k];
@@ -119,28 +114,22 @@ static void print_config(void)
 
 				RTE_LOG(DEBUG, L2FWD_CONFIG,
 					"[%d]:[%d]:[%d]\n"
-					" pkind: [%d] offloads: [%d %x %x]\n"
-					" to_host_dbdf: ["PCI_PRI_FMT"]"
-					" to_wire_dbdf: ["PCI_PRI_FMT"]\n"
-					" mac: ["L2FWD_PCIE_EP_ETHER_ADDR_PRT_FMT"]\n"
+					" offloads: [%d %x %x]\n"
+					" to_host_dbdf: [" PCI_PRI_FMT "]"
+					" to_wire_dbdf: [" PCI_PRI_FMT "]\n"
+					" mac: [" L2FWD_PCIE_EP_ETHER_ADDR_PRT_FMT "]\n"
 					" autoneg: [%u] pause: [%u]"
 					" speed: [%u] smodes: [%llx]"
 					" amodes: [%llx]\n",
-					i, j, k,
-					vf->pkind, vf->offloads,
-					vf->rx_offloads, vf->tx_offloads,
-					vf->to_host_dbdf.domain,
-					vf->to_host_dbdf.bus,
-					vf->to_host_dbdf.devid,
-					vf->to_host_dbdf.function,
-					vf->to_wire_dbdf.domain,
-					vf->to_wire_dbdf.bus,
-					vf->to_wire_dbdf.devid,
-					vf->to_wire_dbdf.function,
-					vf->mac.addr_bytes[0], vf->mac.addr_bytes[1],
-					vf->mac.addr_bytes[2], vf->mac.addr_bytes[3],
-					vf->mac.addr_bytes[4], vf->mac.addr_bytes[5],
-					vf->autoneg, vf->pause_mode,
+					i, j, k, vf->offloads_supported, vf->rx_offloads_supported,
+					vf->tx_offloads_supported, vf->to_host_dbdf.domain,
+					vf->to_host_dbdf.bus, vf->to_host_dbdf.devid,
+					vf->to_host_dbdf.function, vf->to_wire_dbdf.domain,
+					vf->to_wire_dbdf.bus, vf->to_wire_dbdf.devid,
+					vf->to_wire_dbdf.function, vf->mac.addr_bytes[0],
+					vf->mac.addr_bytes[1], vf->mac.addr_bytes[2],
+					vf->mac.addr_bytes[3], vf->mac.addr_bytes[4],
+					vf->mac.addr_bytes[5], vf->autoneg, vf->pause_mode,
 					vf->speed, vf->smodes, vf->amodes);
 			}
 		}
@@ -162,25 +151,31 @@ static inline int set_default_mac(struct rte_ether_addr *mac, int pem, int pf,
 
 static int parse_fn_base(config_setting_t *lcfg, struct l2fwd_config_fn *fn)
 {
-	int err, ival;
+	int err;
 	const char *c;
 
-	err = config_setting_lookup_int(lcfg, CFG_TOKEN_FN_BASE_PKIND, &ival);
-	if (err == CONFIG_TRUE)
-		fn->pkind = ival;
+	/* offloads are supported by default */
+	fn->offloads_supported = OCTEP_OFFLOADS_SUPPORTED;
 
-	/* offloads are enabled by default */
-	fn->offloads = 1;
-	config_setting_lookup_int(lcfg, CFG_TOKEN_FN_BASE_OFFLOADS,
-				  &fn->offloads);
-	if (fn->offloads) {
-		fn->rx_offloads = OCTEP_RX_OFFLOAD_CKSUM;
-		fn->tx_offloads = OCTEP_TX_OFFLOAD_CKSUM | OCTEP_TX_OFFLOAD_TSO;
+	config_setting_lookup_int(lcfg, CFG_TOKEN_FN_BASE_OFFLOADS, &fn->offloads_supported);
+
+	if (fn->offloads_supported != OCTEP_OFFLOADS_SUPPORTED &&
+	    fn->offloads_supported != OCTEP_OFFLOADS_UNSUPPORTED)
+		fn->offloads_supported = OCTEP_OFFLOADS_SUPPORTED;
+
+	fn->pkind = OCTEP_GET_PKIND(fn->offloads_supported);
+	fn->fsz = OCTEP_GET_FSZ(fn->offloads_supported);
+
+	if (fn->offloads_supported) {
+		/* these can be individually made part of config in future if needed */
+		fn->rx_offloads_supported = OCTEP_RX_OFFLOAD_CKSUM;
+		fn->tx_offloads_supported = OCTEP_TX_OFFLOAD_CKSUM | OCTEP_TX_OFFLOAD_TSO;
+		/* offloads are enabled by default */
+		fn->rx_offloads = fn->rx_offloads_supported;
+		fn->tx_offloads = fn->tx_offloads_supported;
 	}
 
-	err = config_setting_lookup_string(lcfg,
-					   CFG_TOKEN_DBDF_TO_HOST_DBDF,
-					   &c);
+	err = config_setting_lookup_string(lcfg, CFG_TOKEN_DBDF_TO_HOST_DBDF, &c);
 	if (err == CONFIG_TRUE) {
 		err = rte_pci_addr_parse(c, &fn->to_host_dbdf);
 		if (err < 0) {

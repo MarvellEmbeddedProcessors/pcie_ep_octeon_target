@@ -213,7 +213,7 @@ static inline int init_vf(int pem_idx, int pf_idx, int vf_idx,
 		vf->ops = fn_ops[L2FWD_FN_TYPE_NIC];
 	}
 
-	if (vf_cfg->offloads) {
+	if (vf_cfg->offloads_supported) {
 		offloads.rx_offloads = vf_cfg->rx_offloads;
 		offloads.tx_offloads = vf_cfg->tx_offloads;
 	}
@@ -237,7 +237,7 @@ static int init_pf(int pem_idx, int pf_idx, struct control_pf *pf,
 		pf->ops = fn_ops[L2FWD_FN_TYPE_NIC];
 	}
 
-	if (pf_cfg->d.offloads) {
+	if (pf_cfg->d.offloads_supported) {
 		offloads.rx_offloads = pf_cfg->d.rx_offloads;
 		offloads.tx_offloads = pf_cfg->d.tx_offloads;
 	}
@@ -831,32 +831,23 @@ static int process_get_info(union octep_cp_msg_info *info,
 			    struct octep_ctrl_net_h2f_resp *resp,
 			    struct control_fn_ops *ops)
 {
-	struct octep_ctrl_net_offloads offloads;
 	struct l2fwd_config_pf *pf_cfg;
 	struct l2fwd_config_fn *fn_cfg;
-	int vf_idx, err;
+	int vf_idx;
 
 	vf_idx = (info->s.is_vf) ? info->s.vf_idx : -1;
-	err = ops->get_offloads(info->s.pem_idx,
-				 info->s.pf_idx,
-				 vf_idx,
-				 &offloads);
-	if (err < 0) {
-		RTE_LOG(ERR, L2FWD_CTRL,
-			"[%d][%d][%d]: Get offloads failed %d\n",
-			info->s.pem_idx, info->s.pf_idx, vf_idx, err);
-		resp->hdr.s.reply = OCTEP_CTRL_NET_REPLY_GENERIC_FAIL;
-		return 0;
-	}
-	resp->info.fw_info.rx_offloads = offloads.rx_offloads;
-	resp->info.fw_info.tx_offloads = offloads.tx_offloads;
-	resp->info.fw_info.ext_offloads = offloads.ext_offloads;
 
 	pf_cfg = &l2fwd_cfg.pems[info->s.pem_idx].pfs[info->s.pf_idx];
 	fn_cfg = l2fwd_config_get_fn(info->s.pem_idx, info->s.pf_idx, vf_idx);
-
+	/* get info returns supported set of offloads
+	 * not the runtime values
+	 */
+	resp->info.fw_info.rx_offloads = fn_cfg->rx_offloads_supported;
+	resp->info.fw_info.tx_offloads = fn_cfg->tx_offloads_supported;
+	/* no extended offloads yet */
+	resp->info.fw_info.ext_offloads = 0;
 	resp->info.fw_info.pkind = fn_cfg->pkind;
-	resp->info.fw_info.fsz = OCTEP_DEFAULT_FSZ;
+	resp->info.fw_info.fsz = fn_cfg->fsz;
 	if (vf_idx > 0) {
 		resp->info.fw_info.hb_interval = 0;
 		resp->info.fw_info.hb_miss_count = 0;
