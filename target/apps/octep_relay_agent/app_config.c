@@ -126,6 +126,13 @@ static int parse_fn(config_setting_t *lcfg, struct fn_cfg *fn)
 
 	fn->client_id = OCTEP_PLUGIN_INVALID_CLIENT_ID;
 
+	/* If the interface is plugin controlled, no need
+	 * to parse out values which will not be managed
+	 * anyway
+	 */
+	if (fn->plugin_controlled)
+		return 0;
+
 	err = parse_if(lcfg, &fn->iface);
 	if (err)
 		return err;
@@ -399,7 +406,11 @@ int app_config_print_pem(int dom_idx)
 			continue;
 
 		printf("APP: [%d]:[%d]\n", dom_idx, j);
-		print_if(&pf->fn.iface);
+		if (!pf->fn.plugin_controlled)
+			print_if(&pf->fn.iface);
+		else
+			printf("APP: Interface is plugin controlled\n");
+
 		print_info(&pf->fn.info);
 		for (k = 0; k < APP_CFG_VF_PER_PF_MAX; k++) {
 			vf = &pf->vfs[k];
@@ -407,7 +418,11 @@ int app_config_print_pem(int dom_idx)
 				continue;
 
 			printf("APP: [%d]:[%d]:[%d]\n", dom_idx, j, k);
-			print_if(&vf->fn.iface);
+			if (!vf->fn.plugin_controlled)
+				print_if(&vf->fn.iface);
+			else
+				printf("APP: Interface is plugin controlled\n");
+
 			print_info(&vf->fn.info);
 		}
 	}
