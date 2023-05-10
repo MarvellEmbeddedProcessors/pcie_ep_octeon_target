@@ -502,23 +502,23 @@ int cnxk_get_info(struct octep_cp_lib_info *info)
 	struct octep_cp_pf_info *pf_info;
 	struct cnxk_pem *pem;
 	struct cnxk_pf *pf;
-	int i, j;
+	int i, j, info_i, info_j;
 
 	info->ndoms = 0;
-	for (i = 0; i < OCTEP_CP_DOM_MAX; i++) {
+	for (i = 0, info_i = 0; i < OCTEP_CP_DOM_MAX; i++) {
 		pem = &pems[i];
 		if (!pem->valid)
 			continue;
 
-		dom_info = &info->doms[i];
+		dom_info = &info->doms[info_i++];
 		dom_info->idx = i;
 		dom_info->npfs = 0;
-		for (j = 0; j < OCTEP_CP_PF_PER_DOM_MAX; j++) {
+		for (j = 0, info_j = 0; j < OCTEP_CP_PF_PER_DOM_MAX; j++) {
 			pf = &pem->pfs[j];
 			if (!pf->valid)
 				continue;
 
-			pf_info = &dom_info->pfs[j];
+			pf_info = &dom_info->pfs[info_j++];
 			pf_info->idx = j;
 			pf_info->max_msg_sz = pf->mbox.h2fq.sz;
 			pf_info->host_version = (uint32_t)pf->mbox.host_version;
