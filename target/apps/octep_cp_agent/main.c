@@ -253,6 +253,10 @@ int main(int argc, char *argv[])
 
 	timer_create(CLOCK_REALTIME, NULL, &tim);
 
+	printf("APP: cpu yield time (-y) = %lds %ldns\n", cpu_yield_tspec.tv_sec,
+							  cpu_yield_tspec.tv_nsec);
+	printf("APP: max control msgs/events per poll (-m) = %d\n", max_num_msg);
+
 	hb_interval = 0;
 	cp_lib_cfg.min_version = CP_VERSION_CURRENT;
 	cp_lib_cfg.max_version = CP_VERSION_CURRENT;
