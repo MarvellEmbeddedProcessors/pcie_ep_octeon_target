@@ -36,6 +36,9 @@ static inline void *get_in_addr(struct sockaddr *sa)
 	       (void *)(&(((struct sockaddr_in6 *) sa)->sin6_addr));
 }
 
+uint32_t octep_plugin_server_host_version[OCTEP_PLUGIN_MAX_PEM]
+					 [OCTEP_PLUGIN_MAX_PF_PER_PEM] = { 0 };
+
 /*
  * Prepare octep_cp_msg_info context from given octep_plugin_dev_id
  *
@@ -55,6 +58,145 @@ static void plugin_context_prep(union octep_cp_msg_info *ctx, struct octep_plugi
 }
 
 /*
+ * Forward request from host to plugin client app.
+ *
+ * @param: [IN] int sockfd, [IN] struct octep_plugin_msg *msg
+ *
+ * return: (int) 0 on success, -errno on error
+ */
+static int plugin_fwd_to_app(int sockfd, struct octep_plugin_msg *msg)
+{
+	struct octep_cp_msg *cp_msg;
+	int ret, i, total_sz = 0;
+	uint8_t *buf;
+
+	if (msg->hdr.id == OCTEP_PLUGIN_S2C_MSG_HOST_VERSION)
+		goto sock_send;
+
+	cp_msg = (struct octep_cp_msg *) &msg->data;
+
+	buf = &msg->data[msg->hdr.sz];
+	for (i = 0; i < cp_msg->sg_num; i++) {
+		memcpy(buf, cp_msg->sg_list[i].msg, cp_msg->sg_list[i].sz);
+		buf += cp_msg->sg_list[i].sz;
+		total_sz += cp_msg->sg_list[i].sz;
+	}
+
+sock_send:
+	ret = send(sockfd, msg, msg->hdr.sz + sizeof(msg->hdr) + total_sz, 0);
+	if (ret != (msg->hdr.sz + sizeof(msg->hdr) + total_sz)) {
+		printf("PLUGIN_SERVER: Send error: Could only send %d bytes out of %ld total bytes to app\n",
+		       ret, sizeof(*msg));
+		return -EIO;
+	}
+
+	return 0;
+}
+
+/*
+ * Internal api to push host version to client apps.
+ * force_sockfd param decides whether host version should be
+ * pushed to given connection or do default behaviour, which is
+ * update for all client apps with state > INIT, iff new state is
+ * different from existing state.
+ *
+ * @param: [IN] uint16_t pem, [IN] uint16_t pf, [IN] uint32_t host_vers,
+ *	   [IN] int force_sockfd
+ *
+ * return: void
+ */
+static void octep_plugin_relay_force_host_version(uint16_t pem, uint16_t pf, uint32_t host_vers,
+						  int force_sockfd)
+{
+	struct octep_plugin_msg msg = { 0 };
+	int i, sockfd;
+
+	if (octep_plugin_server_host_version[pem][pf] == host_vers && !force_sockfd)
+		return;
+
+	msg.hdr.dev_id.pem = pem;
+	msg.hdr.dev_id.pf = pf;
+	msg.hdr.dev_id.vf = OCTEP_PLUGIN_INVALID_VF_IDX;
+
+	/* When a new plugin client app inits, host version needs to
+	 * be forcefully relayed despite no change in version.
+	 * In that case, just send it to the new connection explicitly.
+	 */
+	if (force_sockfd) {
+		msg.hdr.id = OCTEP_PLUGIN_S2C_MSG_HOST_VERSION;
+		msg.hdr.sz = sizeof(uint32_t);
+		(*(uint32_t *) &msg.data) = host_vers;
+
+		plugin_fwd_to_app(force_sockfd, &msg);
+		return;
+	}
+
+	/* Send host version info to all plugin clients
+	 * with valid state.
+	 */
+	for (i = 0; i < OCTEP_PLUGIN_MAX_CLIENTS; i++) {
+		if (plugin_client[i].state < OCTEP_PLUGIN_CLIENT_STATE_INIT)
+			continue;
+
+		sockfd = plugin_client[i].sockfd;
+		msg.hdr.id = OCTEP_PLUGIN_S2C_MSG_HOST_VERSION;
+		msg.hdr.sz = sizeof(uint32_t);
+		(*(uint32_t *) &msg.data) = host_vers;
+
+		plugin_fwd_to_app(sockfd, &msg);
+	}
+	octep_plugin_server_host_version[pem][pf] = host_vers;
+}
+
+/* Internal api to send valid/invalid response to client
+ *
+ * @param: [IN] int sockfd, [IN/OUT] struct struct octep_plugin_msg *msg,
+ *	   [IN] bool valid
+ *
+ * return: void
+ */
+static void plugin_send_response(int sockfd, struct octep_plugin_msg *msg, bool valid)
+{
+	if (valid)
+		msg->hdr.id = OCTEP_PLUGIN_S2C_MSG_PLUGIN_RESP;
+	else
+		msg->hdr.id = OCTEP_PLUGIN_S2C_MSG_INVALID;
+
+	send(sockfd, msg, msg->hdr.sz + sizeof(msg->hdr), 0);
+}
+
+/* Internal api to loop and send all pem::pf host versions
+ * to a newly inited client app
+ *
+ * @param: int sockfd
+ *
+ * return: void
+ */
+static void plugin_relay_host_version_init(int sockfd)
+{
+	struct octep_plugin_msg msg;
+	int pem, pf;
+
+	for (pem = 0; pem < OCTEP_PLUGIN_MAX_PEM; pem++)
+		for (pf = 0; pf < OCTEP_PLUGIN_MAX_PF_PER_PEM; pf++) {
+			/* For new clients, the data structure will be zeroed
+			 * out anyway on the client side.
+			 */
+			if (octep_plugin_server_host_version[pem][pf] == 0)
+				continue;
+
+			octep_plugin_relay_force_host_version(pem, pf,
+							      octep_plugin_server_host_version[pem]
+											      [pf],
+							      sockfd);
+		}
+
+	/* Send end of message */
+	msg.hdr.sz = sizeof(int);
+	plugin_send_response(sockfd, &msg, true);
+}
+
+/*
  * Handle messages from plugin client apps directed to plugin server
  *
  * @param: [IN] struct plugin_client_app *client, [IN] struct octep_plugin_msg *msg
@@ -70,9 +212,10 @@ static void plugin_handle_client_msg(struct plugin_client_app *client, struct oc
 	case OCTEP_PLUGIN_C2S_MSG_INIT:
 		if ((*(uint32_t *) &msg->data) == OCTEP_PLUGIN_SERVER_VERSION) {
 			client->state = OCTEP_PLUGIN_CLIENT_STATE_INIT;
-			goto valid_response;
+			plugin_send_response(client->sockfd, msg, true);
+			plugin_relay_host_version_init(client->sockfd);
 		} else {
-			goto invalid_response;
+			plugin_send_response(client->sockfd, msg, false);
 		}
 
 		break;
@@ -80,7 +223,8 @@ static void plugin_handle_client_msg(struct plugin_client_app *client, struct oc
 		if (client->state < OCTEP_PLUGIN_CLIENT_STATE_INIT) {
 			printf("PLUGIN_SERVER: Client %d has not initialised yet to register\n",
 			       client->client_id);
-			goto invalid_response;
+			plugin_send_response(client->sockfd, msg, false);
+			break;
 		}
 
 		plugin_context_prep(&ctx, &msg->hdr.dev_id);
@@ -93,10 +237,10 @@ static void plugin_handle_client_msg(struct plugin_client_app *client, struct oc
 			fn->client_id = client->client_id;
 			client->state = OCTEP_PLUGIN_CLIENT_STATE_REGD;
 			client->num_devs++;
-			goto valid_response;
+			plugin_send_response(client->sockfd, msg, true);
 		} else {
 			printf("PLUGIN_SERVER: Invalid interface requested by client\n");
-			goto invalid_response;
+			plugin_send_response(client->sockfd, msg, false);
 		}
 
 		break;
@@ -123,20 +267,9 @@ static void plugin_handle_client_msg(struct plugin_client_app *client, struct oc
 	default:
 		printf("PLUGIN_SERVER: Invalid request to plugin server from client %d\n",
 		       client->client_id);
-		goto invalid_response;
+		plugin_send_response(client->sockfd, msg, false);
+		break;
 	};
-
-	return;
-
-invalid_response:
-	msg->hdr.id = OCTEP_PLUGIN_S2C_MSG_INVALID;
-	goto send_response;
-
-valid_response:
-	msg->hdr.id = OCTEP_PLUGIN_S2C_MSG_PLUGIN_RESP;
-
-send_response:
-	send(client->sockfd, msg, msg->hdr.sz + sizeof(msg->hdr), 0);
 }
 
 /*
@@ -430,38 +563,6 @@ int octep_plugin_ctrl_net_lock(void)
 }
 
 /*
- * Forward request from host to plugin client app.
- *
- * @param: [IN] int sockfd, [IN] struct octep_plugin_msg *msg
- *
- * return: (int) 0 on success, -errno on error
- */
-static int plugin_fwd_to_app(int sockfd, struct octep_plugin_msg *msg)
-{
-	struct octep_cp_msg *cp_msg;
-	int ret, i, total_sz = 0;
-	uint8_t *buf;
-
-	cp_msg = (struct octep_cp_msg *) &msg->data;
-
-	buf = &msg->data[msg->hdr.sz];
-	for (i = 0; i < cp_msg->sg_num; i++) {
-		memcpy(buf, cp_msg->sg_list[i].msg, cp_msg->sg_list[i].sz);
-		buf += cp_msg->sg_list[i].sz;
-		total_sz += cp_msg->sg_list[i].sz;
-	}
-
-	ret = send(sockfd, msg, msg->hdr.sz + sizeof(msg->hdr) + total_sz, 0);
-	if (ret != (msg->hdr.sz + sizeof(msg->hdr) + total_sz)) {
-		printf("PLUGIN_SERVER: Send error: Could only send %d bytes out of %ld total bytes to app\n",
-		       ret, sizeof(*msg));
-		return -EIO;
-	}
-
-	return 0;
-}
-
-/*
  * Host request handler for plugin server. Msg will be forwarded to client
  * if request is to valid plugin controlled interface and valid client.
  *
@@ -519,6 +620,18 @@ void octep_plugin_relay_process_event(struct octep_cp_event_info *event)
 		break;
 	}
 
+}
+
+/*
+ * Send host version of pem::pf to any related connected client.
+ *
+ * @param: uint16_t pem, uint16_t pf, uint32_t host_version
+ *
+ * return: void
+ */
+void octep_plugin_relay_host_version(uint16_t pem, uint16_t pf, uint32_t host_vers)
+{
+	octep_plugin_relay_force_host_version(pem, pf, host_vers, 0);
 }
 
 /*

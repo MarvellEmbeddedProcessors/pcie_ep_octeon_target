@@ -10,7 +10,7 @@ extern struct octep_cp_lib_cfg cp_lib_cfg;
  *
  * return value: 0 on success, -errno on failure.
  */
-int loop_init(void);
+int loop_init(int max_msgs);
 
 /* Initialize loop mode implementation for a pem
  *

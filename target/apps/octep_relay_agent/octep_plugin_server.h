@@ -48,6 +48,9 @@ struct plugin_client_app {
 	int sockfd;
 };
 
+/* Array to store pem::pf host versions */
+extern uint32_t octep_plugin_server_host_version[OCTEP_PLUGIN_MAX_PEM][OCTEP_PLUGIN_MAX_PF_PER_PEM];
+
 /*
  * Initialise server socket and start octep_plugin_server_loop thread
  *
@@ -82,6 +85,15 @@ int octep_plugin_relay_process_msg(struct octep_cp_msg *msg);
  * return: void
  */
 void octep_plugin_relay_process_event(struct octep_cp_event_info *event);
+
+/*
+ * Send host version of pem::pf to any related connected client.
+ *
+ * @param: uint16_t pem, uint16_t pf, uint32_t host_version
+ *
+ * return: void
+ */
+void octep_plugin_relay_host_version(uint16_t pem, uint16_t pf, uint32_t host_vers);
 
 /*
  * Unlock mutex for control net access functions
