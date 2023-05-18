@@ -9,6 +9,8 @@
 #include <string.h>
 #include <sys/time.h>
 #include <time.h>
+#include <getopt.h>
+#include <stdlib.h>
 
 #include "octep_cp_lib.h"
 #include "loop.h"
@@ -24,6 +26,7 @@
 							  CP_VERSION_MINOR, \
 							  CP_VERSION_VARIANT))
 
+#define MAX_NUM_MSG			6
 static volatile int force_quit;
 static volatile int perst[APP_CFG_PEM_MAX] = { 0 };
 static int hb_interval;
@@ -31,28 +34,32 @@ struct octep_cp_lib_cfg cp_lib_cfg = { 0 };
 
 static timer_t tim;
 static struct itimerspec itim = { 0 };
+static struct timespec cpu_yield_tspec = {
+	.tv_sec = 0,
+	.tv_nsec = 1 * 1000000
+};
+static int max_num_msg = MAX_NUM_MSG;
+static struct octep_cp_event_info *ev;
+
 static int app_handle_perst(int dom_idx);
 
 static int process_events(void)
 {
-#define MAX_EVENTS		6
-
-	struct octep_cp_event_info e[MAX_EVENTS];
 	int n, i, err;
 
-	n = octep_cp_lib_recv_event(e, MAX_EVENTS);
+	n = octep_cp_lib_recv_event(ev, max_num_msg);
 	if (n < 0)
 		return n;
 
 	for (i = 0; i < n; i++) {
-		octep_plugin_relay_process_event(&e[i]);
-		if (e[i].e == OCTEP_CP_EVENT_TYPE_PERST) {
+		octep_plugin_relay_process_event(&ev[i]);
+		if (ev[i].e == OCTEP_CP_EVENT_TYPE_PERST) {
 			printf("APP: Event: perst on dom[%d]\n",
-			       e[i].u.perst.dom_idx);
-			err = app_handle_perst(e[i].u.perst.dom_idx);
+			       ev[i].u.perst.dom_idx);
+			err = app_handle_perst(ev[i].u.perst.dom_idx);
 			if (err) {
 				printf("APP: Unable to handle perst event on PEM %d!\n",
-				       e[i].u.perst.dom_idx);
+				       ev[i].u.perst.dom_idx);
 				return err;
 			}
 		}
@@ -110,7 +117,7 @@ static int set_fw_ready_for_pem(int dom_idx, int ready)
 
 	info.e = OCTEP_CP_EVENT_TYPE_FW_READY;
 	info.u.fw_ready.ready = ready;
-	info.u.fw_ready.dom_idx = dom_idx;
+	info.u.fw_ready.dom_idx = cp_lib_cfg.doms[dom_idx].idx;
 	for (j = 0; j < cp_lib_cfg.doms[dom_idx].npfs; j++) {
 		info.u.fw_ready.pf_idx = cp_lib_cfg.doms[dom_idx].pfs[j].idx;
 		octep_cp_lib_send_event(&info);
@@ -159,6 +166,68 @@ static int app_handle_perst(int dom_idx)
 	return 0;
 }
 
+/* display usage */
+static void print_usage(const char *prgname)
+{
+	printf("%s config_file\n"
+	       "  -y <milliseconds>\n"
+	       "    yield cpu for msecs between subsequent calls to msg poll (default: 1ms)\n"
+	       "  -m <1-n>\n"
+	       "    Max control messages and events to be polled at one time (default: 6)\n",
+	       prgname);
+}
+
+static const char short_options[] =
+	"y:"  /* cpu yield */
+	"m:"  /* max msg count */
+	;
+
+static const struct option lgopts[] = {
+	{NULL, 0, 0, 0}
+};
+
+/* Parse the argument given in the command line of the application */
+static int parse_args(int argc, char **argv)
+{
+	int opt, ret, cpu_yield_ms;
+	char **argvopt;
+	int option_index;
+	char *prgname = argv[0];
+
+	argvopt = argv;
+
+	while ((opt = getopt_long(argc, argvopt, short_options,
+				  lgopts, &option_index)) != EOF) {
+		switch (opt) {
+		case 'y':
+			cpu_yield_ms = atoi(optarg);
+			if (cpu_yield_ms <= 0)
+				cpu_yield_ms = 1;
+
+			cpu_yield_tspec.tv_sec = (cpu_yield_ms / 1000);
+			cpu_yield_tspec.tv_nsec = ((cpu_yield_ms % 1000) * 1000000);
+
+			break;
+		case 'm':
+			max_num_msg = atoi(optarg);
+			if (max_num_msg <= 0)
+				max_num_msg = 6;
+
+			break;
+		default:
+			print_usage(prgname);
+			return -1;
+		}
+	}
+
+	if (optind >= 0)
+		argv[optind-1] = prgname;
+
+	ret = optind-1;
+	optind = 1; /* reset getopt lib */
+	return ret;
+}
+
 int main(int argc, char *argv[])
 {
 	int err = 0, src_i, src_j, dst_i, dst_j;
@@ -166,12 +235,18 @@ int main(int argc, char *argv[])
 	struct pf_cfg *pf;
 
 	if (argc < 2) {
-		printf("APP: Provide path to config file.\n");
+		print_usage(argv[0]);
 		return -EINVAL;
 	}
+
 	err = app_config_init(argv[1]);
 	if (err)
 		return err;
+
+	parse_args(argc, argv);
+	ev = calloc(max_num_msg, sizeof(struct octep_cp_event_info));
+	if (!ev)
+		return -ENOMEM;
 
 	signal(SIGINT, sigint_handler);
 	signal(SIGALRM, sigint_handler);
@@ -211,7 +286,7 @@ int main(int argc, char *argv[])
 		return err;
 
 	app_config_update();
-	err = loop_init();
+	err = loop_init(max_num_msg);
 	if (err) {
 		octep_cp_lib_uninit();
 		return err;
@@ -225,6 +300,7 @@ int main(int argc, char *argv[])
 	while (!force_quit) {
 		loop_process_msgs();
 		process_events();
+		nanosleep(&cpu_yield_tspec, NULL);
 	}
 	set_fw_ready(0);
 
