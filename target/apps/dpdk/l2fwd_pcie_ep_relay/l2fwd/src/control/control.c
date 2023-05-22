@@ -23,11 +23,16 @@
 /* Control plane version */
 #define CP_VERSION_MAJOR		1
 #define CP_VERSION_MINOR		0
-#define CP_VERSION_VARIANT		0
+#define CP_VERSION_VARIANT_MIN		0
+#define CP_VERSION_VARIANT_CUR		1
 
-#define CP_VERSION_CURRENT		(OCTEP_CP_VERSION(CP_VERSION_MAJOR, \
+#define CP_VERSION_MIN			(OCTEP_CP_VERSION(CP_VERSION_MAJOR, \
 							  CP_VERSION_MINOR, \
-							  CP_VERSION_VARIANT))
+							  CP_VERSION_VARIANT_MIN))
+
+#define CP_VERSION_MAX			(OCTEP_CP_VERSION(CP_VERSION_MAJOR, \
+							  CP_VERSION_MINOR, \
+							  CP_VERSION_VARIANT_CUR))
 
 /* ctrl-net response sizes */
 #define CTRL_NET_RESP_MTU_SZ		sizeof(struct octep_ctrl_net_h2f_resp_cmd_mtu)
@@ -37,6 +42,7 @@
 #define CTRL_NET_RESP_IF_STATS_SZ	sizeof(struct octep_ctrl_net_h2f_resp_cmd_get_stats)
 #define CTRL_NET_RESP_INFO_SZ		sizeof(struct octep_ctrl_net_h2f_resp_cmd_get_info)
 #define CTRL_NET_RESP_HDR_SZ		sizeof(union octep_ctrl_net_resp_hdr)
+#define CTRL_NET_RESP_OFFLOADS_SZ	sizeof(struct octep_ctrl_net_offloads)
 
 #define ALARM_INTERVAL_MSECS			100
 #define ALARM_INTERVAL_USECS			(ALARM_INTERVAL_MSECS * 1000)
@@ -74,6 +80,8 @@ struct control_pf {
 	struct control_fn_ops *ops;
 	/* vf's */
 	struct control_vf *vfs[L2FWD_MAX_VF];
+	/* host version */
+	uint32_t host_version;
 };
 
 struct control_pem {
@@ -83,7 +91,9 @@ struct control_pem {
 
 /* port map */
 struct port_map {
+	/* to_host_dbdf */
 	struct rte_pci_addr port1;
+	/* to_wire_dbdf */
 	struct rte_pci_addr port2;
 };
 
@@ -114,7 +124,7 @@ static struct l2fwd_control_ops *l2fwd_ops;
 typedef void (*valid_pf_callback_t)(int pem, int pf, void *ctx);
 
 /* template for callback function */
-typedef void (*valid_fn_callback_t)(int pem, int pf, int vf, void *ctx);
+typedef int (*valid_fn_callback_t)(int pem, int pf, int vf, void *ctx);
 
 static void iterate_valid_pfs(valid_pf_callback_t fn, void *ctx)
 {
@@ -131,9 +141,9 @@ static void iterate_valid_pfs(valid_pf_callback_t fn, void *ctx)
 	}
 }
 
-static void iterate_valid_fn(valid_fn_callback_t fn, void *ctx)
+static int iterate_valid_fn(valid_fn_callback_t fn, void *ctx)
 {
-	int i, j, k;
+	int i, j, k, err;
 
 	for (i = 0; i < L2FWD_MAX_PEM; i++) {
 		if (!run_data[i])
@@ -143,15 +153,21 @@ static void iterate_valid_fn(valid_fn_callback_t fn, void *ctx)
 			if (!run_data[i]->pfs[j])
 				continue;
 
-			fn(i, j, -1, ctx);
+			err = fn(i, j, -1, ctx);
+			if (err)
+				return err;
 			for (k = 0; k < L2FWD_MAX_VF; k++) {
 				if (!run_data[i]->pfs[j]->vfs[k])
 					continue;
 
-				fn(i, j, k, ctx);
+				err = fn(i, j, k, ctx);
+				if (err)
+					return err;
 			}
 		}
 	}
+
+	return 0;
 }
 
 static int free_pems(void)
@@ -191,14 +207,22 @@ static int free_pems(void)
 static inline int init_vf(int pem_idx, int pf_idx, int vf_idx,
 			  struct control_vf *vf, struct l2fwd_config_fn *vf_cfg)
 {
+	struct octep_ctrl_net_offloads offloads = { 0 };
+
 	vf->dbdf = vf_cfg->to_host_dbdf;
 	if (!L2FWD_FEATURE(l2fwd_user_cfg.features, L2FWD_FEATURE_CTRL_PLANE) ||
-	    is_zero_dbdf(&vf_cfg->to_wire_dbdf))
+	    is_zero_dbdf(&vf_cfg->to_wire_dbdf)) {
 		vf->ops = fn_ops[L2FWD_FN_TYPE_STUB];
-	else
+	} else {
 		vf->ops = fn_ops[L2FWD_FN_TYPE_NIC];
+	}
 
+	if (vf_cfg->offloads_supported) {
+		offloads.rx_offloads = vf_cfg->rx_offloads;
+		offloads.tx_offloads = vf_cfg->tx_offloads;
+	}
 	vf->ops->set_mac(pem_idx, pf_idx, vf_idx, vf_cfg->mac.addr_bytes);
+	vf->ops->set_offloads(pem_idx, pf_idx, vf_idx, &offloads);
 
 	return 0;
 }
@@ -206,21 +230,29 @@ static inline int init_vf(int pem_idx, int pf_idx, int vf_idx,
 static int init_pf(int pem_idx, int pf_idx, struct control_pf *pf,
 		   struct l2fwd_config_pf *pf_cfg)
 {
+	struct octep_ctrl_net_offloads offloads = { 0 };
 	struct octep_cp_event_info_heartbeat *hbeat;
 
 	pf->dbdf = pf_cfg->d.to_host_dbdf;
 	if (!L2FWD_FEATURE(l2fwd_user_cfg.features, L2FWD_FEATURE_CTRL_PLANE) ||
-	    is_zero_dbdf(&pf_cfg->d.to_wire_dbdf))
+	    is_zero_dbdf(&pf_cfg->d.to_wire_dbdf)) {
 		pf->ops = fn_ops[L2FWD_FN_TYPE_STUB];
-	else
+	} else {
 		pf->ops = fn_ops[L2FWD_FN_TYPE_NIC];
+	}
 
+	if (pf_cfg->d.offloads_supported) {
+		offloads.rx_offloads = pf_cfg->d.rx_offloads;
+		offloads.tx_offloads = pf_cfg->d.tx_offloads;
+	}
 	pf->ops->set_mac(pem_idx, pf_idx, -1, pf_cfg->d.mac.addr_bytes);
+	pf->ops->set_offloads(pem_idx, pf_idx, -1, &offloads);
 
 	pf->ctx.s.pem_idx = pem_idx;
 	pf->ctx.s.pf_idx = pf_idx;
 	pf->msecs_to_next_hbeat = pf_cfg->hb_interval;
 	pf->hbeat.e = OCTEP_CP_EVENT_TYPE_HEARTBEAT;
+	pf->host_version = 0;
 
 	hbeat = &pf->hbeat.u.hbeat;
 	hbeat->dom_idx = pem_idx;
@@ -321,8 +353,8 @@ static int init_octep_cp_lib(void)
 			cp_lib_cfg.ndoms++;
 		}
 	}
-	cp_lib_cfg.min_version = CP_VERSION_CURRENT;
-	cp_lib_cfg.max_version = CP_VERSION_CURRENT;
+	cp_lib_cfg.min_version = CP_VERSION_MIN;
+	cp_lib_cfg.max_version = CP_VERSION_MAX;
 	err =  octep_cp_lib_init(&cp_lib_cfg);
 	if (err < 0)
 		return err;
@@ -654,7 +686,7 @@ static int process_mac(union octep_cp_msg_info *info,
 			return 0;
 		}
 
-		RTE_LOG(INFO, L2FWD_CTRL,
+		RTE_LOG(DEBUG, L2FWD_CTRL,
 			"[%d][%d][%d]: Get mac "L2FWD_PCIE_EP_ETHER_ADDR_PRT_FMT"\n",
 			info->s.pem_idx, info->s.pf_idx, vf_idx,
 			resp->mac.addr[0], resp->mac.addr[1],
@@ -675,7 +707,7 @@ static int process_mac(union octep_cp_msg_info *info,
 		resp->hdr.s.reply = OCTEP_CTRL_NET_REPLY_GENERIC_FAIL;
 		return 0;
 	}
-	RTE_LOG(INFO, L2FWD_CTRL,
+	RTE_LOG(DEBUG, L2FWD_CTRL,
 		"[%d][%d][%d]: Set mac "L2FWD_PCIE_EP_ETHER_ADDR_PRT_FMT"\n",
 		info->s.pem_idx, info->s.pf_idx, vf_idx,
 		req->mac.addr[0], req->mac.addr[1], req->mac.addr[2],
@@ -863,10 +895,18 @@ static int process_get_info(union octep_cp_msg_info *info,
 	int vf_idx;
 
 	vf_idx = (info->s.is_vf) ? info->s.vf_idx : -1;
-	pf_cfg = &l2fwd_cfg.pems[info->s.pem_idx].pfs[info->s.pf_idx];
-	fn_cfg = (vf_idx > 0) ? &pf_cfg->vfs[vf_idx] : &pf_cfg->d;
 
+	pf_cfg = &l2fwd_cfg.pems[info->s.pem_idx].pfs[info->s.pf_idx];
+	fn_cfg = l2fwd_config_get_fn(info->s.pem_idx, info->s.pf_idx, vf_idx);
+	/* get info returns supported set of offloads
+	 * not the runtime values
+	 */
+	resp->info.fw_info.rx_offloads = fn_cfg->rx_offloads_supported;
+	resp->info.fw_info.tx_offloads = fn_cfg->tx_offloads_supported;
+	/* no extended offloads yet */
+	resp->info.fw_info.ext_offloads = 0;
 	resp->info.fw_info.pkind = fn_cfg->pkind;
+	resp->info.fw_info.fsz = fn_cfg->fsz;
 	if (vf_idx > 0) {
 		resp->info.fw_info.hb_interval = 0;
 		resp->info.fw_info.hb_miss_count = 0;
@@ -877,36 +917,120 @@ static int process_get_info(union octep_cp_msg_info *info,
 
 	resp->hdr.s.reply = OCTEP_CTRL_NET_REPLY_OK;
 	RTE_LOG(DEBUG, L2FWD_CTRL,
-		"[%d][%d][%d]: Get info pkind:%x hbi:%u hbmiss:%u\n",
+		"[%d][%d][%d]: Get info pkind:%x fsz: %d rx_offloads:%x"
+		" tx_offloads:%x ext_offloads:%lx hbi:%u hbmiss:%u\n",
 		info->s.pem_idx, info->s.pf_idx, vf_idx,
 		resp->info.fw_info.pkind,
+		resp->info.fw_info.fsz,
+		resp->info.fw_info.rx_offloads,
+		resp->info.fw_info.tx_offloads,
+		resp->info.fw_info.ext_offloads,
 		resp->info.fw_info.hb_interval,
 		resp->info.fw_info.hb_miss_count);
 
 	return CTRL_NET_RESP_INFO_SZ;
 }
 
-static int process_msg(union octep_cp_msg_info *ctx, struct octep_cp_msg *msg)
+static int process_offloads(union octep_cp_msg_info *info,
+			    struct octep_ctrl_net_h2f_req *req,
+			    struct octep_ctrl_net_h2f_resp *resp,
+			    struct control_fn_ops *ops)
+{
+	struct octep_ctrl_net_offloads offloads;
+	struct l2fwd_config_fn *fn_cfg;
+	int vf_idx, err;
+
+	vf_idx = (info->s.is_vf) ? info->s.vf_idx : -1;
+	if (req->offloads.cmd == OCTEP_CTRL_NET_CMD_GET) {
+		err = ops->get_offloads(info->s.pem_idx,
+					 info->s.pf_idx,
+					 vf_idx,
+					 &offloads);
+		if (err < 0) {
+			RTE_LOG(ERR, L2FWD_CTRL,
+				"[%d][%d][%d]: Get offloads failed %d\n",
+				info->s.pem_idx, info->s.pf_idx, vf_idx, err);
+			resp->hdr.s.reply = OCTEP_CTRL_NET_REPLY_GENERIC_FAIL;
+			return 0;
+		}
+		resp->offloads = offloads;
+		RTE_LOG(DEBUG, L2FWD_CTRL,
+			"[%d][%d][%d]: Get offloads "
+			"rx:0x%x tx:0x%x ext:0x%lx\n",
+			info->s.pem_idx, info->s.pf_idx, vf_idx,
+			resp->offloads.rx_offloads,
+			resp->offloads.tx_offloads,
+			resp->offloads.ext_offloads);
+		resp->hdr.s.reply = OCTEP_CTRL_NET_REPLY_OK;
+		return CTRL_NET_RESP_OFFLOADS_SZ;
+	}
+
+	offloads = req->offloads.offloads;
+	err = ops->set_offloads(info->s.pem_idx,
+				info->s.pf_idx,
+				vf_idx,
+				&offloads);
+	if (err < 0) {
+		RTE_LOG(ERR, L2FWD_CTRL,
+			"[%d][%d][%d]: Set offloads failed %d\n",
+			info->s.pem_idx, info->s.pf_idx, vf_idx, err);
+		resp->hdr.s.reply = OCTEP_CTRL_NET_REPLY_GENERIC_FAIL;
+		return 0;
+	}
+	RTE_LOG(DEBUG, L2FWD_CTRL,
+		"[%d][%d][%d]: Set offloads "
+		"rx:0x%x tx:0x%x ext:0x%lx\n",
+		info->s.pem_idx, info->s.pf_idx, vf_idx,
+		offloads.rx_offloads,
+		offloads.tx_offloads,
+		offloads.ext_offloads);
+	resp->hdr.s.reply = OCTEP_CTRL_NET_REPLY_OK;
+	fn_cfg = l2fwd_config_get_fn(info->s.pem_idx, info->s.pf_idx, vf_idx);
+	fn_cfg->rx_offloads = offloads.rx_offloads;
+	fn_cfg->tx_offloads = offloads.tx_offloads;
+	l2fwd_ops->on_offloads_update(info->s.pem_idx, info->s.pf_idx, vf_idx);
+
+	return 0;
+}
+
+static int process_msg(union octep_cp_msg_info *ctx, struct octep_cp_msg *msg,
+		       uint32_t host_version)
 {
 	union octep_cp_msg_info *info = &msg->info;
 	struct octep_ctrl_net_h2f_resp resp;
 	struct octep_ctrl_net_h2f_req *req;
 	struct control_fn_ops *ops;
-	int resp_sz = 0;
+	int resp_sz = 0, pem_idx, pf_idx;
 
 	/* Copy correct header in response */
 	req = (struct octep_ctrl_net_h2f_req *)msg->sg_list[0].msg;
 	resp.hdr.words[0] = req->hdr.words[0];
+	pem_idx = info->s.pem_idx;
+	pf_idx = info->s.pf_idx;
 	ops = get_fn_ops(info);
 	if (!ops) {
 		RTE_LOG(DEBUG, L2FWD_CTRL,
 			"[%d][%d][%d]: Request for invalid interface\n",
-			info->s.pem_idx, info->s.pf_idx,
+			pem_idx, pf_idx,
 			(info->s.is_vf) ? info->s.vf_idx : -1);
 		resp.hdr.s.reply = OCTEP_CTRL_NET_REPLY_INVALID_PARAM;
 		octep_plugin_client_send_resp(ctx, info, &resp, 0);
 		return 0;
 	}
+
+	if (host_version < run_data[pem_idx]->pfs[pf_idx]->host_version) {
+		RTE_LOG(ERR, L2FWD_CTRL,
+			"[%d][%d][%d]: Out of range cmd : %u host version %u"
+			" cmd version %u\n",
+			pem_idx, pf_idx,
+			(info->s.is_vf) ? info->s.vf_idx : -1,
+			req->hdr.s.cmd, host_version,
+			run_data[pem_idx]->pfs[pf_idx]->host_version);
+		resp.hdr.s.reply = OCTEP_CTRL_NET_REPLY_UNSUPPORTED;
+		octep_plugin_client_send_resp(ctx, info, &resp, 0);
+		return 0;
+	}
+
 	switch (req->hdr.s.cmd) {
 	case OCTEP_CTRL_NET_H2F_CMD_MTU:
 		resp_sz += process_mtu(info, req, &resp, ops);
@@ -929,10 +1053,13 @@ static int process_msg(union octep_cp_msg_info *ctx, struct octep_cp_msg *msg)
 	case OCTEP_CTRL_NET_H2F_CMD_GET_INFO:
 		resp_sz += process_get_info(info, req, &resp, ops);
 		break;
+	case OCTEP_CTRL_NET_H2F_CMD_OFFLOADS:
+		resp_sz += process_offloads(info, req, &resp, ops);
+		break;
 	default:
 		RTE_LOG(ERR, L2FWD_CTRL,
 			"[%d][%d][%d]: Unhandled Cmd : %u\n",
-			info->s.pem_idx, info->s.pf_idx,
+			pem_idx, pf_idx,
 			(info->s.is_vf) ? info->s.vf_idx : -1,
 			req->hdr.s.cmd);
 		resp.hdr.s.reply = OCTEP_CTRL_NET_REPLY_INVALID_PARAM;
@@ -976,9 +1103,30 @@ static int ctrl_client_recv_msg(union octep_cp_msg_info *ctx,
 	return num;
 }
 
+static uint32_t get_host_version(int pem_idx, int pf_idx)
+{
+	return octep_plugin_client_host_version[pem_idx][pf_idx];
+}
+
+static int process_invalid_host_version(union octep_cp_msg_info *ctx,
+					struct octep_cp_msg *msg)
+{
+	struct octep_ctrl_net_h2f_resp resp = { 0 };
+	struct octep_ctrl_net_h2f_req *req;
+
+	req = (struct octep_ctrl_net_h2f_req *)msg->sg_list[0].msg;
+	resp.hdr.words[0] = req->hdr.words[0];
+	resp.hdr.s.reply = OCTEP_CTRL_NET_REPLY_UNSUPPORTED;
+
+	octep_plugin_client_send_resp(ctx, &msg->info, &resp, 0);
+
+	return 0;
+}
+
 static void valid_pf_process_msg(int pem, int pf, void *ctx)
 {
 	union octep_cp_msg_info *msg_ctx;
+	uint32_t host_version;
 	int ret, m;
 
 	if (c_state != CONTROL_STATE_READY)
@@ -989,8 +1137,14 @@ static void valid_pf_process_msg(int pem, int pf, void *ctx)
 	if (ret < 0)
 		return;
 
+	host_version = get_host_version(pem, pf);
 	for (m = 0; m < ret; m++) {
-		process_msg(msg_ctx, &rx_msg[m]);
+		if (host_version < cp_lib_cfg.min_version ||
+		    host_version > cp_lib_cfg.max_version)
+			process_invalid_host_version(msg_ctx, &rx_msg[m]);
+		else
+			process_msg(msg_ctx, &rx_msg[m], host_version);
+
 		/* library will overwrite msg size in header so reset it */
 		rx_msg[ret].info.s.sz = max_msg_sz;
 	}
@@ -1025,16 +1179,18 @@ int l2fwd_control_poll(void)
 	return 0;
 }
 
-static void clear_valid_fn_mapping(int pem, int pf, int vf, void *ctx)
+static int clear_valid_fn_mapping(int pem, int pf, int vf, void *ctx)
 {
 	if (vf < 0) {
 		run_data[pem]->pfs[pf]->ops->set_port(pem, pf, vf, &zero_dbdf);
 		run_data[pem]->pfs[pf]->ops = fn_ops[L2FWD_FN_TYPE_STUB];
-		return;
+		return 0;
 	}
 
 	run_data[pem]->pfs[pf]->vfs[vf]->ops->set_port(pem, pf, vf, &zero_dbdf);
 	run_data[pem]->pfs[pf]->vfs[vf]->ops = fn_ops[L2FWD_FN_TYPE_STUB];
+
+	return 0;
 }
 
 int l2fwd_control_clear_port_mapping(void)
@@ -1044,10 +1200,25 @@ int l2fwd_control_clear_port_mapping(void)
 	return 0;
 }
 
-static int switch_ops(int pem, int pf, int vf, struct port_map *pm,
-		      struct control_fn_ops **ops)
+static int set_valid_fn_mapping(int pem, int pf, int vf, void *ctx)
 {
+	struct port_map *pm = (struct port_map *)ctx;
+	struct control_fn_ops **ops;
 	uint8_t mac[ETH_ALEN];
+
+	if (vf < 0) {
+		if (rte_pci_addr_cmp(&run_data[pem]->pfs[pf]->dbdf,
+				     &pm->port1))
+			return 0;
+
+		ops = &run_data[pem]->pfs[pf]->ops;
+	} else {
+		if (rte_pci_addr_cmp(&run_data[pem]->pfs[pf]->vfs[vf]->dbdf,
+				     &pm->port1))
+			return 0;
+
+		ops = &run_data[pem]->pfs[pf]->vfs[vf]->ops;
+	}
 
 	(*ops)->get_mac(pem, pf, vf, mac);
 	clear_valid_fn_mapping(pem, pf, vf, NULL);
@@ -1059,28 +1230,7 @@ static int switch_ops(int pem, int pf, int vf, struct port_map *pm,
 	(*ops)->set_port(pem, pf, vf, &pm->port2);
 	(*ops)->set_mac(pem, pf, vf, mac);
 
-	return 0;
-}
-
-static void set_valid_fn_mapping(int pem, int pf, int vf, void *ctx)
-{
-	struct port_map *pm = (struct port_map *)ctx;
-	struct control_pf *cpf;
-	struct control_vf *cvf;
-
-	if (vf < 0) {
-		cpf = run_data[pem]->pfs[pf];
-		if (rte_pci_addr_cmp(&cpf->dbdf, &pm->port1))
-			return;
-
-		switch_ops(pem, pf, vf, pm, &cpf->ops);
-	} else {
-		cvf = run_data[pem]->pfs[pf]->vfs[vf];
-		if (rte_pci_addr_cmp(&cvf->dbdf, &pm->port1))
-			return;
-
-		switch_ops(pem, pf, vf, pm, &cvf->ops);
-	}
+	return -EIO;
 }
 
 int l2fwd_control_set_port_mapping(const struct rte_pci_addr *port1,
@@ -1090,10 +1240,26 @@ int l2fwd_control_set_port_mapping(const struct rte_pci_addr *port1,
 		.port1 = *port1,
 		.port2 = *port2
 	};
+	int err;
 
-	iterate_valid_fn(clear_valid_fn_mapping, &pm);
+	err = iterate_valid_fn(set_valid_fn_mapping, &pm);
+	if (err)
+		return 0;
 
-	return 0;
+	return -ENODEV;
+}
+
+int l2fwd_control_init_fn(int pem, int pf, int vf)
+{
+	if (vf < 0) {
+		if (!l2fwd_cfg.pems[pem].pfs[pf].d.is_valid)
+			return -EINVAL;
+	} else {
+		if (!l2fwd_cfg.pems[pem].pfs[pf].vfs[vf].is_valid)
+			return -EINVAL;
+	}
+
+	return init_valid_cfg(pem, pf, vf, NULL);
 }
 
 int l2fwd_control_uninit(void)

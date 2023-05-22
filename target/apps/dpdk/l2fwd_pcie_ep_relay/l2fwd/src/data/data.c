@@ -7,6 +7,7 @@
 #include "l2fwd_main.h"
 #include "l2fwd_data.h"
 #include "l2fwd_config.h"
+#include "octep_hw.h"
 #include "data.h"
 #include "poll_mode.h"
 #include "octep_ctrl_net.h"
@@ -67,10 +68,7 @@ static struct rte_eth_conf default_port_conf = {
 #endif
 		.offloads = (L2FWD_PCIE_EP_ETH_RX_OFFLOAD_TCP_CKSUM |
 			     L2FWD_PCIE_EP_ETH_RX_OFFLOAD_IPV4_CKSUM |
-			     L2FWD_PCIE_EP_ETH_RX_OFFLOAD_UDP_CKSUM),
-			     /* |
-			      * L2FWD_PCIE_EP_ETH_RX_OFFLOAD_JUMBO_FRAME),
-			      */
+			     L2FWD_PCIE_EP_ETH_RX_OFFLOAD_UDP_CKSUM)
 	},
 	.rx_adv_conf = {
 		.rss_conf = {
@@ -84,9 +82,41 @@ static struct rte_eth_conf default_port_conf = {
 		.mq_mode = L2FWD_PCIE_EP_ETH_MQ_TX_NONE,
 		.offloads = (L2FWD_PCIE_EP_ETH_TX_OFFLOAD_TCP_CKSUM |
 			     L2FWD_PCIE_EP_ETH_TX_OFFLOAD_IPV4_CKSUM |
-			     L2FWD_PCIE_EP_ETH_TX_OFFLOAD_UDP_CKSUM),
+			     L2FWD_PCIE_EP_ETH_TX_OFFLOAD_UDP_CKSUM |
+			     L2FWD_PCIE_EP_ETH_TX_OFFLOAD_TCP_TSO),
 	}
 };
+
+/* lookup array for l2 header length */
+static const int l2_lens_arr[L2FWD_PCIE_EP_MAX_L2_TYPES] = {
+	[L2FWD_PCIE_EP_PTYPE_UNKNOWN_IDX] = L2FWD_PCIE_EP_ETH_HDR_LEN,
+	[L2FWD_PCIE_EP_PTYPE_L2_ETH_IDX] = L2FWD_PCIE_EP_ETH_HDR_LEN,
+	[L2FWD_PCIE_EP_PTYPE_L2_ETH_VLAN_IDX] = L2FWD_PCIE_EP_ETH_VLAN_HDR_LEN
+};
+
+/* lookup array for l3 header length */
+static const int l3_lens_arr[L2FWD_PCIE_EP_MAX_L3_TYPES] = {
+	[L2FWD_PCIE_EP_PTYPE_L3_IPV4_IDX] = L2FWD_PCIE_EP_IPV4_HDR_LEN,
+	[L2FWD_PCIE_EP_PTYPE_L3_IPV6_IDX] = L2FWD_PCIE_EP_IPV6_HDR_LEN
+};
+
+/* lookup array for l3 offload flags */
+static const uint64_t l3_ol_flags[L2FWD_PCIE_EP_MAX_L3_TYPES] = {
+	[L2FWD_PCIE_EP_PTYPE_L3_IPV4_IDX] = (L2FWD_PCIE_EP_TX_IPV4 |
+					 L2FWD_PCIE_EP_TX_IP_CKSUM),
+	[L2FWD_PCIE_EP_PTYPE_L3_IPV6_IDX] = L2FWD_PCIE_EP_TX_IPV6
+};
+
+/* lookup array for l4 offload flags */
+static const uint64_t l4_ol_flags[L2FWD_PCIE_EP_MAX_L4_TYPES] = {
+	[L2FWD_PCIE_EP_PTYPE_L4_TCP_IDX] = L2FWD_PCIE_EP_TX_TCP_CKSUM,
+	[L2FWD_PCIE_EP_PTYPE_L4_UDP_IDX] = L2FWD_PCIE_EP_TX_UDP_CKSUM
+};
+
+/* packet type mask to parse packet header */
+static uint32_t ptype_mask = (L2FWD_PCIE_EP_PTYPE_L2_MASK |
+			      L2FWD_PCIE_EP_PTYPE_L3_MASK |
+			      L2FWD_PCIE_EP_PTYPE_L4_MASK);
 
 /* template for callback function */
 typedef int (*configured_port_callback_t)(unsigned int port, void *ctx);
@@ -105,6 +135,92 @@ static int iterate_configured_ports(configured_port_callback_t fn, void *ctx)
 	}
 
 	return 0;
+}
+
+static void prepare_offload_rx_pkt(void *m, struct octep_tx_mdata **mdata)
+{
+	struct rte_mbuf *mbuf = (struct rte_mbuf *)m;
+
+	*mdata = rte_pktmbuf_mtod(mbuf, struct octep_tx_mdata *);
+
+	rte_pktmbuf_adj(mbuf, OCTEP_FSZ_OL_SUPPORTED);
+}
+
+static void
+prepare_offload_tx_pkt(void *m, struct octep_tx_mdata *mdata)
+{
+	struct rte_mbuf *mbuf = (struct rte_mbuf *)m;
+	struct octep_rx_mdata *rx_mdata;
+
+	/* host will pull sizeof(struct octep_rx_mdata) based on
+	 * offload flags in fw_info, size of struct octep_rx_mdata
+	 * has to match on both ends
+	 * fsz is only for host to target direction
+	 */
+	rx_mdata = (struct octep_rx_mdata *)
+			rte_pktmbuf_prepend(mbuf, sizeof(struct octep_rx_mdata));
+
+	if (mbuf->ol_flags & L2FWD_PCIE_EP_RX_IP_CKSUM_GOOD)
+		rx_mdata->rx_ol_flags |= OCTEP_RX_CSUM_IP_VERIFIED;
+	if (mbuf->ol_flags & L2FWD_PCIE_EP_RX_L4_CKSUM_GOOD)
+		rx_mdata->rx_ol_flags |= OCTEP_RX_CSUM_L4_VERIFIED;
+}
+
+static void prepare_nic_rx_pkt(void *m, struct octep_tx_mdata **mdata)
+{
+	*mdata = NULL;
+}
+
+static void prepare_nic_tx_pkt(void *m, struct octep_tx_mdata *mdata)
+{
+	struct rte_mbuf *mbuf = (struct rte_mbuf *)m;
+	uint32_t ptype = mbuf->packet_type;
+	struct rte_net_hdr_lens hdr_lens;
+	int l2_idx, l3_idx, l4_idx, tso = 0;
+
+	l2_idx = (ptype & L2FWD_PCIE_EP_PTYPE_L2_MASK) >> L2FWD_PCIE_EP_L2_PTYPE_SHIFT;
+	l3_idx = (ptype & L2FWD_PCIE_EP_PTYPE_L3_MASK) >> L2FWD_PCIE_EP_L3_PTYPE_SHIFT;
+	l4_idx = (ptype & L2FWD_PCIE_EP_PTYPE_L4_MASK) >> L2FWD_PCIE_EP_L4_PTYPE_SHIFT;
+
+	mbuf->l2_len = l2_lens_arr[l2_idx];
+	mbuf->l3_len = l3_lens_arr[l3_idx];
+	mbuf->ol_flags |= (l3_ol_flags[l3_idx] | l4_ol_flags[l4_idx]);
+
+	if (mdata && mdata->gso_size)
+		tso = 1;
+	if (unlikely(!mbuf->l3_len || tso)) {
+		ptype = rte_net_get_ptype(mbuf, &hdr_lens, ptype_mask);
+		mbuf->l2_len = hdr_lens.l2_len;
+		mbuf->l3_len = hdr_lens.l3_len;
+		mbuf->l4_len = hdr_lens.l4_len;
+		if ((ptype & L2FWD_PCIE_EP_PTYPE_L3_MASK) ==
+		    L2FWD_PCIE_EP_PTYPE_L3_IPV4)
+			mbuf->ol_flags |= (L2FWD_PCIE_EP_TX_IPV4 |
+					   L2FWD_PCIE_EP_TX_IP_CKSUM);
+		else if ((ptype & L2FWD_PCIE_EP_PTYPE_L3_MASK) ==
+			   L2FWD_PCIE_EP_PTYPE_L3_IPV6)
+			mbuf->ol_flags |= L2FWD_PCIE_EP_TX_IPV6;
+
+		if ((ptype & L2FWD_PCIE_EP_PTYPE_L4_MASK) ==
+		    L2FWD_PCIE_EP_PTYPE_L4_TCP) {
+			mbuf->ol_flags |= L2FWD_PCIE_EP_TX_TCP_CKSUM;
+			if (tso) {
+				mbuf->ol_flags |= L2FWD_PCIE_EP_TX_TCP_SEG;
+				mbuf->tso_segsz = mdata->gso_size;
+			}
+		} else if ((ptype & L2FWD_PCIE_EP_PTYPE_L4_MASK) ==
+			 L2FWD_PCIE_EP_PTYPE_L4_UDP)
+			mbuf->ol_flags |= L2FWD_PCIE_EP_TX_UDP_CKSUM;
+	}
+}
+
+static void prepare_stub_rx_pkt(void *m, struct octep_tx_mdata **mdata)
+{
+	*mdata = NULL;
+}
+
+static void prepare_stub_tx_pkt(void *m, struct octep_tx_mdata *mdata)
+{
 }
 
 static void drop_pkt(uint16_t port, void *m, uint16_t queue)
@@ -293,8 +409,6 @@ tx_buffer_alloc_fail:
 
 static void set_ptypes(uint16_t portid)
 {
-	uint32_t ptype_mask = (RTE_PTYPE_L2_MASK | RTE_PTYPE_L3_MASK |
-			       RTE_PTYPE_L4_MASK);
 	int ret;
 
 	ret = rte_eth_dev_get_supported_ptypes(portid, RTE_PTYPE_ALL_MASK,
@@ -375,25 +489,68 @@ static void clear_fwd_entry(struct data_port_fwd_info *fwd)
 	memset(fwd, 0, sizeof(struct data_port_fwd_info));
 	fwd->dst = RTE_MAX_ETHPORTS;
 	fwd->fn_ops = fn_ops[L2FWD_FN_TYPE_STUB];
+	fwd->prepare_rx_pkt = prepare_stub_rx_pkt;
+	fwd->prepare_tx_pkt = prepare_stub_tx_pkt;
 }
 
-static int connect_ports(unsigned int port, unsigned int dst_port)
+static int set_offload_fn(int pem_idx, int pf_idx, int vf_idx, void *ctx)
+{
+	struct data_port_fwd_info *fwd = (struct data_port_fwd_info *)ctx;
+	struct l2fwd_config_fn *fn;
+	int ret = 0;
+
+	fn = l2fwd_config_get_fn(pem_idx, pf_idx, vf_idx);
+	if (!rte_pci_addr_cmp(&fn->to_host_dbdf, &fwd->addr)) {
+		fwd->prepare_rx_pkt = prepare_stub_rx_pkt;
+		fwd->prepare_tx_pkt = prepare_stub_tx_pkt;
+		/* if offloads are supported, mdata is always present
+		 * for traffic to/from host
+		 */
+		if (fn->offloads_supported) {
+			/* we have to pull fsz from host tx */
+			fwd->prepare_rx_pkt = prepare_offload_rx_pkt;
+			/* we have to add metadata to host rx */
+			fwd->prepare_tx_pkt = prepare_offload_tx_pkt;
+		}
+		ret = -EIO;
+	} else if (!rte_pci_addr_cmp(&fn->to_wire_dbdf, &fwd->addr)) {
+		fwd->prepare_rx_pkt = prepare_stub_rx_pkt;
+		fwd->prepare_tx_pkt = prepare_stub_tx_pkt;
+		if (fn->offloads_supported) {
+			/*
+			 * these offloads will be done based on runtime
+			 * selection by host
+			 */
+			if (fn->rx_offloads)
+				fwd->prepare_rx_pkt = prepare_nic_rx_pkt;
+			if (fn->tx_offloads)
+				fwd->prepare_tx_pkt = prepare_nic_tx_pkt;
+		}
+		ret = -EIO;
+	}
+
+	return ret;
+}
+
+static int connect_ports(unsigned int port1, struct rte_pci_addr *port1_addr,
+			 unsigned int port2, struct rte_pci_addr *port2_addr)
 {
 	struct data_port_fwd_info *fwd = NULL;
 	int err;
 
-	if (port < RTE_MAX_ETHPORTS) {
-		err = configure_port(port);
+	if (port1 < RTE_MAX_ETHPORTS) {
+		err = configure_port(port1);
 		if (err < 0)
 			return err;
 
-		fwd = &data_fwd_table[port];
-		fwd->offload = false;
+		fwd = &data_fwd_table[port1];
+		fwd->addr = *port1_addr;
 		fwd->fn_ops = fn_ops[L2FWD_FN_TYPE_NIC];
-		fwd->dst = dst_port;
+		fwd->dst = port2;
+		for_each_valid_config_fn(&set_offload_fn, fwd);
 	}
-	if (dst_port < RTE_MAX_ETHPORTS) {
-		err = configure_port(dst_port);
+	if (port2 < RTE_MAX_ETHPORTS) {
+		err = configure_port(port2);
 		if (err < 0) {
 			if (fwd)
 				clear_fwd_entry(fwd);
@@ -401,10 +558,11 @@ static int connect_ports(unsigned int port, unsigned int dst_port)
 			return err;
 		}
 
-		fwd = &data_fwd_table[dst_port];
-		fwd->offload = false;
+		fwd = &data_fwd_table[port2];
+		fwd->addr = *port2_addr;
 		fwd->fn_ops = fn_ops[L2FWD_FN_TYPE_NIC];
-		fwd->dst = port;
+		fwd->dst = port1;
+		for_each_valid_config_fn(&set_offload_fn, fwd);
 	}
 
 	return 0;
@@ -469,7 +627,8 @@ static int init_valid_cfg(int pem_idx, int pf_idx, int vf_idx, void *ctx)
 			return err;
 	}
 
-	err = connect_ports(src_port, dst_port);
+	err = connect_ports(src_port, &fn->to_host_dbdf,
+			    dst_port, &fn->to_wire_dbdf);
 	if (err < 0)
 		return err;
 
@@ -775,7 +934,7 @@ int l2fwd_data_add_fwd_table_entry(struct rte_pci_addr *port1,
 	if (data_fwd_table[dst_port].running)
 		return -EPERM;
 
-	err = connect_ports(host_port, wire_port);
+	err = connect_ports(host_port, port1, wire_port, port2);
 	if (err < 0)
 		return err;
 
@@ -868,6 +1027,22 @@ int l2fwd_data_print_stats(void)
 	RTE_LOG(INFO, L2FWD_DATA,
 		"\nPort statistics ====================================");
 	iterate_configured_ports(&print_configured_port_stats, NULL);
+
+	return 0;
+}
+
+int l2fwd_data_update_offloads(int pem_idx, int pf_idx, int vf_idx)
+{
+	struct l2fwd_config_fn *fn_cfg;
+	int port;
+
+	fn_cfg = l2fwd_config_get_fn(pem_idx, pf_idx, vf_idx);
+	if (!fn_cfg)
+		return -EINVAL;
+
+	port = l2fwd_pcie_ep_find_port(&fn_cfg->to_wire_dbdf);
+	if (port < RTE_MAX_ETHPORTS)
+		set_offload_fn(pem_idx, pf_idx, vf_idx, &data_fwd_table[port]);
 
 	return 0;
 }

@@ -8,7 +8,17 @@
 #define MAX_HB_INTERVAL_MSECS		15000
 #define DEFAULT_HB_INTERVAL_MSECS	MIN_HB_INTERVAL_MSECS
 
-#define DEFAULT_HB_MISS_COUNT		20
+#define DEFAULT_HB_MISS_COUNT 20
+
+#define OCTEP_OFFLOADS_SUPPORTED   1
+#define OCTEP_OFFLOADS_UNSUPPORTED 0
+#define OCTEP_GET_PKIND(offloads)                                                                  \
+	(((offloads) == OCTEP_OFFLOADS_SUPPORTED) ? OCTEP_PKIND_OL_SUPPORTED :                     \
+						    OCTEP_PKIND_OL_UNSUPPORTED)
+
+#define OCTEP_GET_FSZ(offloads)                                                                    \
+	(((offloads) == OCTEP_OFFLOADS_SUPPORTED) ? OCTEP_FSZ_OL_SUPPORTED :                       \
+						    OCTEP_FSZ_OL_UNSUPPORTED)
 
 /* pf/vf config */
 struct l2fwd_config_fn {
@@ -22,6 +32,18 @@ struct l2fwd_config_fn {
 	struct rte_pci_addr to_wire_dbdf;
 	/* interface pkind */
 	unsigned short pkind;
+	/* interface front size data */
+	unsigned short fsz;
+	/* offloads supported */
+	int offloads_supported;
+	/* rx offloads supported */
+	unsigned short rx_offloads_supported;
+	/* tx_offloads supported */
+	unsigned short tx_offloads_supported;
+	/* runtime rx offloads selected by host */
+	unsigned short rx_offloads;
+	/* runtime tx offloads selected by host*/
+	unsigned short tx_offloads;
 
 	/* Below config is applicable if (to_wire_dbdf == 0000:00:00.00) */
 	/* device mac address */
@@ -113,6 +135,13 @@ static inline int for_each_valid_config_fn(valid_cfg_fn_callback_t fn,
 	}
 
 	return 0;
+}
+
+static inline struct l2fwd_config_fn *l2fwd_config_get_fn(int pem, int pf, int vf)
+{
+	return (vf > 0) ? &l2fwd_cfg.pems[pem].pfs[pf].vfs[vf] :
+			  &l2fwd_cfg.pems[pem].pfs[pf].d;
+
 }
 
 /* UnInitialize config data.

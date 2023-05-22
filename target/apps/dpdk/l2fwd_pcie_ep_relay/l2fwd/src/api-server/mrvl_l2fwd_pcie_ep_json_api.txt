@@ -68,6 +68,11 @@ mrvl_l2fwd_add_fwd_pair
                                                 format XXXX:XX:X.X
      port2                required  string      This will take value of pci dbdf
                                                 format XXXX:XX:X.X
+     mac                  optional  string      This will take value of ethernet
+                                                mac address XX:XX:XX:XX:XX:XX
+                                                This mac address will be updated
+                                                to host on the next mac address
+                                                discovery event
 
    Response
    Returns 0 on success or error code from Table 1 on error.
@@ -84,6 +89,25 @@ mrvl_l2fwd_add_fwd_pair
           "params": {
                 "port1": "0001:0F:0.1",
                 "port2": "0001:0F:0.2",
+          }
+      }
+
+      Example response:
+      {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "result": 0
+      }
+
+      Example request:
+      {
+          "jsonrpc": "2.0",
+          "id": 1,
+          "method": "mrvl_l2fwd_add_fwd_pair",
+          "params": {
+                "port1": "0001:0F:0.1",
+                "port2": "0001:0F:0.2",
+                "mac": "00:01:34:00:01:23"
           }
       }
 

@@ -28,6 +28,9 @@ struct octep_plugin_client_info {
 	struct octep_plugin_dev_id dev_list[OCTEP_PLUGIN_CLIENT_MAX_DEVICES];
 };
 
+extern uint32_t octep_plugin_client_host_version[OCTEP_PLUGIN_MAX_PEM]
+					 [OCTEP_PLUGIN_MAX_PF_PER_PEM];
+
 /* Initialize plugin client.
  *
  * @param info: Non-null pointer containing plugin information.
