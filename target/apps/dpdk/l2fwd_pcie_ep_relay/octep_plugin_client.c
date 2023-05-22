@@ -28,9 +28,12 @@ static struct octep_plugin_client_info plugin_client = {
 	.info = NULL,
 	.dev_list = { [0 ... OCTEP_PLUGIN_CLIENT_MAX_DEVICES - 1].pem = OCTEP_PLUGIN_MAX_PEM,
 		      [0 ... OCTEP_PLUGIN_CLIENT_MAX_DEVICES - 1].pf = OCTEP_PLUGIN_MAX_PF_PER_PEM,
-		      [0 ... OCTEP_PLUGIN_CLIENT_MAX_DEVICES - 1].vf = OCTEP_PLUGIN_MAX_VF_PER_PF
+		      [0 ... OCTEP_PLUGIN_CLIENT_MAX_DEVICES - 1].vf = OCTEP_PLUGIN_MAX_VF_PER_PF,
 	}
 };
+
+uint32_t octep_plugin_client_host_version[OCTEP_PLUGIN_MAX_PEM]
+					 [OCTEP_PLUGIN_MAX_PF_PER_PEM] = { 0 };
 
 static inline void *get_in_addr(struct sockaddr *sa)
 {
@@ -52,6 +55,14 @@ int octep_plugin_client_init(struct octep_plugin_info *info)
 	plugin_client.info = info;
 	plugin_client.state = OCTEP_PLUGIN_CLIENT_STATE_INIT;
 
+	return 0;
+}
+
+static int octep_plugin_client_host_version_update(struct octep_plugin_msg *msg)
+{
+	struct octep_plugin_dev_id *dev_id = &msg->hdr.dev_id;
+
+	octep_plugin_client_host_version[dev_id->pem][dev_id->pf] = *(uint32_t *) &msg->data;
 	return 0;
 }
 
@@ -111,6 +122,54 @@ static int octep_plugin_client_send_msg(int cmd, int data, struct octep_plugin_d
 	return 0;
 }
 
+static int octep_plugin_client_host_version_get(void)
+{
+	struct timeval tv_b = { 0 }, tv_a = { 0 }, tv_c = { 0 }, tv_ref;
+	struct octep_plugin_msg reply = { 0 };
+	int ret;
+
+	tv_ref.tv_sec = 5;
+	gettimeofday(&tv_b, NULL);
+	while (true) {
+		gettimeofday(&tv_a, NULL);
+		if ((tv_a.tv_sec - tv_b.tv_sec) >= tv_ref.tv_sec) {
+			printf("PLUGIN_CLIENT: Host version get timed out after %ld\n",
+			       tv_a.tv_sec);
+			return -EIO;
+		}
+
+		ret = read(plugin_client.client_sockfd, &reply.hdr, sizeof(reply.hdr));
+		if (ret == 0) {
+			printf("PLUGIN_CLIENT: Server connection closed unexpectedly\n");
+			return -EIO;
+		}
+
+		ret = read(plugin_client.client_sockfd, &reply.data, reply.hdr.sz);
+		if (ret != reply.hdr.sz) {
+			printf("PLUGIN_CLIENT: Unexpected response size %d of %d expected\n",
+					ret, reply.hdr.sz);
+			return -EIO;
+		}
+
+		if (reply.hdr.id == OCTEP_PLUGIN_S2C_MSG_PLUGIN_RESP)
+			break;
+
+		if (reply.hdr.id != OCTEP_PLUGIN_S2C_MSG_HOST_VERSION) {
+			printf("PLUGIN_CLIENT: Obtained invalid message from server %d."
+			       "Expecting host version\n",
+			       reply.hdr.id);
+			return -EIO;
+		}
+
+		octep_plugin_client_host_version_update(&reply);
+		gettimeofday(&tv_c, NULL);
+		/* Not account time used for valid loop */
+		tv_b.tv_sec += (tv_c.tv_sec - tv_a.tv_sec);
+	}
+
+	return 0;
+}
+
 int octep_plugin_client_start(void)
 {
 	struct sockaddr_in server_addr = {
@@ -146,6 +205,13 @@ int octep_plugin_client_start(void)
 
 	printf("PLUGIN_CLIENT: Successfully exchanged version between plugin client and server: v%d\n",
 	       OCTEP_PLUGIN_CLIENT_VERSION);
+
+	ret = octep_plugin_client_host_version_get();
+	if (ret < 0) {
+		printf("PLUGIN_CLIENT: Host version get failed with err %d. Uninitialising...\n",
+		       ret);
+		goto error;
+	}
 
 	plugin_client.state = OCTEP_PLUGIN_CLIENT_STATE_CONNECTED;
 
@@ -304,10 +370,12 @@ int octep_plugin_client_poll(struct octep_plugin_msg *msg)
 		printf("PLUGIN_CLIENT: Server connection closed unexpectedly\n");
 		return -EIO;
 	} else if (ret > 0) {
-		if (msg->hdr.id != OCTEP_PLUGIN_S2C_MSG_CTRL_NET) {
+		if (msg->hdr.id != OCTEP_PLUGIN_S2C_MSG_CTRL_NET &&
+		    msg->hdr.id != OCTEP_PLUGIN_S2C_MSG_HOST_VERSION) {
 			printf("PLUGIN_CLIENT: Unexpected msg id %d\n", msg->hdr.id);
 			return -EIO;
 		}
+
 		ret = read(plugin_client.client_sockfd, &msg->data,
 			   msg->hdr.sz);
 		if (ret != msg->hdr.sz) {
@@ -315,6 +383,10 @@ int octep_plugin_client_poll(struct octep_plugin_msg *msg)
 			       ret, msg->hdr.sz);
 			return -EIO;
 		}
+
+		if (msg->hdr.id == OCTEP_PLUGIN_S2C_MSG_HOST_VERSION)
+			return octep_plugin_client_host_version_update(msg);
+
 		cp_msg = (struct octep_cp_msg *) &msg->data;
 		buf = &msg->data[msg->hdr.sz];
 		for (i = 0; i < cp_msg->sg_num; i++) {
@@ -358,6 +430,7 @@ int octep_plugin_client_send_notification(struct octep_plugin_msg *msg)
 		if (plugin_client.dev_list[i].pem == msg->hdr.dev_id.pem &&
 		    plugin_client.dev_list[i].pf == msg->hdr.dev_id.pf &&
 		    plugin_client.dev_list[i].vf == msg->hdr.dev_id.vf) {
+
 			cp_msg = (struct octep_cp_msg *) &msg->data;
 			buf = &msg->data[msg->hdr.sz];
 			for (j = 0; j < cp_msg->sg_num; j++) {

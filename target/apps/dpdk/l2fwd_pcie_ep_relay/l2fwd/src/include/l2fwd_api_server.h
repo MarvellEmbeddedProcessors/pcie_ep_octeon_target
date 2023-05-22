@@ -12,7 +12,8 @@ struct l2fwd_api_server_ops {
 	int (*clear_fwd_table)();
 	/* Add an entry to forwarding table. */
 	int (*add_fwd_table_entry)(struct rte_pci_addr *port1,
-				   struct rte_pci_addr *port2);
+				   struct rte_pci_addr *port2,
+				   struct rte_ether_addr *mac);
 	/* Delete an entry from forwarding table. */
 	int (*del_fwd_table_entry)(struct rte_pci_addr *port1,
 				   struct rte_pci_addr *port2);

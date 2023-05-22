@@ -11,6 +11,14 @@
 
 #define RTE_LOGTYPE_L2FWD       RTE_LOGTYPE_USER1
 
+/* port and mac address */
+struct port_mac {
+	/* to_host_dbdf in l2fwd_config */
+	struct rte_pci_addr port;
+	/* mac address */
+	struct rte_ether_addr mac;
+};
+
 /* user configuration */
 struct l2fwd_user_config l2fwd_user_cfg = { 0 };
 
@@ -38,6 +46,12 @@ static void control_on_after_vf_reset(int pem, int pf, int vf)
 {
 }
 
+static void control_on_offloads_update(int pem, int pf, int vf)
+{
+	if (L2FWD_FEATURE(l2fwd_user_cfg.features, L2FWD_FEATURE_DATA_PLANE))
+		l2fwd_data_update_offloads(pem, pf, vf);
+}
+
 static struct l2fwd_control_ops control_ops = {
 	.on_before_pem_reset = control_on_before_pem_reset,
 	.on_after_pem_reset = control_on_after_pem_reset,
@@ -45,6 +59,7 @@ static struct l2fwd_control_ops control_ops = {
 	.on_after_pf_reset = control_on_after_pf_reset,
 	.on_before_vf_reset = control_on_before_vf_reset,
 	.on_after_vf_reset = control_on_after_vf_reset,
+	.on_offloads_update = control_on_offloads_update,
 };
 
 static int api_server_set_fwd_state(int state)
@@ -74,10 +89,40 @@ static int api_server_clear_fwd_table(void)
 	return 0;
 }
 
-static int api_server_add_fwd_table_entry(struct rte_pci_addr *port1,
-					  struct rte_pci_addr *port2)
+static int update_fn_mac(int pem, int pf, int vf, void *data)
 {
+	struct port_mac *pm = (struct port_mac *)data;
+	struct l2fwd_config_fn *fn_cfg;
+
+	fn_cfg = (vf < 0) ?
+		  &l2fwd_cfg.pems[pem].pfs[pf].d :
+		  &l2fwd_cfg.pems[pem].pfs[pf].vfs[vf];
+
+	if (is_zero_dbdf(&fn_cfg->to_host_dbdf))
+		return 0;
+
+	if (!rte_pci_addr_cmp(&pm->port, &fn_cfg->to_host_dbdf)) {
+		fn_cfg->mac = pm->mac;
+		l2fwd_control_init_fn(pem, pf, vf);
+		return -EIO;
+	}
+
+	return 0;
+}
+
+static int api_server_add_fwd_table_entry(struct rte_pci_addr *port1,
+					  struct rte_pci_addr *port2,
+					  struct rte_ether_addr *mac)
+{
+	struct port_mac pm;
 	int err;
+
+	/* Update mac address in configuration */
+	if (mac) {
+		pm.port = *port1;
+		pm.mac = *mac;
+		for_each_valid_config_fn(update_fn_mac, &pm);
+	}
 
 	if (L2FWD_FEATURE(l2fwd_user_cfg.features, L2FWD_FEATURE_CTRL_PLANE)) {
 		err = l2fwd_control_set_port_mapping(port1, port2);

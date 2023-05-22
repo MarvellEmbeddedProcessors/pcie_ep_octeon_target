@@ -72,6 +72,12 @@ int l2fwd_data_del_fwd_table_entry(struct rte_pci_addr *port1,
  */
 int l2fwd_data_print_stats(void);
 
+/* Update offloads for forwarding interfaces.
+ *
+ * return value: 0 on success, -errno on failure.
+ */
+int l2fwd_data_update_offloads(int pem_idx, int pf_idx, int vf_idx);
+
 /* UnInitialize data plane.
  *
  * UnInitialize local data.

@@ -29,6 +29,12 @@ struct stub_fn_data {
 	unsigned long long smodes;
 	/* advertised link modes */
 	unsigned long long amodes;
+	/* rx offload flags */
+	unsigned short rx_offloads;
+	/* tx offload flags */
+	unsigned short tx_offloads;
+	/* ext offload flags */
+	unsigned long long ext_offloads;
 };
 
 struct stub_pf {
@@ -329,6 +335,32 @@ static int stub_set_port(int pem, int pf, int vf, const struct rte_pci_addr *por
 	return init_fn(&stub_data[pem]->pfs[pf]->d, NULL);
 }
 
+static int stub_get_offloads(int pem, int pf, int vf,
+			     struct octep_ctrl_net_offloads *offloads)
+{
+	struct stub_fn_data *fn;
+
+	fn = get_fn_data(pem, pf, vf);
+	offloads->rx_offloads = fn->rx_offloads;
+	offloads->tx_offloads = fn->tx_offloads;
+	offloads->ext_offloads = fn->ext_offloads;
+
+	return 0;
+}
+
+static int stub_set_offloads(int pem, int pf, int vf,
+			     struct octep_ctrl_net_offloads *offloads)
+{
+	struct stub_fn_data *fn;
+
+	fn = get_fn_data(pem, pf, vf);
+	fn->rx_offloads = offloads->rx_offloads;
+	fn->tx_offloads = offloads->tx_offloads;
+	fn->ext_offloads = offloads->ext_offloads;
+
+	return 0;
+}
+
 static struct control_fn_ops stub_ctrl_ops = {
 	.get_mtu = stub_get_mtu,
 	.set_mtu = stub_set_mtu,
@@ -341,7 +373,9 @@ static struct control_fn_ops stub_ctrl_ops = {
 	.get_link_info = stub_get_link_info,
 	.set_link_info = stub_set_link_info,
 	.reset = stub_reset,
-	.set_port = stub_set_port
+	.set_port = stub_set_port,
+	.get_offloads = stub_get_offloads,
+	.set_offloads = stub_set_offloads,
 };
 
 int ctrl_stub_init(struct control_fn_ops **ops)
