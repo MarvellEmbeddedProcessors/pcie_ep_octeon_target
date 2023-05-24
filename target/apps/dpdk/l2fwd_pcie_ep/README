@@ -32,7 +32,7 @@ On Octeon linux shell console
 	# /usr/bin/l2fwd_pcie_ep_setup.sh
 
 #. Run l2fwd_pcie_ep as below
-	#/usr/bin/l2fwd_pcie_ep -l0-8 --main-lcore=0 -a $SDP_NIX_VF0 -a $ETH_PF0 -- -f /usr/bin/cn98xx-l2fwd-pem0-pf0-3.cfg -d 8
+	#/usr/bin/l2fwd_pcie_ep -l0-8 --main-lcore=0 -a $SDP_NIX_VF0 -a $ETH_PF0 -- -f /usr/bin/cn98xx-l2fwd-pem0-pf0-3.cfg -d 1 -v <verbose_level>
 
 
 How to test json-rpc api
