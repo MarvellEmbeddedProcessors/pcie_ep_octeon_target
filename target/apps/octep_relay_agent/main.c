@@ -16,6 +16,7 @@
 #include "loop.h"
 #include "app_config.h"
 #include "octep_plugin_server.h"
+#include "octep_plugin_server_config.h"
 
 /* Control plane version */
 #define CP_VERSION_MAJOR		1
@@ -52,7 +53,7 @@ static int process_events(void)
 		return n;
 
 	for (i = 0; i < n; i++) {
-		octep_plugin_relay_process_event(&ev[i]);
+		octep_plugin_server_process_event(&ev[i]);
 		if (ev[i].e == OCTEP_CP_EVENT_TYPE_PERST) {
 			printf("APP: Event: perst on dom[%d]\n",
 			       ev[i].u.perst.dom_idx);
@@ -228,6 +229,52 @@ static int parse_args(int argc, char **argv)
 	return ret;
 }
 
+static void octep_plugin_relay_server_init(void)
+{
+	struct plugin_app_cfg app_cfg;
+	struct plugin_pem_cfg *ppem;
+	struct plugin_pf_cfg *ppf;
+	struct plugin_vf_cfg *pvf;
+	struct plugin_fn_cfg *pfn;
+	struct pem_cfg *pem;
+	struct pf_cfg *pf;
+	struct vf_cfg *vf;
+	struct fn_cfg *fn;
+	int i, j, k;
+
+	app_cfg.npem = cfg.npem;
+	for (i = 0; i < cfg.npem; i++) {
+		ppem = &app_cfg.pems[i];
+		pem = &cfg.pems[i];
+
+		ppem->valid = pem->valid;
+		ppem->npf = pem->npf;
+		for (j = 0; j < pem->npf; j++) {
+			ppf = &ppem->pfs[j];
+			pf = &pem->pfs[j];
+			pfn = &ppf->fn;
+			fn = &pf->fn;
+
+			ppf->valid = pf->valid;
+			ppf->nvf = pf->nvf;
+			pfn->plugin_controlled = fn->plugin_controlled;
+			pfn->client_id = fn->client_id;
+			for (k = 0; k < pf->nvf; k++) {
+				pvf = &ppf->vfs[k];
+				vf = &pf->vfs[k];
+				pfn = &pvf->fn;
+				fn = &vf->fn;
+
+				pvf->valid = vf->valid;
+				pfn->plugin_controlled = fn->plugin_controlled;
+				pfn->client_id = fn->client_id;
+			}
+		}
+	}
+
+	octep_plugin_server_init(&app_cfg);
+}
+
 int main(int argc, char *argv[])
 {
 	int err = 0, src_i, src_j, dst_i, dst_j;
@@ -304,7 +351,7 @@ int main(int argc, char *argv[])
 	}
 	set_fw_ready(0);
 
-	octep_plugin_relay_server_uninit();
+	octep_plugin_server_uninit();
 	octep_cp_lib_uninit();
 	loop_uninit();
 

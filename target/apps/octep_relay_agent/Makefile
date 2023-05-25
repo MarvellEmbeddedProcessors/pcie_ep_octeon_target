@@ -13,7 +13,7 @@ LD ?= $(CROSS_COMPILE)ld
 NAME_PREFIX=octep_relay
 APP_NAME=$(NAME_PREFIX)_agent
 
-SRCS = main.c loop.c app_config.c octep_plugin_server.c
+SRCS = main.c loop.c app_config.c
 APP_CFLAGS = $(CFLAGS) -O3 -Werror -Wall -I$(CURDIR)/compat/$(PLAT)
 
 LDFLAGS_SHARED = $(LDFLAGS) -loctep_cp -lconfig -lrt -lpthread
