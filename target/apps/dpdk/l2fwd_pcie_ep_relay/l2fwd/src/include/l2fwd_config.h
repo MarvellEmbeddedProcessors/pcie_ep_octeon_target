@@ -139,7 +139,7 @@ static inline int for_each_valid_config_fn(valid_cfg_fn_callback_t fn,
 
 static inline struct l2fwd_config_fn *l2fwd_config_get_fn(int pem, int pf, int vf)
 {
-	return (vf > 0) ? &l2fwd_cfg.pems[pem].pfs[pf].vfs[vf] :
+	return (vf >= 0) ? &l2fwd_cfg.pems[pem].pfs[pf].vfs[vf] :
 			  &l2fwd_cfg.pems[pem].pfs[pf].d;
 
 }
