@@ -291,7 +291,7 @@ static int process_msg(union octep_cp_msg_info *ctx, struct octep_cp_msg *msg,
 	int resp_sz, cmd;
 	int err = 0;
 
-	if (octep_plugin_relay_process_msg(msg) == 0)
+	if (octep_plugin_server_process_msg(msg) == 0)
 		return 0;
 
 	fn = app_config_get_fn(&loop_cfg, &msg->info);
@@ -425,17 +425,17 @@ int loop_process_msgs(void)
 		ctx.s.pem_idx = cp_lib_cfg.doms[i].idx;
 		for (j = 0; j < cp_lib_cfg.doms[i].npfs; j++) {
 			ctx.s.pf_idx = cp_lib_cfg.doms[i].pfs[j].idx;
-			octep_plugin_ctrl_net_lock();
+			octep_plugin_server_ctrl_net_lock();
 			ret = octep_cp_lib_recv_msg(&ctx, rx_msg, rx_num);
-			octep_plugin_ctrl_net_unlock();
+			octep_plugin_server_ctrl_net_unlock();
 			host_version = get_host_version(ctx.s.pem_idx, ctx.s.pf_idx);
 
 			if (host_version < cp_lib_cfg.min_version ||
 			    host_version > cp_lib_cfg.max_version)
 				host_version = 0;
 
-			octep_plugin_relay_host_version(ctx.s.pem_idx, ctx.s.pf_idx,
-							host_version);
+			octep_plugin_server_relay_host_version(ctx.s.pem_idx, ctx.s.pf_idx,
+							       host_version);
 
 			for (m = 0; m < ret; m++) {
 				msg = &rx_msg[m];
