@@ -7,7 +7,6 @@ APP = l2fwd_pcie_ep_relay
 
 # all source are stored in SRCS-y
 SRCS-y := l2fwd_main.c \
-	octep_plugin_client.c \
 	l2fwd/src/l2fwd.c \
 	l2fwd/src/control/*.c \
 	l2fwd/src/data/*.c \
