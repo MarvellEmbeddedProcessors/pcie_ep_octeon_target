@@ -15,6 +15,7 @@
 
 #include "compat.h"
 #include "l2fwd.h"
+#include "l2fwd_api_server.h"
 
 #define RTE_LOGTYPE_L2FWD_PCIE_EP	RTE_LOGTYPE_USER1
 
@@ -23,6 +24,8 @@ static volatile bool force_quit;
 static uint32_t debug_level = RTE_LOG_INFO;
 
 static int print_stats = 1;
+
+uint16_t api_srv_port;
 
 static struct l2fwd_user_config l2fwd_cfg = {
 	.features = L2FWD_FEATURE_CTRL_PLANE | L2FWD_FEATURE_DATA_PLANE
@@ -49,7 +52,8 @@ static void l2fwd_pcie_ep_usage(const char *prgname)
 	printf("%s [EAL options] --\n"
 	       "  -a <1/0> Toggle api server feature (default: 0)\n"
 	       "     0: Disabled\n"
-	       "     1: Run on tcp port 8888\n"
+	       "     1: Enabled, run api server\n"
+	       "  -t API server port number, to be provided in decimal format\n"
 	       "  -c <1/0> Toggle control plane feature (default: 1)\n"
 	       "     0: Run in virtual mode for configured sdp interfaces\n"
 	       "        Real interface paired with sdp will not be managed\n"
@@ -69,6 +73,7 @@ static void l2fwd_pcie_ep_usage(const char *prgname)
 
 static const char short_options[] =
 	"a:"  /* api server feature */
+	"t:"  /* api server port number */
 	"c:"  /* control plane feature */
 	"d:"  /* data plane feature */
 	"f:"  /* configuration file */
@@ -109,6 +114,14 @@ static int l2fwd_pcie_ep_parse_args(int argc, char **argv)
 				l2fwd_cfg.features |= L2FWD_FEATURE_API_SERVER;
 			else
 				l2fwd_cfg.features &= ~L2FWD_FEATURE_API_SERVER;
+			break;
+		case 't':
+			val = strtoul(optarg, NULL, 10);
+			if (val <= 0 || val > UINT16_MAX) {
+				printf("invalid port number:%d using 8888 as API server port\n", val);
+				val = L2FWD_API_SERVER_PORT;
+			}
+			api_srv_port = (uint16_t)val;
 			break;
 		case 'c':
 			val = atoi(optarg);

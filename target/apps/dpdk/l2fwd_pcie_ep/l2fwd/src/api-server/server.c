@@ -13,7 +13,7 @@
 
 #define RTE_LOGTYPE_L2FWD_API_SERVER	RTE_LOGTYPE_USER1
 
-#define L2FWD_API_SERVER_PORT	8888
+extern uint16_t api_srv_port;
 
 /* thread for servicing connections */
 static pthread_t conn_thread;
@@ -83,7 +83,7 @@ int l2fwd_api_server_start(void)
 {
 	struct sockaddr_in server_addr = {
 		.sin_family = AF_INET,
-		.sin_port = htons(L2FWD_API_SERVER_PORT),
+		.sin_port = api_srv_port ? htons(api_srv_port) : htons(L2FWD_API_SERVER_PORT),
 		.sin_addr.s_addr = htonl(INADDR_LOOPBACK)
 	};
 	struct sockaddr_in sockaddr;
@@ -141,7 +141,7 @@ int l2fwd_api_server_start(void)
 	}
 
 	RTE_LOG(INFO, L2FWD_API_SERVER, "Listening on %s:%d\n",
-		inet_ntoa(sockaddr.sin_addr), sockaddr.sin_port);
+		inet_ntoa(sockaddr.sin_addr), ntohs(sockaddr.sin_port));
 
 	return 0;
 }

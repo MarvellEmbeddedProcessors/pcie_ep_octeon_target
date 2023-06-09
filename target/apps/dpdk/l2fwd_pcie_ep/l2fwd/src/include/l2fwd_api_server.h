@@ -4,6 +4,8 @@
 #ifndef __L2FWD_API_SERVER_H__
 #define __L2FWD_API_SERVER_H__
 
+#define L2FWD_API_SERVER_PORT	8888
+
 /* operations to be used by the api server */
 struct l2fwd_api_server_ops {
 	/* Start/Stop data plane and any dependencies */
