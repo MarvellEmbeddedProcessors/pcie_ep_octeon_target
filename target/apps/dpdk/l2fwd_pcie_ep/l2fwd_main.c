@@ -60,7 +60,10 @@ static void l2fwd_pcie_ep_usage(const char *prgname)
 	       "     1: Run with configured forwarding interface pairs\n"
 	       "  -f FILE: configuration file path\n"
 	       "  -s <1/0> Toggle periodic statistics printing (default: 1)\n"
-	       "  -v <1-8>: verbosity 1-8 (default 7)\n",
+	       "  -v <1-8>: verbosity 1-8 (default 7)\n"
+	       "  -x <1/0> Toggle packet capture feature (default: 0)\n"
+	       "     0: Disabled\n"
+	       "     1: enable packet capture\n",
 	       prgname);
 }
 
@@ -71,6 +74,7 @@ static const char short_options[] =
 	"f:"  /* configuration file */
 	"s:"  /* statistics printing */
 	"v:"  /* verbosity */
+	"x:"  /* enable packet capture */
 	;
 
 enum {
@@ -131,6 +135,13 @@ static int l2fwd_pcie_ep_parse_args(int argc, char **argv)
 			if (debug_level < RTE_LOG_EMERG ||
 			    debug_level > RTE_LOG_DEBUG)
 				debug_level = RTE_LOG_INFO;
+			break;
+		case 'x':
+			val = strtoul(optarg, NULL, 10);
+			if (val)
+				l2fwd_cfg.features |= L2FWD_FEATURE_PKT_CAPTURE;
+			else
+				l2fwd_cfg.features &= ~L2FWD_FEATURE_PKT_CAPTURE;
 			break;
 		default:
 			l2fwd_pcie_ep_usage(prgname);
