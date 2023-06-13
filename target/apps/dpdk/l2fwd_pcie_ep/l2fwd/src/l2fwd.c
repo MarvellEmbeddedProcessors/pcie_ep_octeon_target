@@ -1,6 +1,9 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  * Copyright (c) 2022 Marvell.
  */
+#ifdef RTE_LIB_PDUMP
+#include <rte_pdump.h>
+#endif
 #include "compat.h"
 #include "l2fwd.h"
 #include "l2fwd_main.h"
@@ -208,6 +211,14 @@ int l2fwd_start(void)
 {
 	int err;
 
+#ifdef RTE_LIB_PDUMP
+	if (L2FWD_FEATURE(l2fwd_user_cfg.features, L2FWD_FEATURE_PKT_CAPTURE)) {
+		err = rte_pdump_init();
+		if (err < 0)
+			printf("fail to init pdump %d\n", err);
+	}
+#endif
+
 	if (L2FWD_FEATURE(l2fwd_user_cfg.features, L2FWD_FEATURE_DATA_PLANE)) {
 		err = l2fwd_data_start();
 		if (err < 0)
@@ -254,6 +265,11 @@ int l2fwd_stop(void)
 
 	if (L2FWD_FEATURE(l2fwd_user_cfg.features, L2FWD_FEATURE_DATA_PLANE))
 		l2fwd_data_stop();
+
+#ifdef RTE_LIB_PDUMP
+	if (L2FWD_FEATURE(l2fwd_user_cfg.features, L2FWD_FEATURE_PKT_CAPTURE))
+		rte_pdump_uninit();
+#endif
 
 	return 0;
 }
