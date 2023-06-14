@@ -5,7 +5,7 @@
 NUM_DPI=1
 
 # Enable DPI VFs
-NUMVFS=8
+NUMVFS=12
 DPIPF=$(lspci -d 177d:a080|awk '{print $1}' | head -${NUM_DPI})
 echo "###### DPI PFs ######"
 echo "$DPIPF"
