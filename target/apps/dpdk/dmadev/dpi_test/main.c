@@ -41,12 +41,15 @@
 #include <rte_mbuf.h>
 #include <rte_dmadev.h>
 
-#define DPI_MAX_DATA_SZ_PER_PTR	16777216 //65535
-#define DPI_BURST_REQ	10
+#define DPI_MAX_DATA_SZ_PER_PTR	16777216 /* 65535 */
+#define DPI_NB_DESCS 1024
+#define DPI_BURST_REQ	256
 #define DPI_MAX_VFS	32
 #define MAX_POINTERS	15
 
 static volatile bool force_quit;
+
+static char tranfer_type[3][32] = {"Internal-only", "Inbound", "Outbound"};
 
 struct dpi_test_dev_s {
 	int dev_id;
@@ -58,13 +61,15 @@ struct dpi_test_dev_s dpi_test[DPI_MAX_VFS];
 rte_iova_t raddr = 0, laddr;
 int mode, n_iter = 1, perf_mode = 0;
 int ptrs_per_instr = 1;
+int burst_size = 64;
+uint16_t done_count = 8;
 uint16_t nb_ports;
-uint16_t pem_id = 0;
+uint16_t pem_id;
 uint64_t data_size = 128;
 
 uint64_t dma_submit_cnt[DPI_MAX_VFS] = { 0 };
 uint64_t last_dma_submit_cnt[DPI_MAX_VFS] = { 0 };
-uint64_t total_dma_cnt = 0;
+uint64_t total_dma_cnt;
 static uint64_t timer_period = 1; /* default period is 1 seconds */
 
 static void
@@ -79,13 +84,13 @@ signal_handler(int signum)
 
 static uint8_t buffer_fill(uint8_t *addr, int len, uint8_t val)
 {
-        int j = 0;
+	int j = 0;
 
-        memset(addr, 0, len);
-        for (j = 0; j < len; j++)
-                *(addr + j) = val++;
+	memset(addr, 0, len);
+	for (j = 0; j < len; j++)
+		*(addr + j) = val++;
 
-        return val;
+	return val;
 }
 
 static inline void dump_buffer(uint8_t *addr, int len)
@@ -100,22 +105,6 @@ static inline void dump_buffer(uint8_t *addr, int len)
 	printf("\n");
 }
 
-static int validate_buffer(uint8_t *saddr, uint8_t *daddr, int len)
-{
-        int j = 0, ret = 0;
-
-        for (j = 0; j < len; j++) {
-                if (*(saddr + j) != *(daddr + j)) {
-                        printf("FAIL: Data Integrity failed\n");
-                        printf("index: %d, Expected: 0x%x, Actaul: 0x%x\n",
-                               j, *(saddr + j), *(daddr + j));
-                        ret = -1;
-                        break;
-                }
-        }
-        return ret;
-}
-
 static inline void dump_stats(void)
 {
 	int i;
@@ -124,27 +113,24 @@ static inline void dump_stats(void)
 	for (i = 0; i < nb_ports; i++) {
 		printf("DMA %d Count %ld %s %2.2f Gbps\n", i,
 			(dma_submit_cnt[i] - last_dma_submit_cnt[i]),
-			(mode==3 ? (i%2 ? "Outb":"Inb"):""),
+			(mode == 3 ? (i % 2 ? "Outb":"Inb"):""),
 			((dma_submit_cnt[i] - last_dma_submit_cnt[i]) *
-		       		data_size*ptrs_per_instr * 8) /
-		       		1000000000.0);
+			 data_size * ptrs_per_instr * 8) / 1000000000.0);
 		tot += dma_submit_cnt[i];
 		last_dma_submit_cnt[i] = dma_submit_cnt[i];
 	}
 	printf("\ntot %ld tot_dma %ld Total: %ld Perf:%2.2f Gbps\n", tot,
 	       total_dma_cnt, (tot - total_dma_cnt),
-	       ((tot - total_dma_cnt)*data_size*ptrs_per_instr*8)/1000000000.0);
+	       ((tot - total_dma_cnt) * data_size * ptrs_per_instr * 8)/1000000000.0);
 
 	total_dma_cnt = tot;
 }
 
 static inline int dma_test_xfer_perf(void)
 {
-	int ret = 0, vchan, i, j, retries=10;
+	int ret = 0, vchan = 0, i, j;
 	struct rte_dma_vchan_conf *vconf;
-	enum rte_dma_status_code sts[DPI_BURST_REQ] = { -1 };
-	char *xfer_str;
-	unsigned dma_port = rte_lcore_id() - 1;
+	unsigned int dma_port = rte_lcore_id() - 1;
 	uint8_t num_req, max_ptr = ptrs_per_instr;
 	uint8_t *remote_addr = (uint8_t *)raddr + (dma_port * 0x4000000ull);
 	uint8_t *fptr[DPI_BURST_REQ][MAX_POINTERS];
@@ -154,8 +140,6 @@ static inline int dma_test_xfer_perf(void)
 	struct rte_dma_sge src[DPI_BURST_REQ][MAX_POINTERS], dst[DPI_BURST_REQ][MAX_POINTERS];
 	int xfer_mode, direction;
 	uint64_t prev_tsc = 0, diff_tsc = 0, cur_tsc = 0;
-	int submitted = 0;
-	uint16_t completed = 0;
 
 	/* If lcore >= nb_ports skip processing */
 	if (dma_port >= nb_ports)
@@ -176,21 +160,11 @@ static inline int dma_test_xfer_perf(void)
 	else
 		direction = RTE_DMA_DIR_MEM_TO_MEM;
 
-	printf("dma_port %d, raddr %p mode %d, xmode %d dir %d\n",dma_port, remote_addr,
+	printf("dma_port %d, raddr %p mode %d, xmode %d dir %d\n", dma_port, remote_addr,
 		mode, xfer_mode, direction);
-#if 0
-	for (i = 0; i < DPI_BURST_REQ; i++) {
-		fptr[i] = rte_malloc("dummy", max_ptr * sizeof(uint8_t *), 128);
-		lptr[i] = rte_malloc("dummy", max_ptr * sizeof(uint8_t *), 128);
-		//src_ptr[i] = (rte_iova_t *)rte_malloc("dummy", max_ptr * sizeof(rte_iova_t), 128);
-		//dst_ptr[i] = (rte_iova_t *)rte_malloc("dummy", max_ptr * sizeof(rte_iova_t), 128);
-		src[i] = rte_malloc("dummy", max_ptr * sizeof(struct rte_dmadev_sge *), 128);
-		dst[i] = rte_malloc("dummy", max_ptr * sizeof(struct rte_dmadev_sge *), 128);
-	}
-#endif
 
 	/* Alloc ptrs */
-	for (i = 0; i < DPI_BURST_REQ; i++) {
+	for (i = 0; i < burst_size; i++) {
 		for (j = 0; j < max_ptr; j++) {
 			lptr[i][j] = remote_addr;
 			fptr[i][j] = (uint8_t *)rte_malloc("xfer_block", data_size, 128);
@@ -211,7 +185,7 @@ static inline int dma_test_xfer_perf(void)
 				buffer_fill(lptr[i][j], data_size, 0);
 				dst_ptr = rte_malloc_virt2iova(lptr[i][j]);
 			} else {
-				lptr[i][j] = lptr[i][j] + (j  * 64 *1024);
+				lptr[i][j] = lptr[i][j] + (j  * 64 * 1024);
 				dst_ptr = src_ptr;
 			}
 
@@ -244,25 +218,22 @@ static inline int dma_test_xfer_perf(void)
 
 	vconf = &dpi_test[dma_port].vchan_conf;
 	vconf->direction = direction;
-	vconf->nb_desc = DPI_BURST_REQ;
+	vconf->nb_desc = DPI_NB_DESCS;
 
 	switch (direction) {
-		/* outbound */
-		case RTE_DMA_DIR_MEM_TO_DEV:
-			vconf->dst_port.port_type = RTE_DMA_PORT_PCIE;
-			vconf->dst_port.pcie.coreid = pem_id;
-			xfer_str = "Outbound";
-			break;
-		/* inbound */
-		case RTE_DMA_DIR_DEV_TO_MEM:
-			vconf->src_port.port_type = RTE_DMA_PORT_PCIE;
-			vconf->src_port.pcie.coreid = pem_id;
-			xfer_str = "Inbound";
-			break;
-		/* internal_only */
-		case RTE_DMA_DIR_MEM_TO_MEM:
-			xfer_str = "Internal-only";
-			break;
+	/* outbound */
+	case RTE_DMA_DIR_MEM_TO_DEV:
+		vconf->dst_port.port_type = RTE_DMA_PORT_PCIE;
+		vconf->dst_port.pcie.coreid = pem_id;
+		break;
+	/* inbound */
+	case RTE_DMA_DIR_DEV_TO_MEM:
+		vconf->src_port.port_type = RTE_DMA_PORT_PCIE;
+		vconf->src_port.pcie.coreid = pem_id;
+		break;
+	/* internal_only */
+	case RTE_DMA_DIR_MEM_TO_MEM:
+		break;
 	};
 
 	vchan = rte_dma_vchan_setup(dma_port, vchan, vconf);
@@ -273,7 +244,7 @@ static inline int dma_test_xfer_perf(void)
 	}
 
 	rte_dma_start(dma_port);
-	for (i = 0; i < DPI_BURST_REQ; i++) {
+	for (i = 0; i < burst_size; i++) {
 		ret = rte_dma_copy_sg(dma_port, vchan, src[i], dst[i], max_ptr,
 					 max_ptr, RTE_DMA_OP_FLAG_SUBMIT);
 		if (ret < 0) {
@@ -281,52 +252,51 @@ static inline int dma_test_xfer_perf(void)
 			goto free_buf;
 		}
 	}
-	submitted = ret + 1;
-	//printf("submitted=%d\n", submitted);
+	num_req = i;
 
-	num_req = submitted;
+	uint16_t nb_done = 0, last_idx = 0;
+	bool dma_error = false;
+
 	do {
-		cur_tsc = rte_rdtsc();
-		diff_tsc = cur_tsc - prev_tsc;
-		if ((timer_period > 0) && (diff_tsc > timer_period) &&
-			dma_port == rte_get_main_lcore()) {
-			dump_stats();
-			prev_tsc = cur_tsc;
+		if (unlikely(dma_port == rte_get_main_lcore())) {
+			cur_tsc = rte_rdtsc();
+			diff_tsc = cur_tsc - prev_tsc;
+			if ((timer_period > 0) && (diff_tsc > timer_period)) {
+				dump_stats();
+				prev_tsc = cur_tsc;
+			}
 		}
 
-		if (force_quit) {
-			printf("dma_port %d quitting.\n",dma_port);
+		if (unlikely(force_quit)) {
+			printf("dma_port %d quitting.\n", dma_port);
 			sleep(3);
 			goto free_buf;
 		}
 
-		ret = rte_dma_completed_status(dma_port, vchan, num_req,
-						  &completed, sts);
-		if (sts[num_req - 1] > 0) {//&& !retries)
-			//printf("DMA not completed status = %d\n",
-			//       sts[max_ptr - 1]);
-			//printf("compl=%d\n", ret);
-			//sleep(1);
-		} else {
-			dma_submit_cnt[dma_port] += ret;
-			memset(sts, -1, sizeof(sts));
+		nb_done = 0;
+		do {
+			nb_done += rte_dma_completed(dma_port, vchan, num_req, &last_idx,
+						     &dma_error);
+		} while (nb_done < done_count);
 
-			for (i = 0; i < num_req; i++) {
-				ret = rte_dma_copy_sg(dma_port, vchan, src[i], dst[i], max_ptr,
-							 max_ptr, RTE_DMA_OP_FLAG_SUBMIT);
-				if (ret < 0) {
-					printf("dmadev copy_sg op failed, ret=%d\n", ret);
-					goto free_buf;
-				}
+		dma_submit_cnt[dma_port] += nb_done;
+		num_req = nb_done;
+
+		for (i = 0; i < num_req; i++) {
+			ret = rte_dma_copy_sg(dma_port, vchan, src[i], dst[i], max_ptr,
+						 max_ptr, 0);
+			if (ret < 0) {
+				printf("dmadev copy_sg op failed, ret=%d\n", ret);
+				goto free_buf;
 			}
-			submitted = ret + 1;
-			//printf("--submitted=%d\n", submitted);
 		}
+
+		rte_dma_submit(dma_port, vchan);
 	} while (1);
 
 free_buf:
-	printf("dma_port %d freeing memory.\n",dma_port);
-	for (i = 0; i < DPI_BURST_REQ; i++) {
+	printf("dma_port %d freeing memory.\n", dma_port);
+	for (i = 0; i < burst_size; i++) {
 		for (j = 0; j < max_ptr; j++) {
 			if (fptr[i][j])
 				rte_free(fptr[i][j]);
@@ -343,7 +313,7 @@ static inline int dma_test_mstream_tx(int dma_port, int buf_size, int direction)
 	uint8_t *fptr[2];
 	rte_iova_t alloc_ptr[2];
 	rte_iova_t src, dst;
-	int ret = 0, vchan, i, retries=10;
+	int ret = 0, vchan = 0, i, retries = 10;
 	struct rte_dma_vchan_conf *vconf;
 	enum rte_dma_status_code status;
 	char *xfer_str;
@@ -370,30 +340,30 @@ static inline int dma_test_mstream_tx(int dma_port, int buf_size, int direction)
 	vconf->nb_desc = 1;
 
 	switch (direction) {
-		/* outbound */
-		case RTE_DMA_DIR_MEM_TO_DEV:
-			buffer_fill(fptr[0], buf_size, 0);
-			vconf->dst_port.port_type = RTE_DMA_PORT_PCIE;
-			vconf->dst_port.pcie.coreid = pem_id;
-			src = alloc_ptr[0];
-			dst = raddr;
-			xfer_str = "Outbound";
-			break;
-		/* inbound */
-		case RTE_DMA_DIR_DEV_TO_MEM:
-			vconf->src_port.port_type = RTE_DMA_PORT_PCIE;
-			vconf->src_port.pcie.coreid = pem_id;
-			src = raddr;
-			dst = alloc_ptr[0];
-			xfer_str = "Inbound";
-			break;
-		/* internal_only */
-		case RTE_DMA_DIR_MEM_TO_MEM:
-			buffer_fill(fptr[0], buf_size, 0);
-			src = alloc_ptr[0];
-			dst = raddr; //alloc_ptr[1];
-			xfer_str = "Internal-only";
-			break;
+	/* outbound */
+	case RTE_DMA_DIR_MEM_TO_DEV:
+		buffer_fill(fptr[0], buf_size, 0);
+		vconf->dst_port.port_type = RTE_DMA_PORT_PCIE;
+		vconf->dst_port.pcie.coreid = pem_id;
+		src = alloc_ptr[0];
+		dst = raddr;
+		xfer_str = tranfer_type[2];
+		break;
+	/* inbound */
+	case RTE_DMA_DIR_DEV_TO_MEM:
+		vconf->src_port.port_type = RTE_DMA_PORT_PCIE;
+		vconf->src_port.pcie.coreid = pem_id;
+		src = raddr;
+		dst = alloc_ptr[0];
+		xfer_str = tranfer_type[1];
+		break;
+	/* internal_only */
+	case RTE_DMA_DIR_MEM_TO_MEM:
+		buffer_fill(fptr[0], buf_size, 0);
+		src = alloc_ptr[0];
+		dst = raddr;
+		xfer_str = tranfer_type[0];
+		break;
 	};
 
 	vchan = rte_dma_vchan_setup(dma_port, vchan, vconf);
@@ -410,11 +380,6 @@ static inline int dma_test_mstream_tx(int dma_port, int buf_size, int direction)
 		goto free_buf;
 	}
 
-	/*rte_delay_us_sleep(1000);
-	if (RTE_DMA_DIR_MEM_TO_MEM)
-	dump_buffer(fptr[1], buf_size);
-	else
-	dump_buffer(fptr[0], buf_size);*/
 	do {
 		//sleep(1);
 		rte_delay_us_sleep(10);
@@ -422,14 +387,12 @@ static inline int dma_test_mstream_tx(int dma_port, int buf_size, int direction)
 		if (!status || !retries || force_quit)
 			break;
 		retries--;
-	} while(1);
+	} while (1);
 
 	if (status)
 		printf("%s DMA transfer failed, status = %d\n", xfer_str, status);
 	else
 		printf("%s DMA transfer success\n", xfer_str);
-
-	//dump_buffer(fptr[0], buf_size);
 
 	rte_dma_stop(dma_port);
 
@@ -446,11 +409,9 @@ static inline int dma_test_mstream_rx(int dma_port, int buf_size, int direction)
 {
 	uint8_t *fptr[2];
 	rte_iova_t alloc_ptr[2];
+	int ret = 0, vchan = 0, i;
 	rte_iova_t src, dst;
-	int ret = 0, vchan, i, retries=10;
 	struct rte_dma_vchan_conf *vconf;
-	enum rte_dma_status_code status;
-	char *xfer_str;
 
 	printf("--dma_port %d--\n", dma_port);
 	for (i = 0; i < 2; i++) {
@@ -468,31 +429,31 @@ static inline int dma_test_mstream_rx(int dma_port, int buf_size, int direction)
 	vconf->direction = direction;
 	vconf->nb_desc = 1;
 
+	RTE_SET_USED(src);
+	RTE_SET_USED(dst);
+
 	switch (direction) {
-		/* outbound */
-		case RTE_DMA_DIR_MEM_TO_DEV:
-			buffer_fill(fptr[0], buf_size, 0);
-			vconf->dst_port.port_type = RTE_DMA_PORT_PCIE;
-			vconf->dst_port.pcie.coreid = pem_id;
-			src = alloc_ptr[0];
-			dst = raddr;
-			xfer_str = "Outbound";
-			break;
-		/* inbound */
-		case RTE_DMA_DIR_DEV_TO_MEM:
-			vconf->src_port.port_type = RTE_DMA_PORT_PCIE;
-			vconf->src_port.pcie.coreid = pem_id;
-			src = raddr;
-			dst = alloc_ptr[0];
-			xfer_str = "Inbound";
-			break;
-		/* internal_only */
-		case RTE_DMA_DIR_MEM_TO_MEM:
-			buffer_fill(fptr[0], buf_size, 0);
-			src = alloc_ptr[0];
-			dst = alloc_ptr[1];
-			xfer_str = "Internal-only";
-			break;
+	/* outbound */
+	case RTE_DMA_DIR_MEM_TO_DEV:
+		buffer_fill(fptr[0], buf_size, 0);
+		vconf->dst_port.port_type = RTE_DMA_PORT_PCIE;
+		vconf->dst_port.pcie.coreid = pem_id;
+		src = alloc_ptr[0];
+		dst = raddr;
+		break;
+	/* inbound */
+	case RTE_DMA_DIR_DEV_TO_MEM:
+		vconf->src_port.port_type = RTE_DMA_PORT_PCIE;
+		vconf->src_port.pcie.coreid = pem_id;
+		src = raddr;
+		dst = alloc_ptr[0];
+		break;
+	/* internal_only */
+	case RTE_DMA_DIR_MEM_TO_MEM:
+		buffer_fill(fptr[0], buf_size, 0);
+		src = alloc_ptr[0];
+		dst = alloc_ptr[1];
+		break;
 	};
 
 	vchan = rte_dma_vchan_setup(dma_port, vchan, vconf);
@@ -517,11 +478,11 @@ free_buf:
 
 static inline int dma_test_xfer_mstream(void)
 {
-	unsigned dma_port = rte_lcore_id();
+	unsigned int dma_port = rte_lcore_id();
 
 	/* If lcore >= nb_ports skip processing */
 	if (dma_port >= 2) {
-		//printf("dma port : %d stopping.\n", dma_port);
+		/* printf("dma port : %d stopping.\n", dma_port); */
 		return 0;
 	}
 
@@ -531,13 +492,13 @@ static inline int dma_test_xfer_mstream(void)
 		dma_test_mstream_rx(dma_port, 16, RTE_DMA_DIR_MEM_TO_MEM);
 }
 
-static inline int dma_test_queue_priority()
+static inline int dma_test_queue_priority(void)
 {
-	unsigned dma_port = rte_lcore_id();
+	unsigned int dma_port = rte_lcore_id();
 	uint8_t *fptr[MAX_POINTERS];
 	rte_iova_t alloc_ptr[MAX_POINTERS];
 	struct rte_dma_sge src[MAX_POINTERS], dst[MAX_POINTERS];
-	int ret = 0, vchan, i, retries=10;
+	int ret = 0, vchan, i;
 	struct rte_dma_vchan_conf *vconf;
 	enum rte_dma_status_code status;
 	char *xfer_str;
@@ -550,7 +511,7 @@ static inline int dma_test_queue_priority()
 	if (dma_port >= nb_ports)
 		return 0;
 
-	printf("dma_port %d, raddr %p\n",dma_port, raddr);
+	printf("dma_port %d, raddr 0x%lx\n", dma_port, raddr);
 
 	for (i = 0; i < num_ptrs; i++) {
 		fptr[i] = (uint8_t *)rte_malloc("xfer_block", ptr_sz, 128);
@@ -577,20 +538,19 @@ static inline int dma_test_queue_priority()
 	vconf->nb_desc = 1;
 
 	switch (xtype) {
-		/* outbound */
-		case RTE_DMA_DIR_MEM_TO_DEV:
-			vconf->dst_port.port_type = RTE_DMA_PORT_PCIE;
-			vconf->dst_port.pcie.coreid = pem_id;
-			xfer_str = "Outbound";
-			break;
-		/* inbound */
-		case RTE_DMA_DIR_DEV_TO_MEM:
-			vconf->src_port.port_type = RTE_DMA_PORT_PCIE;
-			vconf->src_port.pcie.coreid = pem_id;
-			xfer_str = "Inbound";
-			break;
+	/* outbound */
+	case RTE_DMA_DIR_MEM_TO_DEV:
+		vconf->dst_port.port_type = RTE_DMA_PORT_PCIE;
+		vconf->dst_port.pcie.coreid = pem_id;
+		xfer_str = tranfer_type[2];
+		break;
+	/* inbound */
+	case RTE_DMA_DIR_DEV_TO_MEM:
+		vconf->src_port.port_type = RTE_DMA_PORT_PCIE;
+		vconf->src_port.pcie.coreid = pem_id;
+		xfer_str = tranfer_type[1];
+		break;
 	};
-
 
 	printf("\n%s latency.\n", xfer_str);
 	vchan = rte_dma_vchan_setup(dma_port, vchan, vconf);
@@ -604,11 +564,9 @@ static inline int dma_test_queue_priority()
 
 	bs_tsc = rte_rdtsc();
 	for (b = 0; b < n_iter; b++) {
-	//while (!force_quit) {
 		s_tsc = rte_rdtsc();
 
-		ret = rte_dma_copy_sg(dma_port, vchan, src, dst,
-					 num_ptrs , num_ptrs,
+		ret = rte_dma_copy_sg(dma_port, vchan, src, dst, num_ptrs, num_ptrs,
 					 RTE_DMA_OP_FLAG_SUBMIT);
 		if (ret < 0) {
 			printf("dmadev copy op failed, ret=%d\n", ret);
@@ -618,13 +576,9 @@ static inline int dma_test_queue_priority()
 			rte_dma_completed_status(dma_port, vchan, 1, NULL, &status);
 			if (!status || force_quit)
 				break;
-		} while(1);
+		} while (1);
 
 		e_tsc = rte_rdtsc();
-		//if (force_quit) {
-		//	printf("Test abandoned.\n");
-		//	goto free_bufs;
-		//}
 
 		latency += (e_tsc - s_tsc);
 	}
@@ -646,9 +600,8 @@ free_bufs:
 static int
 launch_one_lcore(__attribute__((unused)) void *dummy)
 {
-	//dma_test_xfer_mstream();
 	dma_test_xfer_perf();
-	//dma_test_queue_priority();
+
 	return 0;
 }
 
@@ -657,7 +610,7 @@ static inline int dma_test_xfer_once(int dma_port, int buf_size, int direction)
 	uint8_t *fptr[2];
 	rte_iova_t alloc_ptr[2];
 	rte_iova_t src, dst;
-	int ret = 0, vchan, i, retries=10;
+	int ret = 0, vchan = 0, i, retries = 10;
 	struct rte_dma_vchan_conf *vconf;
 	enum rte_dma_status_code status;
 	char *xfer_str;
@@ -678,30 +631,30 @@ static inline int dma_test_xfer_once(int dma_port, int buf_size, int direction)
 	vconf->nb_desc = 1;
 
 	switch (direction) {
-		/* outbound */
-		case RTE_DMA_DIR_MEM_TO_DEV:
-			buffer_fill(fptr[0], buf_size, 0);
-			vconf->dst_port.port_type = RTE_DMA_PORT_PCIE;
-			vconf->dst_port.pcie.coreid = pem_id;
-			src = alloc_ptr[0];
-			dst = raddr;
-			xfer_str = "Outbound";
-			break;
-		/* inbound */
-		case RTE_DMA_DIR_DEV_TO_MEM:
-			vconf->src_port.port_type = RTE_DMA_PORT_PCIE;
-			vconf->src_port.pcie.coreid = pem_id;
-			src = raddr;
-			dst = alloc_ptr[0];
-			xfer_str = "Inbound";
-			break;
-		/* internal_only */
-		case RTE_DMA_DIR_MEM_TO_MEM:
-			buffer_fill(fptr[0], buf_size, 0);
-			src = alloc_ptr[0];
-			dst = alloc_ptr[1];
-			xfer_str = "Internal-only";
-			break;
+	/* outbound */
+	case RTE_DMA_DIR_MEM_TO_DEV:
+		buffer_fill(fptr[0], buf_size, 0);
+		vconf->dst_port.port_type = RTE_DMA_PORT_PCIE;
+		vconf->dst_port.pcie.coreid = pem_id;
+		src = alloc_ptr[0];
+		dst = raddr;
+		xfer_str = tranfer_type[2];
+		break;
+	/* inbound */
+	case RTE_DMA_DIR_DEV_TO_MEM:
+		vconf->src_port.port_type = RTE_DMA_PORT_PCIE;
+		vconf->src_port.pcie.coreid = pem_id;
+		src = raddr;
+		dst = alloc_ptr[0];
+		xfer_str = tranfer_type[1];
+		break;
+	/* internal_only */
+	case RTE_DMA_DIR_MEM_TO_MEM:
+		buffer_fill(fptr[0], buf_size, 0);
+		src = alloc_ptr[0];
+		dst = alloc_ptr[1];
+		xfer_str = tranfer_type[0];
+		break;
 	};
 
 	vchan = rte_dma_vchan_setup(dma_port, vchan, vconf);
@@ -718,26 +671,19 @@ static inline int dma_test_xfer_once(int dma_port, int buf_size, int direction)
 		goto free_buf;
 	}
 
-	/*rte_delay_us_sleep(1000);
-	if (RTE_DMA_DIR_MEM_TO_MEM)
-	dump_buffer(fptr[1], buf_size);
-	else
-	dump_buffer(fptr[0], buf_size);*/
 	do {
-		//sleep(1);
+		/* sleep(1); */
 		rte_delay_us_sleep(10);
 		rte_dma_completed_status(dma_port, vchan, 1, NULL, &status);
 		if (!status || !retries || force_quit)
 			break;
 		retries--;
-	} while(1);
+	} while (1);
 
 	if (status)
 		printf("%s DMA transfer failed, status = %d\n", xfer_str, status);
 	else
 		printf("%s DMA transfer success\n", xfer_str);
-
-	//dump_buffer(fptr[0], buf_size);
 
 free_buf:
 	for (i = 0; i < 2; i++) {
@@ -757,7 +703,7 @@ static inline int dma_test_roundtrip_latency(int dma_port, int xtype)
 	rte_iova_t alloc_ptr_out[MAX_POINTERS];
 	struct rte_dma_sge src_in[MAX_POINTERS], dst_in[MAX_POINTERS];
 	struct rte_dma_sge src_out[MAX_POINTERS], dst_out[MAX_POINTERS];
-	int ret = 0, vchan, i, retries=10;
+	int ret = 0, vchan = 0, i;
 	struct rte_dma_vchan_conf vconf = {0};
 	enum rte_dma_status_code status = -1;
 	int ptr_sz = data_size / ptrs_per_instr;
@@ -779,14 +725,14 @@ static inline int dma_test_roundtrip_latency(int dma_port, int xtype)
 		}
 		alloc_ptr_out[i] = rte_malloc_virt2iova(fptr_out[i]);
 
-		//if (xtype == RTE_DMA_DIR_MEM_TO_DEV) {
+		if (xtype == RTE_DMA_DIR_MEM_TO_DEV) {
 			buffer_fill(fptr_out[i], ptr_sz, 0);
 			src_out[i].addr = alloc_ptr_out[i];
 			dst_out[i].addr = raddr + (i * ptr_sz);
-		//} else {
+		} else {
 			src_in[i].addr = raddr + (i * ptr_sz);
 			dst_in[i].addr = alloc_ptr_in[i];
-		//}
+		}
 		src_in[i].length = ptr_sz;
 		dst_in[i].length = ptr_sz;
 	}
@@ -815,8 +761,7 @@ static inline int dma_test_roundtrip_latency(int dma_port, int xtype)
 			rte_dma_start(dma_port);
 			printf("IN src ddr = 0x%lx\n", src_in[0].addr);
 			printf("IN dst addr = 0x%lx\n", dst_in[0].addr);
-			ret = rte_dma_copy_sg(dma_port, vchan, src_in, dst_in,
-						 num_ptrs , num_ptrs,
+			ret = rte_dma_copy_sg(dma_port, vchan, src_in, dst_in, num_ptrs, num_ptrs,
 						 RTE_DMA_OP_FLAG_SUBMIT);
 			if (ret < 0) {
 				printf("dmadev copy op failed, ret=%d\n", ret);
@@ -826,14 +771,14 @@ static inline int dma_test_roundtrip_latency(int dma_port, int xtype)
 				rte_dma_completed_status(dma_port, vchan, 1, NULL, &status);
 				if (!status || force_quit)
 					break;
-			} while(1);
+			} while (1);
 
 			printf("--one way done--\n");
 			/* configure DMA for outbound xfer */
 			rte_dma_stop(dma_port);
 			status = -1;
 			//vconf = &dpi_test[dma_port].vchan_conf;
-			memset(&vconf, 0 , sizeof(vconf));
+			memset(&vconf, 0, sizeof(vconf));
 			vconf.direction = RTE_DMA_DIR_MEM_TO_DEV;
 			vconf.nb_desc = 1;
 			vconf.dst_port.port_type = RTE_DMA_PORT_PCIE;
@@ -849,8 +794,7 @@ static inline int dma_test_roundtrip_latency(int dma_port, int xtype)
 			rte_dma_start(dma_port);
 			printf("OUT src ddr = 0x%lx\n", src_out[0].addr);
 			printf("OUT dst addr = 0x%lx\n", dst_out[0].addr);
-			ret = rte_dma_copy_sg(dma_port, vchan, src_out, dst_out,
-						 num_ptrs , num_ptrs,
+			ret = rte_dma_copy_sg(dma_port, vchan, src_out, dst_out, num_ptrs, num_ptrs,
 						 RTE_DMA_OP_FLAG_SUBMIT);
 			if (ret < 0) {
 				printf("dmadev copy op failed, ret=%d\n", ret);
@@ -860,9 +804,9 @@ static inline int dma_test_roundtrip_latency(int dma_port, int xtype)
 				rte_dma_completed_status(dma_port, vchan, 1, NULL, &status);
 				if (!status || force_quit)
 					break;
-			} while(1);
-			//run_dpi_cmd(dma_port, bufp_in, &ctx_in);
-			//run_dpi_cmd(dma_port, bufp_out, &ctx_out);
+			} while (1);
+			/* run_dpi_cmd(dma_port, bufp_in, &ctx_in); */
+			/* run_dpi_cmd(dma_port, bufp_out, &ctx_out); */
 			e_tsc = rte_rdtsc();
 			if (force_quit) {
 				printf("Test abandoned.\n");
@@ -892,8 +836,7 @@ static inline int dma_test_roundtrip_latency(int dma_port, int xtype)
 			}
 
 			rte_dma_start(dma_port);
-			ret = rte_dma_copy_sg(dma_port, vchan, src_out, dst_out,
-						 num_ptrs , num_ptrs,
+			ret = rte_dma_copy_sg(dma_port, vchan, src_out, dst_out, num_ptrs, num_ptrs,
 						 RTE_DMA_OP_FLAG_SUBMIT);
 			if (ret < 0) {
 				printf("dmadev copy op failed, ret=%d\n", ret);
@@ -903,14 +846,14 @@ static inline int dma_test_roundtrip_latency(int dma_port, int xtype)
 				rte_dma_completed_status(dma_port, vchan, 1, NULL, &status);
 				if (!status || force_quit)
 					break;
-			} while(1);
+			} while (1);
 
 			printf("--one way done--\n");
 			/* configure DMA for inbound xfer */
 			rte_dma_stop(dma_port);
 			status = -1;
 			//vconf = &dpi_test[dma_port].vchan_conf;
-			memset(&vconf, 0 , sizeof(vconf));
+			memset(&vconf, 0, sizeof(vconf));
 			vconf.direction = RTE_DMA_DIR_DEV_TO_MEM;
 			vconf.nb_desc = 1;
 			vconf.src_port.port_type = RTE_DMA_PORT_PCIE;
@@ -923,8 +866,7 @@ static inline int dma_test_roundtrip_latency(int dma_port, int xtype)
 				goto free_bufs;
 			}
 			rte_dma_start(dma_port);
-			ret = rte_dma_copy_sg(dma_port, vchan, src_in, dst_in,
-						 num_ptrs , num_ptrs,
+			ret = rte_dma_copy_sg(dma_port, vchan, src_in, dst_in, num_ptrs, num_ptrs,
 						 RTE_DMA_OP_FLAG_SUBMIT);
 			if (ret < 0) {
 				printf("dmadev copy op failed, ret=%d\n", ret);
@@ -934,11 +876,12 @@ static inline int dma_test_roundtrip_latency(int dma_port, int xtype)
 				rte_dma_completed_status(dma_port, vchan, 1, NULL, &status);
 				if (!status || force_quit)
 					break;
-			} while(1);
+			} while (1);
 
 
-			//run_dpi_cmd(dma_port, bufp_out, &ctx_out);
-			//run_dpi_cmd(dma_port, bufp_in, &ctx_in);
+			/*  run_dpi_cmd(dma_port, bufp_out, &ctx_out);
+			 *  run_dpi_cmd(dma_port, bufp_in, &ctx_in);
+			 */
 			e_tsc = rte_rdtsc();
 			if (force_quit) {
 				printf("Test abandoned.\n");
@@ -962,6 +905,7 @@ free_bufs:
 			rte_free(fptr_out[i]);
 	}
 
+	return ret;
 }
 
 static inline int dma_test_latency(int dma_port, int xtype)
@@ -969,7 +913,7 @@ static inline int dma_test_latency(int dma_port, int xtype)
 	uint8_t *fptr[MAX_POINTERS];
 	rte_iova_t alloc_ptr[MAX_POINTERS];
 	struct rte_dma_sge src[MAX_POINTERS], dst[MAX_POINTERS];
-	int ret = 0, vchan, i, retries=10;
+	int ret = 0, vchan = 0, i;
 	struct rte_dma_vchan_conf *vconf;
 	enum rte_dma_status_code status;
 	char *xfer_str;
@@ -1002,18 +946,18 @@ static inline int dma_test_latency(int dma_port, int xtype)
 	vconf->nb_desc = 1;
 
 	switch (xtype) {
-		/* outbound */
-		case RTE_DMA_DIR_MEM_TO_DEV:
-			vconf->dst_port.port_type = RTE_DMA_PORT_PCIE;
-			vconf->dst_port.pcie.coreid = pem_id;
-			xfer_str = "Outbound";
-			break;
-		/* inbound */
-		case RTE_DMA_DIR_DEV_TO_MEM:
-			vconf->src_port.port_type = RTE_DMA_PORT_PCIE;
-			vconf->src_port.pcie.coreid = pem_id;
-			xfer_str = "Inbound";
-			break;
+	/* outbound */
+	case RTE_DMA_DIR_MEM_TO_DEV:
+		vconf->dst_port.port_type = RTE_DMA_PORT_PCIE;
+		vconf->dst_port.pcie.coreid = pem_id;
+		xfer_str = tranfer_type[2];
+		break;
+	/* inbound */
+	case RTE_DMA_DIR_DEV_TO_MEM:
+		vconf->src_port.port_type = RTE_DMA_PORT_PCIE;
+		vconf->src_port.pcie.coreid = pem_id;
+		xfer_str = tranfer_type[1];
+		break;
 	};
 
 
@@ -1031,8 +975,7 @@ static inline int dma_test_latency(int dma_port, int xtype)
 	for (b = 0; b < n_iter; b++) {
 		s_tsc = rte_rdtsc();
 
-		ret = rte_dma_copy_sg(dma_port, vchan, src, dst,
-					 num_ptrs , num_ptrs,
+		ret = rte_dma_copy_sg(dma_port, vchan, src, dst,  num_ptrs, num_ptrs,
 					 RTE_DMA_OP_FLAG_SUBMIT);
 		if (ret < 0) {
 			printf("dmadev copy op failed, ret=%d\n", ret);
@@ -1042,7 +985,7 @@ static inline int dma_test_latency(int dma_port, int xtype)
 			rte_dma_completed_status(dma_port, vchan, 1, NULL, &status);
 			if (!status || force_quit)
 				break;
-		} while(1);
+		} while (1);
 
 		e_tsc = rte_rdtsc();
 		if (force_quit) {
@@ -1064,7 +1007,7 @@ free_bufs:
 			rte_free(fptr[i]);
 	}
 
-
+	return ret;
 }
 
 static uint64_t dpi_parse_addr(const char *q_arg)
@@ -1083,29 +1026,30 @@ static uint64_t dpi_parse_addr(const char *q_arg)
 /* display usage */
 static void dpi_usage(const char *prgname)
 {
-	printf("%s [EAL options] -- \n"
-	       "  -r <remote address>: Remote pointer\n"
-	       "  -l <first address>: This is also remote address valid for external only mode\n"
-	       "  -m <mode>: Mode of transfer\n"
-	       "             0: Internal Only\n"
-               "             1: Inbound\n"
-	       "             2: Outbound\n"
-	       "             3: Dual - both inbound and outbound (supported only in perf test)\n"
-               "             4: Inbound Latency\n"
-	       "             5: Outbound Latency\n"
-	       "             6: Inbound roundtrip Latency\n"
-	       "             7: Outbound roundtrip Latency\n"
-	       "             8: All modes 4, 5, 6, 7\n"
-	       "		Max data size for latency tests :\n"
-	       "			(65535*15) = 983025 bytes\n"
-	       "  -i <iteration>: No.of iterations\n"
-	       "  -s <data size>: Size of data to be DMA'ed (Default is 256)\n"
-	       "  -b <pem number>: PEM connected to host\n"
-	       "  -p: Performance test\n"
-	       "  -t <num>: Number of pointers per instruction (Default is 1)\n"
-	       "  --inb_sz <data size>: Size of Inbound data size in mode 3\n"
-	       "  --outb_sz <data size>: Size of Outbound data size in mode 3\n",
-       prgname);
+	printf("%s [EAL options] --\n"
+		"  -r <remote address>: Remote pointer\n"
+		"  -l <first address>: This is also remote address valid for external only mode\n"
+		"  -m <mode>: Mode of transfer\n"
+		"             0: Internal Only\n"
+		"             1: Inbound\n"
+		"             2: Outbound\n"
+		"             3: Dual - both inbound and outbound (supported only in perf test)\n"
+		"             4: Inbound Latency\n"
+		"             5: Outbound Latency\n"
+		"             6: Inbound roundtrip Latency\n"
+		"             7: Outbound roundtrip Latency\n"
+		"             8: All modes 4, 5, 6, 7\n"
+		"		Max data size for latency tests :\n"
+		"			(65535*15) = 983025 bytes\n"
+		"  -i <iteration>: No.of iterations\n"
+		"  -s <data size>: Size of data to be DMA'ed (Default is 256)\n"
+		"  -z <pem number>: PEM connected to host\n"
+		"  -b <burst size>: Initial number of packets submitted to the DMA\n"
+		"  -d <done count>: Min numbers of completions to wait for before resubmission\n"
+		"  -p: Performance test\n"
+		"  -t <num>: Number of pointers per instruction (Default is 1)\n"
+		"  --inb_sz <data size>: Size of Inbound data size in mode 3\n"
+		"  --outb_sz <data size>: Size of Outbound data size in mode 3\n", prgname);
 }
 
 /* Parse the argument given in the command line of the application */
@@ -1114,7 +1058,6 @@ static int dpi_parse_args(int argc, char **argv)
 	int opt, ret, opt_idx;
 	char **argvopt;
 	char *prgname = argv[0];
-	char *end;
 
 	static struct option lgopts[] = {
 		{ "inb_sz", 1, 0, 0},
@@ -1124,8 +1067,7 @@ static int dpi_parse_args(int argc, char **argv)
 
 	argvopt = argv;
 
-	while ((opt = getopt_long(argc, argvopt, "r:s:l:m:i:pb:t:",lgopts,
-				  &opt_idx)) != EOF) {
+	while ((opt = getopt_long(argc, argvopt, "r:s:l:m:i:pb:z:t:d:", lgopts, &opt_idx)) != EOF) {
 
 		switch (opt) {
 		/* portmask */
@@ -1162,10 +1104,17 @@ static int dpi_parse_args(int argc, char **argv)
 		case 'i':
 			n_iter = atoi(optarg);
 			break;
-		case 'b':
+		case 'z':
 			pem_id = atoi(optarg);
 			if (pem_id)
 				pem_id = 1;
+			break;
+		case 'b':
+			burst_size = atoi(optarg);
+			printf("Burst size:: %d\n", burst_size);
+			break;
+		case 'd':
+			done_count = atoi(optarg);
 			break;
 		case 'p':
 			perf_mode = 1;
@@ -1178,16 +1127,10 @@ static int dpi_parse_args(int argc, char **argv)
 			if (!strcmp(lgopts[opt_idx].name, "inb_sz")) {
 				printf("This option is not yet supported\n");
 				return -1;
-				//inb_data_size = strtoul(optarg, &end, 0);
-				//printf("Inbound xfer size %ld\n",
-				  //     inb_data_size);
 			}
 			if (!strcmp(lgopts[opt_idx].name, "outb_sz")) {
 				printf("This option is not yet supported\n");
 				return -1;
-				//outb_data_size = strtoul(optarg, &end, 0);
-				//printf("Outbound xfer size %ld\n",
-				  //     outb_data_size);
 			}
 			break;
 		default:
@@ -1208,7 +1151,7 @@ int main(int argc, char **argv)
 {
 	int ret, i, size = 1024;
 	struct rte_dma_conf dev_conf;
-	unsigned lcore_id;
+	unsigned int lcore_id;
 
 	/* init EAL */
 	ret = rte_eal_init(argc, argv);
@@ -1222,6 +1165,8 @@ int main(int argc, char **argv)
 	signal(SIGTERM, signal_handler);
 	signal(SIGUSR1, signal_handler);
 
+	total_dma_cnt = 0;
+	pem_id = 0;
 	/* parse application arguments (after the EAL ones) */
 	ret = dpi_parse_args(argc, argv);
 	if (ret < 0)
@@ -1235,6 +1180,9 @@ int main(int argc, char **argv)
 	timer_period *= rte_get_timer_hz();
 
 	printf("%d dmadev ports detected\n", nb_ports);
+
+	if (burst_size < done_count || burst_size > 256)
+		rte_exit(EXIT_FAILURE, "Burst_size must be between %u to 256\n", done_count);
 
 	/* Configure dmadev ports */
 	for (i = 0; i < nb_ports; i++) {
@@ -1304,16 +1252,18 @@ int main(int argc, char **argv)
 				int j;
 
 				for (j = 0; j < n_iter; j++) {
-					int dir;
-					if (mode == 1)
+					int dir = 0;
+
+					if (mode == 0)
+						dir = RTE_DMA_DIR_MEM_TO_MEM;
+					else if (mode == 1)
 						dir = RTE_DMA_DIR_DEV_TO_MEM;
 					else if (mode == 2)
 						dir = RTE_DMA_DIR_MEM_TO_DEV;
 					else if (mode == 3) {
 						printf("Dual mode is only supported in perf test\n");
 						return 0;
-					} else
-						dir = RTE_DMA_DIR_MEM_TO_MEM;
+					}
 					ret = dma_test_xfer_once(dpi_test[i].dev_id, size, dir);
 					if (ret) {
 						printf("DMA transfer (mode: %d) "
@@ -1322,7 +1272,7 @@ int main(int argc, char **argv)
 					}
 					rte_dma_stop(i);
 				}
-				//break;
+				/* break; */
 			}
 		} else if (mode == 10) {
 			dma_test_mstream_rx(dpi_test[1].dev_id, size, RTE_DMA_DIR_MEM_TO_MEM);
