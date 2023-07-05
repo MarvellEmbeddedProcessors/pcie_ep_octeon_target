@@ -18,16 +18,19 @@ LIB_CFLAGS = $(CFLAGS) -O3 -Werror -Wall -fPIC -g \
 		-I$(CURDIR) \
 		-I$(CURDIR)/include \
 		-I$(CURDIR)/soc \
-		-I$(CURDIR)/compat/$(PLAT)
+		-I$(CURDIR)/compat/$(PLAT) \
+		-I$(CURDIR)/plugin \
 
 LIB_LDFLAGS = $(LDFLAGS) -shared -fvisibility=hidden
 
 SRCS = main.c
 SRCS += soc/soc.c soc/cnxk.c
 SRCS += soc/octep_ctrl_mbox.c
+SRCS += plugin/server/octep_plugin_server.c
+SRCS += plugin/client/octep_plugin_client.c
 
 OBJS = main.o
-OBJS += soc.o cnxk.o octep_ctrl_mbox.o
+OBJS += soc.o cnxk.o octep_ctrl_mbox.o octep_plugin_server.o octep_plugin_client.o
 
 STATIC_BIN = $(LIB).a
 SHARED_BIN = $(LIB).so
