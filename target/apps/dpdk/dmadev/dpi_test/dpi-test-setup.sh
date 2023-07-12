@@ -21,6 +21,11 @@ do
 	DPIVFS=$(cat /sys/bus/pci/devices/$PF/sriov_numvfs)
 	echo "Current number of VFs under DPIPF $PF = $DPIVFS"
 	if [ "x$DPIVFS" != x"$NUMVFS" ]; then
+		TOTALVFS=$(cat /sys/bus/pci/devices/$PF/sriov_totalvfs)
+		if [ $TOTALVFS -lt $NUMVFS ]; then
+			NUMVFS=$TOTALVFS
+		fi
+
 		echo "Creating $NUMVFS VFs for DPIPF $PF ..."
 		echo 0 > /sys/bus/pci/devices/$PF/sriov_numvfs
 		echo $NUMVFS > /sys/bus/pci/devices/$PF/sriov_numvfs
