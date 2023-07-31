@@ -1,22 +1,13 @@
+On Octeon
+---------
+#. Build sdk image and install it on Octeon.
+#. Make sure /usr/bin/l2fwd_pcie_ep, /usr/bin/cn98xx-l2fwd-pem0-pf0-3.cfg and
+   /usr/bin/l2fwd_pcie_ep_setup.sh are present in rootfs.
+
 How to test l2fwd_pcie_ep application
 ======================================
 
 l2fwd_pcie_ep can be used to forward packets between CGX/RPM interfaces and SDP
-
-#. Build sdk image and install it on Octeon.
-#. Make sure /usr/bin/l2fwd_pcie_ep, /usr/bin/cn98xx-l2fwd-pem0-pf0-3.cfg and
-   /usr/bin/l2fwd_pcie_ep_setup.sh are present in rootfs.
-#. Build host drivers.
-#. Load the drivers on Host in following order:
-    .. code-block:: shell-session
-
-    | # insmod octeon_ep.ko
-    | # insmod octeon_ep_vf.ko
-    | # echo 1 > /sys/bus/pci/devices/<PF pci bdf>/sriov_numvfs
-    | Modify the number of VFs that are desired.
-    | This example shows the PF and 1 VF enabled. Max supported num_vfs can be found from sriov_numvfs.
-    | # ifconfig <host-pf-iface> up
-
 
 On Octeon linux shell console
 -----------------------------
@@ -34,13 +25,59 @@ On Octeon linux shell console
 #. Run l2fwd_pcie_ep as below
 	#/usr/bin/l2fwd_pcie_ep -l0-8 --main-lcore=0 -a $SDP_NIX_VF0 -a $ETH_PF0 -- -f /usr/bin/cn98xx-l2fwd-pem0-pf0-3.cfg -d 1 -v <verbose_level>
 
+l2fwd_pcie_ep command line arguments
+------------------------------------
+        -a <1/0> API server feature.(default: 0)
+           allows to add/delete forward pairs at run time.
+        -t API server port number, to be provided in decimal format
+        -c <1/0> Control plane feature (default: 1)
+           on set to 1, NIC's APIs(like set/get mtu) are used else stub.
+        -d <1/0> Data plane feature (default: 1)
+           Enable data transfer between SDP and CGX.
+        -f configuration file path
+        -s <1/0> periodic statistics printing (default 1)
+        -v <1-8> verbosity 1-8 (default 7)
+        -x <1/0> packet capture feature (default: 0)
 
-How to test json-rpc api
-=========================
+On Host(x86) machine
+--------------------
+#. Build host drivers.
+#. Load the drivers on Host in following order:
+    .. code-block:: shell-session
+
+    | # insmod octeon_ep.ko
+    | # insmod octeon_ep_vf.ko
+    | # echo 1 > /sys/bus/pci/devices/<PF pci bdf>/sriov_numvfs
+    | Modify the number of VFs that are desired.
+    | This example shows the PF and 1 VF enabled. Max supported num_vfs can be found from sriov_numvfs.
+    | # ifconfig <host-pf-iface> up
+    | # ifconfig <host-vf-iface> up
+
+..note:: l2fwd_pcie_ep_setup.sh and l2fwd_pcie_ep to be run before inserting octeon modules.
+
+How to test json-rpc api on octeon
+----------------------------------
 #. Example script /usr/bin/l2fwd_pcie_ep_api_client.py is provided in the rootfs.
    This script exercises all api's supported by the application.
+   Make sure '-a 1' is provided while running l2fwd_pcie_ep.
+
 #. Run the script as follows:
     .. code-block:: shell-session
 
     | # python /usr/bin/l2fwd_pcie_ep_api_client.py
+    .. On success, output looks something like,
+    #set forward state to 0
+    Sent:     {"jsonrpc": "2.0", "id": 1, "method": "mrvl_l2fwd_set_fwd_state", "params": {"state": 0}}
+    Received: {"jsonrpc": "2.0","result": 0},"id": "1"}
 
+    #delete SDP-CGX pair
+    Sent:     {"jsonrpc": "2.0", "id": 2, "method": "mrvl_l2fwd_del_fwd_pair", "params": {"port1": "0002:13:00.1", "port2": "0002:02:00.1"}}
+    Received: {"jsonrpc": "2.0","result": 0},"id": "2"}
+
+   # Add new SDP-CGX pair
+    Sent:     {"jsonrpc": "2.0", "id": 3, "method": "mrvl_l2fwd_add_fwd_pair", "params": {"port1": "0002:13:00.1", "port2": "0002:02:00.1"}}
+    Received: {"jsonrpc": "2.0","result": 0},"id": "3"}
+
+    #set forward sate to 1
+    Sent:     {"jsonrpc": "2.0", "id": 4, "method": "mrvl_l2fwd_set_fwd_state", "params": {"state": 1}}
+    Received: {"jsonrpc": "2.0","result": 0},"id": "4"}
