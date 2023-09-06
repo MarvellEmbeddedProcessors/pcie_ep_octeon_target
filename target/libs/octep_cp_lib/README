@@ -16,6 +16,7 @@ Tree below describes the most important directories in library structure for end
     |-- include - Public header files for library users
     |-- compat - compatibility header files for different platforms
     |-- soc - internal api implementation for different platforms
+    |-- plugin - plugin server and client api implementation
 
 
 Library {#section4}
