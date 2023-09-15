@@ -938,7 +938,7 @@ static int process_msg(union octep_cp_msg_info *ctx, struct octep_cp_msg *msg,
 		       uint32_t host_version)
 {
 	union octep_cp_msg_info *info = &msg->info;
-	struct octep_ctrl_net_h2f_resp resp;
+	struct octep_ctrl_net_h2f_resp resp = { 0 };
 	struct octep_ctrl_net_h2f_req *req;
 	struct control_fn_ops *ops;
 	int resp_sz = 0, pem_idx, pf_idx;
