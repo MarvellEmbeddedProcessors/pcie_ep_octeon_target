@@ -11,7 +11,13 @@ Pcie_ep_octeontx components
 ===========================
 
 Component:      target-apps
-License:        BSD3 (SPDX-License-Identifier: BSD-3-Clause)
+License:        BSD-3-Clause (SPDX-License-Identifier: BSD-3-Clause)
 License Text:   https://spdx.org/licenses/BSD-3-Clause.html#licenseText
 Project URL:    N/A
 Directories:    target/apps
+
+Component:      target-libs
+License:        BSD-3-Clause (SPDX-License-Identifier: BSD-3-Clause)
+License Text:   https://spdx.org/licenses/BSD-3-Clause.html#licenseText
+Project URL:    N/A
+Directories:    target/libs/octep_cp_lib
