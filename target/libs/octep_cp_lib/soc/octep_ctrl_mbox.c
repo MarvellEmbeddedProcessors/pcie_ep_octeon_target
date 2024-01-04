@@ -1,5 +1,5 @@
-/* SPDX-License-Identifier: BSD-3-Clause
- * Copyright (c) 2022 Marvell.
+// SPDX-License-Identifier: BSD-3-Clause
+/* Copyright (c) 2022 Marvell.
  */
 #include <stdint.h>
 #include <errno.h>
