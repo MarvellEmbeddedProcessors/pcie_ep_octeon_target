@@ -24,12 +24,12 @@ LIB_CFLAGS = $(CFLAGS) -O3 -Werror -Wall -fPIC -g \
 LIB_LDFLAGS = $(LDFLAGS) -shared -fvisibility=hidden
 
 SRCS = main.c
-SRCS += soc/soc.c soc/cnxk.c
+SRCS += soc/soc.c soc/cnxk.c soc/vfio.c
 SRCS += soc/octep_ctrl_mbox.c
 SRCS += plugin/server/octep_plugin_server.c
 SRCS += plugin/client/octep_plugin_client.c
 
-OBJS = main.o
+OBJS = main.o vfio.o
 OBJS += soc.o cnxk.o octep_ctrl_mbox.o octep_plugin_server.o octep_plugin_client.o
 
 STATIC_BIN = $(LIB).a
