@@ -107,4 +107,7 @@ int cnxk_uninit_pem(int dom_idx);
  */
 int cnxk_uninit();
 
+int cnxk_create_vfio_container(struct octep_vfio_info *vfio_info);
+void cnxk_destroy_vfio_container(struct octep_vfio_info *vfio_info);
+int cnxk_dpi_init(struct octep_vfio_info *vfio_info);
 #endif /* __CNXK_H__ */

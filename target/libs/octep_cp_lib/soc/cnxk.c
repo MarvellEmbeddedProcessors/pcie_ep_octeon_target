@@ -388,6 +388,7 @@ static int init_pem(struct octep_cp_lib_cfg *cfg, struct cnxk_pem *pem,
 	int err, j, fd;
 	char uio_file[16];
 	int uio_num;
+
 	pem->idx = dom_cfg->idx;
 	err = check_pem_status(pem);
 	if (err < 0)
@@ -443,6 +444,18 @@ int cnxk_init(struct octep_cp_lib_cfg *cfg)
 
 	CP_LIB_LOG(INFO, CNXK, "init\n");
 
+#if USE_PEM_AND_DPI_PF
+	/* create VFIO container */
+	if (cnxk_create_vfio_container(&cfg->vfio))
+		return -ENODEV;
+
+	/* Initialize DPI */
+	if (cnxk_dpi_init(&cfg->vfio)) {
+		err = -1;
+		goto free_container;
+	}
+#endif
+
 	/* Initialize pf interfaces */
 	memset(pems, 0, sizeof(pems[0]) * OCTEP_CP_DOM_MAX);
 	for (i = 0; i < cfg->ndoms; i++) {
@@ -466,6 +479,10 @@ init_fail:
 	for (i = 0; i < OCTEP_CP_DOM_MAX; i++)
 		if (pems[i].valid)
 			uninit_pem(&pems[i]);
+#if USE_PEM_AND_DPI_PF
+free_container:
+	cnxk_destroy_vfio_container(&cfg->vfio);
+#endif
 
 	return err;
 }
@@ -695,6 +712,9 @@ int cnxk_uninit()
 		if (pems[i].valid)
 			uninit_pem(&pems[i]);
 
+#if USE_PEM_AND_DPI_PF
+	cnxk_destroy_vfio_container(&user_cfg.vfio);
+#endif
 	return 0;
 }
 

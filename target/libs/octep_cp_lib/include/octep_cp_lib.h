@@ -4,6 +4,8 @@
 #ifndef __OCTEP_CP_LIB_H__
 #define __OCTEP_CP_LIB_H__
 
+#include <linux/vfio.h>
+
 #ifndef BIT_ULL
 #define BIT_ULL(nr) (1ULL << (nr))
 #endif
@@ -188,6 +190,20 @@ struct octep_cp_dom_cfg {
 	struct octep_cp_pf_cfg pfs[OCTEP_CP_PF_PER_DOM_MAX];
 };
 
+/* Information of devices accessed through VFIO-PCI */
+#define DEVICE_BDF_STRLEN 16
+struct octep_vfio_info {
+	int container;
+
+	int dpi_group_fd;
+	int dpi_device_fd;
+	int dpi_iommu;
+	char dpi_dev[DEVICE_BDF_STRLEN];
+
+	void *dpi_region_base[VFIO_PCI_NUM_REGIONS];
+	uint64_t dpi_region_size[VFIO_PCI_NUM_REGIONS];
+};
+
 /* library configuration */
 struct octep_cp_lib_cfg {
 	/* Info to be filled by caller */
@@ -203,6 +219,8 @@ struct octep_cp_lib_cfg {
 	uint16_t ndoms;
 	/* configuration for pcie mac domains */
 	struct octep_cp_dom_cfg doms[OCTEP_CP_DOM_MAX];
+
+	struct octep_vfio_info vfio;
 };
 
 /* pcie mac domain pf information */
@@ -234,6 +252,9 @@ struct octep_cp_lib_info {
 	/* configuration for pcie mac domains */
 	struct octep_cp_dom_info doms[OCTEP_CP_DOM_MAX];
 };
+
+/* Parse command line arguments for octep_cp library */
+int octep_cp_lib_parse_args(int argc, char **argv, struct octep_cp_lib_cfg *cfg);
 
 /* Initialize octep_cp library.
  *
