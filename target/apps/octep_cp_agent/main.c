@@ -186,10 +186,9 @@ static const struct option lgopts[] = {
 	{NULL, 0, 0, 0}
 };
 
-/* Parse the argument given in the command line of the application */
-static int parse_args(int argc, char **argv)
+int parse_args(int argc, char **argv)
 {
-	int opt, ret, cpu_yield_ms;
+	int opt, cpu_yield_ms;
 	char **argvopt;
 	int option_index;
 	char *prgname = argv[0];
@@ -223,9 +222,7 @@ static int parse_args(int argc, char **argv)
 	if (optind >= 0)
 		argv[optind-1] = prgname;
 
-	ret = optind-1;
-	optind = 1; /* reset getopt lib */
-	return ret;
+	return optind - 1;
 }
 
 int main(int argc, char *argv[])
@@ -243,7 +240,10 @@ int main(int argc, char *argv[])
 	if (err)
 		return err;
 
+	/* skip program name and config file params */
+	optind = 2;
 	parse_args(argc, argv);
+
 	ev = calloc(max_num_msg, sizeof(struct octep_cp_event_info));
 	if (!ev)
 		return -ENOMEM;
@@ -284,6 +284,10 @@ int main(int argc, char *argv[])
 		}
 		dst_i++;
 	}
+	err = octep_cp_lib_parse_args(argc, argv, &cp_lib_cfg);
+	if (err)
+		return err;
+
 	err = octep_cp_lib_init(&cp_lib_cfg);
 	if (err)
 		return err;
