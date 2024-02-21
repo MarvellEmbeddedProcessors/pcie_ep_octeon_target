@@ -120,13 +120,20 @@ int octep_ctrl_mbox_init(struct octep_ctrl_mbox *mbox)
 	if (!mbox)
 		return -EINVAL;
 
+#ifndef USE_PEM_AND_DPI_PF
 	if (!mbox->bar4_fd || !mbox->barmem || !mbox->barmem_sz)
+#else
+	if (!mbox->barmem || !mbox->barmem_sz)
+#endif
 		return -EINVAL;
 
 	err = set_mbox_info(mbox);
 	if (err)
 		return err;
 
+	/* FIXME: create a generic abstract API layer that takes mbox
+	 * and read from mapped memory or fd based on configuration
+	 */
 	cp_write64_fd(OCTEP_CTRL_MBOX_MAGIC_NUMBER,
 		      OCTEP_CTRL_MBOX_INFO_MAGIC_NUM(mbox->barmem),
 		      mbox->bar4_fd);

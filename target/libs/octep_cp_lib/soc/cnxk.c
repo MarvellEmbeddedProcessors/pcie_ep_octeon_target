@@ -102,10 +102,10 @@ static inline void *map_reg(__attribute__((unused)) int pem_idx, unsigned long l
 
 static inline int unmap_reg(void* addr, off_t offset, size_t len)
 {
-#if USE_PEM_AND_DPI_PF
-	return cnxk_pem_unmap_reg(addr);
-#else
+#ifndef USE_PEM_AND_DPI_PF
 	return munmap((addr - offset), (len + offset));
+#else
+	return 0;
 #endif
 }
 
@@ -135,10 +135,13 @@ static int init_mbox(struct octep_cp_lib_cfg *cfg, struct cnxk_pem *pem,
 		     struct cnxk_pf *pf)
 {
 	struct octep_ctrl_mbox *mbox;
+#ifndef USE_PEM_AND_DPI_PF
 	char memdev_name[32];
+#endif
 	int err;
 
 	mbox = &pf->mbox;
+#ifndef USE_PEM_AND_DPI_PF
 	snprintf(memdev_name, 32, "/dev/pem%lld_ep_bar4_mem", pem->idx);
 	mbox->bar4_fd = open(memdev_name, O_RDWR | O_SYNC);
 	if(mbox->bar4_fd <= 0) {
@@ -147,6 +150,7 @@ static int init_mbox(struct octep_cp_lib_cfg *cfg, struct cnxk_pem *pem,
 			   pem->idx, pf->idx);
 		return -ENOMEM;
 	}
+#endif
 
 	mbox->min_version = cfg->min_version;
 	mbox->max_version = cfg->max_version;
@@ -156,7 +160,9 @@ static int init_mbox(struct octep_cp_lib_cfg *cfg, struct cnxk_pem *pem,
 	if (err) {
 		CP_LIB_LOG(INFO, CNXK, "pem[%d] pf[%d] mbox init failed.\n",
 			   pem->idx, pf->idx);
+#ifndef USE_PEM_AND_DPI_PF
 		close(mbox->bar4_fd);
+#endif
 	}
 	CP_LIB_LOG(INFO, CNXK, "pem[%d] pf[%d] control plane versions %x:%x\n",
 		   pem->idx, pf->idx, cfg->min_version, cfg->max_version);
@@ -228,7 +234,11 @@ static int init_pf(struct octep_cp_lib_cfg *cfg, struct cnxk_pem *pem,
 {
 	int err;
 
+#ifndef USE_PEM_AND_DPI_PF
 	pf->bar4_addr = PEMX_BAR4_INDEX_ADDR + (pf->idx * MBOX_SZ);
+#else
+	pf->bar4_addr = (uint64_t)cfg->vfio.mbox_mem + (pf->idx * MBOX_SZ);
+#endif
 	err = init_mbox(cfg, pem, pf);
 	if (err)
 		return err;
@@ -243,7 +253,9 @@ static int uninit_pf(struct cnxk_pem *pem, struct cnxk_pf *pf)
 {
 	if (pf->mbox.barmem) {
 		octep_ctrl_mbox_uninit(&pf->mbox);
+#ifndef USE_PEM_AND_DPI_PF
 		close(pf->mbox.bar4_fd);
+#endif
 	}
 
 	if (pf->oei_trig_addr)
@@ -336,6 +348,7 @@ static int uninit_pem(struct cnxk_pem *pem)
 	return 0;
 }
 
+#ifndef USE_PEM_AND_DPI_PF
 static int find_pem_uiodev(char *name)
 {
 	struct dirent *files;
@@ -382,22 +395,28 @@ static int find_pem_uiodev(char *name)
 	closedir(dir);
 	return -1;
 }
+#endif
 
 static int init_pem(struct octep_cp_lib_cfg *cfg, struct cnxk_pem *pem,
 		    struct octep_cp_dom_cfg *dom_cfg)
 {
 	struct octep_cp_pf_cfg *pf_cfg;
 	struct cnxk_pf *pf;
+#ifndef USE_PEM_AND_DPI_PF
 	char uio_path[256];
 	int err, j, fd;
 	char uio_file[16];
 	int uio_num;
+#else
+	int err, j;
+#endif
 
 	pem->idx = dom_cfg->idx;
 	err = check_pem_status(pem);
 	if (err < 0)
 		return err;
 
+#ifndef USE_PEM_AND_DPI_PF
 	snprintf(uio_file, sizeof(uio_file), "PEM%lld", pem->idx);
 	uio_num = find_pem_uiodev(uio_file);
 	if (uio_num < 0) {
@@ -412,6 +431,7 @@ static int init_pem(struct octep_cp_lib_cfg *cfg, struct cnxk_pem *pem,
 		return -errno;
 
 	pem->uio_fd = fd;
+#endif
 	for (j = 0; j < dom_cfg->npfs; j++) {
 		pf_cfg = &dom_cfg->pfs[j];
 		if (pf_cfg->idx >= OCTEP_CP_PF_PER_DOM_MAX) {
@@ -693,6 +713,7 @@ int cnxk_send_event(struct octep_cp_event_info *info)
 
 int cnxk_recv_event(struct octep_cp_event_info *info, int num)
 {
+#ifndef USE_PEM_AND_DPI_PF
 	int i, n_ev, data, n;
 	struct cnxk_pem *pem;
 
@@ -712,6 +733,9 @@ int cnxk_recv_event(struct octep_cp_event_info *info, int num)
 	}
 
 	return n_ev;
+#else
+	return 0;
+#endif
 }
 
 int cnxk_uninit()
