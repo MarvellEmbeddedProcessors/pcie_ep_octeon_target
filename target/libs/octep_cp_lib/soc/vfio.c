@@ -20,6 +20,10 @@
 
 #define MAX_DPI_ENGINES 6
 
+#define PEM_BAR0_START(pem_idx) (0x8E0000000000ULL | ((uint64_t)pem_idx << 36))
+#define PEM_BAR4_START(pem_idx) (0x8E0F00000000ULL | ((uint64_t)pem_idx << 36))
+#define DPI_BAR0_START(dpi_idx) (0x86e000000000ULL | ((uint64_t)dpi_idx << 36))
+
 #define DPI_DMA_CONTROL_DMA_ENB(x)      (((x) & 0x3fULL) << 48)
 
 #define DPI_DMA_CONTROL_O_MODE                  (0x1ULL << 14)
@@ -100,6 +104,167 @@ shutdown_container:
 	return -1;
 }
 
+int cnxk_pem_unmap_reg(void *addr)
+{
+	/* FIXME: nothing to do; change return type to void */
+	return 0;
+}
+
+extern struct octep_cp_lib_cfg *lib_cfg;
+void *cnxk_pem_map_reg(int pem_idx, unsigned long long addr)
+{
+	uint64_t bar_offset;
+	int is_pem_reg = 0;
+	int bar_idx;
+
+	/* FIXME: make it generic */
+	if ((addr & PEM_BAR4_START(pem_idx)) == PEM_BAR4_START(pem_idx)) {
+		is_pem_reg = 1;
+		bar_idx = 4;
+		bar_offset = addr - PEM_BAR4_START(pem_idx);
+	} else if ((addr & PEM_BAR0_START(pem_idx)) == PEM_BAR0_START(pem_idx)) {
+		is_pem_reg = 1;
+		bar_idx = 0;
+		bar_offset = addr - PEM_BAR0_START(pem_idx);
+	} else if ((addr & DPI_BAR0_START(0)) == DPI_BAR0_START(0)) {
+		bar_idx = 0;
+		bar_offset = addr - DPI_BAR0_START(0);
+	} else {
+		CP_LIB_LOG(ERR, CNXK, "pem_dpi_map_reg: Invalid addr 0x%llx\n", addr);
+		return NULL;
+	}
+
+	if (is_pem_reg) {
+		if (lib_cfg->vfio.pem_region_size[bar_idx] < bar_offset) {
+			CP_LIB_LOG(ERR, CNXK,
+				   "pem_map_reg: addr=0x%llx (offset=0x%llx) is beyond BAR-%d size of 0x%lx\n",
+				   addr, bar_offset, bar_idx,
+				   lib_cfg->vfio.pem_region_size[bar_idx]);
+			return NULL;
+		}
+
+		/* FIXME: remove the debug log */
+		CP_LIB_LOG(INFO, CNXK, "pem_map_reg: addr=0x%llx idx=%d offset=0x%lx\n",
+			   addr, bar_idx, bar_offset);
+		return (lib_cfg->vfio.pem_region_base[bar_idx] + bar_offset);
+	}
+
+	if (lib_cfg->vfio.dpi_region_size[bar_idx] < bar_offset) {
+		CP_LIB_LOG(ERR, CNXK,
+			   "dpi_map_reg: addr=0x%llx (offset=0x%llx) is beyond BAR-%d size of 0x%lx\n",
+			   addr, bar_offset, bar_idx, lib_cfg->vfio.dpi_region_size[bar_idx]);
+		return NULL;
+	}
+	/* FIXME: remove the debug log */
+	CP_LIB_LOG(INFO, CNXK, "dpi_map_reg: addr=0x%llx idx=%d offset=0x%lx\n",
+		   addr, bar_idx, bar_offset);
+	return (lib_cfg->vfio.dpi_region_base[bar_idx] + bar_offset);
+}
+
+static void cnxk_pem_uninit(struct octep_vfio_info *vfio_info)
+{
+	int idx;
+	for (idx = 0; idx < VFIO_PCI_NUM_REGIONS; idx++) {
+		if (vfio_info->pem_region_base[idx])
+			munmap(vfio_info->pem_region_base[idx], vfio_info->pem_region_size[idx]);
+	}
+}
+
+int cnxk_pem_init(struct octep_vfio_info *vfio_info)
+{
+	struct vfio_group_status group_status = { .argsz = sizeof(group_status) };
+	struct vfio_device_info device_info = { .argsz = sizeof(device_info) };
+	struct vfio_region_info reg = { .argsz = sizeof(reg) };
+	int container, group, device, ret, i;
+	char filepath[FILENAME_MAX];
+	void *mem;
+
+	container = vfio_info->container;
+
+	/* Open the group */
+	snprintf(filepath, sizeof(filepath), "%s%d", "/dev/vfio/", vfio_info->pem_iommu);
+	group = open(filepath, O_RDWR);
+	if (group < 0) {
+		CP_LIB_LOG(ERR, CNXK,
+				"failed to open PEM VFIO group at %s; err=%d\n", filepath, errno);
+		return -1;
+	}
+
+	/* Test the group is viable and available */
+	ret = ioctl(group, VFIO_GROUP_GET_STATUS, &group_status);
+	if (ret == -1) {
+		CP_LIB_LOG(ERR, CNXK,
+			   "Failed to get VFIO group status for PEM; err=%d\n", ret);
+		goto close_group;
+	}
+
+	if (!(group_status.flags & VFIO_GROUP_FLAGS_VIABLE)) {
+		/* Group is not viable (ie, not all devices bound for vfio) */
+		CP_LIB_LOG(ERR, CNXK,
+			   "VFIO Group is not viable; check if PEM device bound to vfio driver\n");
+		goto close_group;
+	}
+
+	/* Add the group to the container */
+	ret = ioctl(group, VFIO_GROUP_SET_CONTAINER, &container);
+	if (ret == -1) {
+		CP_LIB_LOG(ERR, CNXK,
+			   "Failed to add PEM VFIO group to the container; ret=%d\n", ret);
+		goto close_group;
+	}
+
+	/* Get a file descriptor for the device */
+	device = ioctl(group, VFIO_GROUP_GET_DEVICE_FD, vfio_info->pem_dev);
+	if (device == -1) {
+		CP_LIB_LOG(ERR, CNXK, "Failed to get PEM device VFIO FD; ret=%d\n", device);
+		goto close_group;
+	}
+
+	/* Test and setup the device */
+	ret = ioctl(device, VFIO_DEVICE_GET_INFO, &device_info);
+	if (ret == -1) {
+		CP_LIB_LOG(ERR, CNXK, "Failed to get PEM VFIO device info; ret=%d\n", ret);
+		goto close_group;
+	}
+
+	/* map active BAR regions */
+	for (i = 0; i <= VFIO_PCI_BAR5_REGION_INDEX; i++) {
+		reg.index = i;
+		ret = ioctl(device, VFIO_DEVICE_GET_REGION_INFO, &reg);
+		if (ret == -1) {
+			CP_LIB_LOG(ERR, CNXK,
+				   "Failed to get PEM device info for region-%d; ret=%d\n",
+				   reg.index, ret);
+			goto uninit_pem;
+		}
+
+		if (!(reg.flags & VFIO_REGION_INFO_FLAG_MMAP))
+			continue;
+		if (!reg.size)
+			continue;
+
+		mem = mmap(NULL, reg.size, PROT_READ | PROT_WRITE, MAP_SHARED, device, reg.offset);
+		if (mem == MAP_FAILED) {
+			CP_LIB_LOG(ERR, CNXK, "failed to mmap PEM region-%d\n", reg.index);
+			goto uninit_pem;
+		}
+		CP_LIB_LOG(DEBUG, CNXK, "mapped PEM device region-%d; size=0x%llx.\n",
+				reg.index, reg.size);
+		vfio_info->pem_region_base[i] = mem;
+		vfio_info->pem_region_size[i] = reg.size;
+	}
+
+	return 0;
+
+uninit_pem:
+	printf("PEM init failed\n");
+	cnxk_pem_uninit(vfio_info);
+
+close_group:
+	close(group);
+	return -1;
+}
+
 int cnxk_dpi_init(struct octep_vfio_info *vfio_info)
 {
 	struct vfio_group_status group_status = { .argsz = sizeof(group_status) };
@@ -167,8 +332,6 @@ int cnxk_dpi_init(struct octep_vfio_info *vfio_info)
 		goto close_group;
 	}
 
-	CP_LIB_LOG(INFO, CNXK, "number of DPI device regions = %d\n", device_info.num_regions);
-
 	reg.index = 0;
 	ret = ioctl(device, VFIO_DEVICE_GET_REGION_INFO, &reg);
 	if (ret == -1) {
@@ -180,6 +343,7 @@ int cnxk_dpi_init(struct octep_vfio_info *vfio_info)
 		mem = mmap(NULL, reg.size, PROT_READ | PROT_WRITE, MAP_SHARED, device, reg.offset);
 		if (mem == MAP_FAILED) {
 			CP_LIB_LOG(ERR, CNXK, "failed to mmap DPI region-%d\n", reg.index);
+			/* FIXME: replace with uninit_dpi or uninit_pem_dpi */
 			goto fail;
 		}
 		CP_LIB_LOG(DEBUG, CNXK, "mapped DPI device region-%d; size=0x%llx.\n",
