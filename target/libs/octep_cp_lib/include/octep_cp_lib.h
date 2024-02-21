@@ -204,6 +204,9 @@ struct octep_vfio_info {
 	void *pem_region_base[VFIO_PCI_NUM_REGIONS];
 	uint64_t pem_region_size[VFIO_PCI_NUM_REGIONS];
 
+	/* pointer to control plane mailbox memory */
+	void *mbox_mem;
+
 	/* DPI PF device info */
 	int dpi_group_fd;
 	int dpi_device_fd;

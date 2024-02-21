@@ -16,6 +16,7 @@
 #include "octep_cp_lib.h"
 #include "cp_log.h"
 #include "cp_lib.h"
+#include "cnxk_hw.h"
 #include "cp_compat.h"
 
 #define MAX_DPI_ENGINES 6
@@ -62,6 +63,23 @@
 
 #define DPI_CTL_EN               BIT_ULL(0)
 
+#define BAD_PHYS_ADDR            (-1ULL)
+
+#define PFN_MASK 0x7fffffffffffffULL
+#define PEM_BAR4_IDX_IOVA_SHIFT 22
+#define PEMx_BAR4_INDEX_OFFSET(idx) (0x700 + (idx << 3))
+
+union cnxk_pem_bar4_idx {
+	uint64_t val;
+	struct {
+		uint64_t addr_v:1; /* bit 0 */
+		uint64_t rsvd1:2; /* bits 2:1 */
+		uint64_t ca:1; /* bit 3 */
+		uint64_t addr_idx:31; /* bits 34:4 */
+		uint64_t rsvd2:29; /* bits 65:35 */
+	} s;
+};
+
 /* Close the VFIO container used to access DPI and PEM devices */
 void cnxk_destroy_vfio_container(struct octep_vfio_info *vfio_info)
 {
@@ -104,12 +122,6 @@ shutdown_container:
 	return -1;
 }
 
-int cnxk_pem_unmap_reg(void *addr)
-{
-	/* FIXME: nothing to do; change return type to void */
-	return 0;
-}
-
 extern struct octep_cp_lib_cfg *lib_cfg;
 void *cnxk_pem_map_reg(int pem_idx, unsigned long long addr)
 {
@@ -143,9 +155,6 @@ void *cnxk_pem_map_reg(int pem_idx, unsigned long long addr)
 			return NULL;
 		}
 
-		/* FIXME: remove the debug log */
-		CP_LIB_LOG(INFO, CNXK, "pem_map_reg: addr=0x%llx idx=%d offset=0x%lx\n",
-			   addr, bar_idx, bar_offset);
 		return (lib_cfg->vfio.pem_region_base[bar_idx] + bar_offset);
 	}
 
@@ -155,10 +164,67 @@ void *cnxk_pem_map_reg(int pem_idx, unsigned long long addr)
 			   addr, bar_offset, bar_idx, lib_cfg->vfio.dpi_region_size[bar_idx]);
 		return NULL;
 	}
-	/* FIXME: remove the debug log */
-	CP_LIB_LOG(INFO, CNXK, "dpi_map_reg: addr=0x%llx idx=%d offset=0x%lx\n",
-		   addr, bar_idx, bar_offset);
 	return (lib_cfg->vfio.dpi_region_base[bar_idx] + bar_offset);
+}
+
+static unsigned long virt_to_phys(void *virt)
+{
+	int page_size = getpagesize();
+	unsigned long virtual = (unsigned long)virt;
+	unsigned long aligned = (virtual & ~(page_size - 1));
+	uint64_t page;
+	off_t offset;
+	int fdmem;
+
+	/* allocate page in physical memory and prevent from swapping */
+	mlock((void *)aligned, page_size);
+
+	fdmem = open("/proc/self/pagemap", O_RDONLY);
+	if (fdmem < 0) {
+		CP_LIB_LOG(ERR, CNXK,
+			   "failed to convert virt to phys addr; cannot open pagemap\n");
+		return BAD_PHYS_ADDR;
+	}
+	offset = (off_t) (virtual / page_size) * sizeof(uint64_t);
+	if (lseek(fdmem, offset, SEEK_SET) == (off_t) -1) {
+		CP_LIB_LOG(ERR, CNXK, "cannot lseek() in pagemap\n");
+		close(fdmem);
+		return BAD_PHYS_ADDR;
+	}
+	if (read(fdmem, &page, sizeof(uint64_t)) <= 0) {
+		CP_LIB_LOG(ERR, CNXK, "cannot read pagemap\n");
+		close(fdmem);
+		return BAD_PHYS_ADDR;
+	}
+	close(fdmem);
+
+	/* pfn (page frame number) are bits 0-54 (see pagemap.txt in Linux doc) */
+	return ((page & PFN_MASK) * page_size) + (virtual % page_size);
+}
+
+static int cnxk_pem_setup_mbox_memory(struct octep_vfio_info *vfio)
+{
+	union cnxk_pem_bar4_idx bar4_idx = {0};
+	void *pem_bar0 = vfio->pem_region_base[0];
+	int length = PEMX_BAR4_INDEX_SIZE;
+	unsigned long paddr;
+	void *addr;
+
+	addr = mmap(0, length, PROT_READ|PROT_WRITE,
+		    MAP_PRIVATE | MAP_ANONYMOUS | MAP_HUGETLB, -1, 0);
+	if (addr == MAP_FAILED) {
+		CP_LIB_LOG(ERR, CNXK, "Failed to map mailbox memory\n");
+		return -1;
+	}
+
+	paddr = virt_to_phys(addr);
+	CP_LIB_LOG(DEBUG, CNXK, "CP mailbox: virt_addr = %p; phys_addr = 0x%lx\n", addr, paddr);
+
+	bar4_idx.s.addr_v = 1;
+	bar4_idx.s.addr_idx = paddr >> PEM_BAR4_IDX_IOVA_SHIFT;
+	cp_write64(bar4_idx.val, pem_bar0 + PEMx_BAR4_INDEX_OFFSET(PEMX_BAR4_INDEX_MBOX));
+	vfio->mbox_mem = addr;
+	return 0;
 }
 
 static void cnxk_pem_uninit(struct octep_vfio_info *vfio_info)
@@ -252,6 +318,11 @@ int cnxk_pem_init(struct octep_vfio_info *vfio_info)
 				reg.index, reg.size);
 		vfio_info->pem_region_base[i] = mem;
 		vfio_info->pem_region_size[i] = reg.size;
+	}
+
+	if (cnxk_pem_setup_mbox_memory(vfio_info)) {
+		CP_LIB_LOG(ERR, CNXK, "Failed to setup mailbox memory\n");
+		goto uninit_pem;
 	}
 
 	return 0;
