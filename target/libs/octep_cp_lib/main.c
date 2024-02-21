@@ -20,10 +20,12 @@ volatile enum cp_lib_state state = CP_LIB_STATE_INVALID;
 struct octep_cp_lib_cfg user_cfg = {0};
 /* soc operations */
 static struct cp_lib_soc_ops *sops = NULL;
+struct octep_cp_lib_cfg *lib_cfg;
 
 static const char short_opts[] = {};
 static const struct option long_opts[] = {
 	{"dpi_dev", 1, 0, 'd'},
+	{"pem_dev", 1, 0, 'p'},
 	{NULL, 0, 0, 0}
 };
 
@@ -32,6 +34,7 @@ static int get_pci_iommu_group(char *path)
 	char buf[FILENAME_MAX];
 	int group;
 
+	memset(buf, 0, sizeof(buf));
 	if (readlink(path, buf, FILENAME_MAX) < 0) {
 		CP_LIB_LOG(ERR, CNXK,
 			   "failed to read link from path %s\n", path);
@@ -54,7 +57,7 @@ int octep_cp_lib_parse_args(int argc, char **argv, struct octep_cp_lib_cfg *cfg)
 	while ((opt = getopt_long(argc, argv, short_opts,
 				  long_opts, &option_index)) != EOF) {
 		switch (opt) {
-		case 'd':
+		case 'd': /* DPI device */
 			snprintf(filepath, sizeof(filepath), "%s%s",
 				 "/sys/bus/pci/devices/", optarg);
 			if (stat(filepath, &sb) || !S_ISDIR(sb.st_mode)) {
@@ -77,6 +80,29 @@ int octep_cp_lib_parse_args(int argc, char **argv, struct octep_cp_lib_cfg *cfg)
 			CP_LIB_LOG(INFO, CNXK, "DPI: device = %s; IOMMU group = %d\n",
 				   optarg, cfg->vfio.dpi_iommu);
 			break;
+		case 'p': /* PEM device */
+			snprintf(filepath, sizeof(filepath), "%s%s",
+				 "/sys/bus/pci/devices/", optarg);
+			if (stat(filepath, &sb) || !S_ISDIR(sb.st_mode)) {
+				CP_LIB_LOG(ERR, LIB, "Invalid PEM device BDF %s\n", optarg);
+				ret = -1;
+				break;
+			}
+			strncpy(cfg->vfio.pem_dev, optarg, sizeof(cfg->vfio.pem_dev) - 1);
+
+			/* get IOMMU group of the PEM device */
+			snprintf(filepath, sizeof(filepath), "%s%s/%s",
+				 "/sys/bus/pci/devices/", optarg, "iommu_group");
+			cfg->vfio.pem_iommu = get_pci_iommu_group(filepath);
+			if (cfg->vfio.pem_iommu < 0) {
+				CP_LIB_LOG(ERR, LIB,
+					   "Failed to find IOMMU group of PEM device at %s\n",
+					   optarg);
+				ret = -1;
+			}
+			CP_LIB_LOG(INFO, CNXK, "PEM: device = %s; IOMMU group = %d\n",
+				   optarg, cfg->vfio.pem_iommu);
+			break;
 		default:
 			CP_LIB_LOG(ERR, CNXK, "Invalid option.\n");
 			ret = -1;
@@ -92,6 +118,7 @@ int octep_cp_lib_init(struct octep_cp_lib_cfg *cfg)
 	int err;
 
 	CP_LIB_LOG(INFO, LIB, "init\n");
+	lib_cfg = cfg;
 	if (state >= CP_LIB_STATE_INIT)
 		return 0;
 

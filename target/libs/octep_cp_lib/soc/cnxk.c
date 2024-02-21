@@ -61,8 +61,7 @@ struct cnxk_pem {
 
 static struct cnxk_pem pems[OCTEP_CP_DOM_MAX] = { 0 };
 
-static inline void* map_reg(unsigned long long addr, size_t len, int prot,
-			    off_t *offset)
+static inline void *devmem_map_reg(unsigned long long addr, size_t len, int prot, off_t *offset)
 {
 	off_t pg_addr, pg_offset;
 	long pg_sz;
@@ -91,9 +90,23 @@ static inline void* map_reg(unsigned long long addr, size_t len, int prot,
 	return (map + pg_offset);
 }
 
+static inline void *map_reg(__attribute__((unused)) int pem_idx, unsigned long long addr,
+			    size_t len, int prot, off_t *offset)
+{
+#if USE_PEM_AND_DPI_PF
+	return cnxk_pem_map_reg(pem_idx, addr);
+#else
+	return devmem_map_reg(addr, len, prot, offset);
+#endif
+}
+
 static inline int unmap_reg(void* addr, off_t offset, size_t len)
 {
+#if USE_PEM_AND_DPI_PF
+	return cnxk_pem_unmap_reg(addr);
+#else
 	return munmap((addr - offset), (len + offset));
+#endif
 }
 
 static int open_oei_trig_csr(struct cnxk_pem *pem, struct cnxk_pf *pf)
@@ -103,10 +116,8 @@ static int open_oei_trig_csr(struct cnxk_pem *pem, struct cnxk_pf *pf)
 	 * PEM idx is > 1 ->  SDP1
 	 */
 	pf->oei_trig_addr =
-		map_reg(SDP0_EPFX_OEI_TRIG(((pem->idx > 1) ? 1L : 0), pf->idx),
-				    8,
-				    PROT_READ | PROT_WRITE,
-				    &pf->oei_trig_offset);
+		map_reg(pem->idx, SDP0_EPFX_OEI_TRIG(((pem->idx > 1) ? 1L : 0), pf->idx), 8,
+			PROT_READ | PROT_WRITE, &pf->oei_trig_offset);
 	if (!pf->oei_trig_addr) {
 		CP_LIB_LOG(INFO, CNXK,
 			   "Error mapping pem[%d] pf[%d] oei_trig_addr(%p)\n",
@@ -173,11 +184,9 @@ static int set_fw_ready(struct cnxk_pem *pem, struct cnxk_pf *pf,
 		 * of 8 addresses.  It has not been tested for multiple of 4 addresses,
 		 * nor for addresses with bit 16 set.
 		 */
-		addr = map_reg((PEMX_BASE(pem->idx) +
-				(0x8000 | CN10K_PCIEEP_VSECST_CTL)),
-			       8,
-			       PROT_READ | PROT_WRITE,
-			       &offset);
+		addr = map_reg(pem->idx,
+			       PEMX_BASE(pem->idx) + (0x8000 | CN10K_PCIEEP_VSECST_CTL), 8,
+			       PROT_READ | PROT_WRITE, &offset);
 		if (!addr) {
 			CP_LIB_LOG(INFO, CNXK,
 				   "Error setting pem[%d] pf[%d] fw ready(%d).\n",
@@ -190,10 +199,8 @@ static int set_fw_ready(struct cnxk_pem *pem, struct cnxk_pf *pf,
 			   pem->idx, pf->idx,
 			   status, addr);
 	} else {
-		addr = map_reg((PEMX_BASE(pem->idx) + PEMX_CFG_WR_OFFSET),
-			       8,
-			       PROT_READ | PROT_WRITE,
-			       &offset);
+		addr = map_reg(pem->idx, PEMX_BASE(pem->idx) + PEMX_CFG_WR_OFFSET, 8,
+			       PROT_READ | PROT_WRITE, &offset);
 		if (!addr) {
 			CP_LIB_LOG(INFO, CNXK,
 				   "Error setting pem[%d] pf[%d] fw ready(%d).\n",
@@ -268,10 +275,7 @@ static int check_pem_status(struct cnxk_pem *pem)
 	uint64_t val;
 	void* addr;
 
-	addr = map_reg((PEMX_BASE(pem->idx) + PEMX_ON_OFFSET),
-		       8,
-		       PROT_READ,
-		       &offset);
+	addr = map_reg(pem->idx, PEMX_BASE(pem->idx) + PEMX_ON_OFFSET, 8, PROT_READ, &offset);
 	if (!addr) {
 		CP_LIB_LOG(ERR, CNXK, "Error mapping pem[%d] status\n",
 			   pem->idx);
@@ -296,8 +300,8 @@ static int check_pem_status(struct cnxk_pem *pem)
 		return ret;
 	}
 
-	addr = map_reg((PEMX_BASE(pem->idx) + PEMX_DIS_PORT_OFFSET),
-		       8, PROT_READ | PROT_WRITE, &offset);
+	addr = map_reg(pem->idx, PEMX_BASE(pem->idx) + PEMX_DIS_PORT_OFFSET, 8,
+		       PROT_READ | PROT_WRITE, &offset);
 	if (!addr) {
 		CP_LIB_LOG(ERR, CNXK, "Error mapping pem[%d] disable port register\n",
 			   pem->idx);
@@ -454,6 +458,12 @@ int cnxk_init(struct octep_cp_lib_cfg *cfg)
 		err = -1;
 		goto free_container;
 	}
+
+	/* Initialize PEM and setup BAR4 */
+	if (cnxk_pem_init(&cfg->vfio)) {
+		err = -1;
+		goto dpi_uninit;
+	}
 #endif
 
 	/* Initialize pf interfaces */
@@ -480,6 +490,8 @@ init_fail:
 		if (pems[i].valid)
 			uninit_pem(&pems[i]);
 #if USE_PEM_AND_DPI_PF
+dpi_uninit:
+	/* FIXME: call dpi_uninit ? */
 free_container:
 	cnxk_destroy_vfio_container(&cfg->vfio);
 #endif
