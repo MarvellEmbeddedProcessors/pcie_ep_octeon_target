@@ -195,6 +195,16 @@ struct octep_cp_dom_cfg {
 struct octep_vfio_info {
 	int container;
 
+	/* PEM PF device info */
+	int pem_group_fd;
+	int pem_device_fd;
+	int pem_iommu;
+	char pem_dev[DEVICE_BDF_STRLEN];
+
+	void *pem_region_base[VFIO_PCI_NUM_REGIONS];
+	uint64_t pem_region_size[VFIO_PCI_NUM_REGIONS];
+
+	/* DPI PF device info */
 	int dpi_group_fd;
 	int dpi_device_fd;
 	int dpi_iommu;
