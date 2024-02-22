@@ -112,6 +112,8 @@ void cnxk_destroy_vfio_container(struct octep_vfio_info *vfio_info);
 int cnxk_dpi_init(struct octep_vfio_info *vfio_info);
 int cnxk_pem_init(struct octep_vfio_info *vfio_info);
 void *cnxk_pem_map_reg(int pem_idx, unsigned long long addr);
+int cnxk_assert_perst_intr(struct octep_vfio_info *vfio_info);
+int cnxk_clear_perst_intr(struct octep_vfio_info *vfio_info);
 
 extern struct octep_cp_lib_cfg *lib_cfg;
 #endif /* __CNXK_H__ */

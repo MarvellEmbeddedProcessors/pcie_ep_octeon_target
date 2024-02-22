@@ -202,6 +202,7 @@ struct octep_vfio_info {
 	char pem_dev[DEVICE_BDF_STRLEN];
 
 	void *pem_region_base[VFIO_PCI_NUM_REGIONS];
+	uint64_t pem_region_offset[VFIO_PCI_NUM_REGIONS];
 	uint64_t pem_region_size[VFIO_PCI_NUM_REGIONS];
 
 	/* pointer to control plane mailbox memory */
@@ -214,6 +215,7 @@ struct octep_vfio_info {
 	char dpi_dev[DEVICE_BDF_STRLEN];
 
 	void *dpi_region_base[VFIO_PCI_NUM_REGIONS];
+	uint64_t dpi_region_offset[VFIO_PCI_NUM_REGIONS];
 	uint64_t dpi_region_size[VFIO_PCI_NUM_REGIONS];
 };
 
