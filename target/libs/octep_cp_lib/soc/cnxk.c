@@ -732,10 +732,20 @@ int cnxk_recv_event(struct octep_cp_event_info *info, int num)
 			break;
 	}
 
-	return n_ev;
 #else
-	return 0;
+	int n_ev = 0;
+
+	/* FIXME: extend for all PEMs and multiple events */
+	if (!cnxk_assert_perst_intr(&lib_cfg->vfio)) {
+		/* Got PERST */
+		info[0].e = OCTEP_CP_EVENT_TYPE_PERST;
+		info[0].u.perst.dom_idx = 0;
+		n_ev = 1;
+		/* clear the perst */
+		cnxk_clear_perst_intr(&lib_cfg->vfio);
+	}
 #endif
+	return n_ev;
 }
 
 int cnxk_uninit()
