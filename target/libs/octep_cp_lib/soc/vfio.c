@@ -129,7 +129,6 @@ void *cnxk_pem_map_reg(int pem_idx, unsigned long long addr)
 	int is_pem_reg = 0;
 	int bar_idx;
 
-	/* FIXME: make it generic */
 	if ((addr & PEM_BAR4_START(pem_idx)) == PEM_BAR4_START(pem_idx)) {
 		is_pem_reg = 1;
 		bar_idx = 4;
@@ -165,6 +164,146 @@ void *cnxk_pem_map_reg(int pem_idx, unsigned long long addr)
 		return NULL;
 	}
 	return (lib_cfg->vfio.dpi_region_base[bar_idx] + bar_offset);
+}
+
+#define PEM_RST_INT(x)          (0x300ULL + ((uint64_t)(x) << 36))
+#define PEM_RST_INT_ENA_W1C(x)  (0x310ULL + ((uint64_t)(x) << 36))
+#define PEM_RST_INT_ENA_W1S(x)  (0x318ULL + ((uint64_t)(x) << 36))
+#define PEM_CFG(x)              (0x0D8ULL + ((uint64_t)(x) << 36))
+
+#define PEM_CFG_B_AUTO_DP_CLR   0x0100
+
+#define PEM_RST_INT_B_L2        0x0004
+#define PEM_RST_INT_B_LINKDOWN  0x0002
+#define PEM_RST_INT_B_PERST     0x0001
+
+/* FIXME: rename to check_ or poll_ ? */
+int cnxk_assert_perst_intr(struct octep_vfio_info *vfio)
+{
+	uint64_t word;
+
+	if (pread(vfio->pem_device_fd, &word, sizeof(uint64_t),
+		  vfio->pem_region_offset[0] + PEM_RST_INT(0)) < 0) {
+		CP_LIB_LOG(ERR, LIB, "Failed to assert perst irq; could not read BAR region\n");
+		return -EINVAL;
+	}
+
+	if (word & PEM_RST_INT_B_PERST) {
+		CP_LIB_LOG(INFO, LIB, "Got PERST\n");
+		return 0;
+	} else {
+		return -EAGAIN;
+	}
+}
+
+static int cnxk_register_perst_intr(struct octep_vfio_info *vfio)
+{
+	struct vfio_irq_info irq_info;
+	uint64_t word;
+
+	memset(&irq_info, 0x0, sizeof(struct vfio_irq_info));
+	irq_info.argsz = sizeof(struct vfio_irq_info);
+	irq_info.index = VFIO_PCI_MSIX_IRQ_INDEX;
+
+	if (ioctl(vfio->pem_device_fd, VFIO_DEVICE_GET_IRQ_INFO, &irq_info)) {
+		fprintf(stderr, "failed to get device irq info\n");
+		goto register_failed;
+	}
+	CP_LIB_LOG(INFO, CNXK, "Number of PEM interrupts = %d\n", irq_info.count);
+
+	/* STEP1: Disable interrupts */
+	word = (PEM_RST_INT_B_L2 | PEM_RST_INT_B_LINKDOWN | PEM_RST_INT_B_PERST);
+	if (pwrite(vfio->pem_device_fd, &word, sizeof(uint64_t),
+		   vfio->pem_region_offset[0] + PEM_RST_INT_ENA_W1C(0)) < 0) {
+		CP_LIB_LOG(ERR, CNXK, "Failed to write PEM_RST_INT_ENA_W1C\n");
+		goto register_failed;
+	}
+
+	/* STEP2: Clear outstanding interrupts */
+	if (pread(vfio->pem_device_fd, &word, sizeof(uint64_t),
+		  vfio->pem_region_offset[0] + PEM_RST_INT(0)) < 0) {
+		CP_LIB_LOG(ERR, CNXK, "Failed to read PEM_RST_INT\n");
+		goto register_failed;
+	}
+	if (pwrite(vfio->pem_device_fd, &word, sizeof(uint64_t),
+		   vfio->pem_region_offset[0] + PEM_RST_INT(0)) < 0) {
+		CP_LIB_LOG(ERR, CNXK, "Failed to write PEM_RST_INT\n");
+		goto register_failed;
+	}
+
+	/* STEP3: Auto clear DISPORT after PERST */
+	if (pread(vfio->pem_device_fd, &word, sizeof(uint64_t),
+		  vfio->pem_region_offset[0] + PEM_CFG(0)) < 0) {
+		CP_LIB_LOG(ERR, CNXK, "Failed to read PEM_CFG\n");
+		goto register_failed;
+	}
+	word |= PEM_CFG_B_AUTO_DP_CLR;
+	if (pwrite(vfio->pem_device_fd, &word, sizeof(uint64_t),
+		   vfio->pem_region_offset[0] + PEM_CFG(0)) < 0) {
+		CP_LIB_LOG(ERR, CNXK, "Failed to read PEM_CFG\n");
+		goto register_failed;
+	}
+
+	/* FIXME: was link down enabled in existing lib/app ? */
+	/* STEP4: Enable LinkDown and PERST */
+	word = (PEM_RST_INT_B_LINKDOWN | PEM_RST_INT_B_PERST);
+	if (pwrite(vfio->pem_device_fd, &word, sizeof(uint64_t),
+		   vfio->pem_region_offset[0] + PEM_RST_INT_ENA_W1S(0)) < 0) {
+		CP_LIB_LOG(ERR, CNXK, "Failed to write PEM_RST_INT_ENA_W1S\n");
+		goto register_failed;
+	}
+
+	CP_LIB_LOG(INFO, CNXK, "Enabled PEM link down and PERST interrupts\n");
+	return 0;
+
+register_failed:
+	return -EFAULT;
+}
+
+int cnxk_enable_perst_intr(struct octep_vfio_info *vfio)
+{
+	uint64_t word;
+
+	word = (PEM_RST_INT_B_LINKDOWN | PEM_RST_INT_B_PERST);
+	if (pwrite(vfio->pem_device_fd, &word, sizeof(uint64_t),
+		   vfio->pem_region_offset[0] + PEM_RST_INT_ENA_W1S(0)) < 0) {
+		CP_LIB_LOG(ERR, CNXK, "Failed to write PEM_RST_INT_ENA_W1S\n");
+		return -EBUSY;
+	}
+
+	return 0;
+}
+
+int cnxk_clear_perst_intr(struct octep_vfio_info *vfio)
+{
+	uint64_t word;
+
+	if (pread(vfio->pem_device_fd, &word, sizeof(uint64_t),
+		  vfio->pem_region_offset[0] + PEM_RST_INT(0)) < 0) {
+		CP_LIB_LOG(ERR, CNXK, "Failed to read PEM_RST_INT\n");
+		return -EBUSY;
+	}
+
+	if (pwrite(vfio->pem_device_fd, &word, sizeof(uint64_t),
+		   vfio->pem_region_offset[0] + PEM_RST_INT(0)) < 0) {
+		CP_LIB_LOG(ERR, CNXK, "Failed to write PEM_RST_INT\n");
+		return -EBUSY;
+	}
+	return 0;
+}
+
+int cnxk_disable_perst_intr(struct octep_vfio_info *vfio)
+{
+	uint64_t word;
+
+	word = (PEM_RST_INT_B_LINKDOWN | PEM_RST_INT_B_PERST);
+	if (pwrite(vfio->pem_device_fd, &word, sizeof(uint64_t),
+		   vfio->pem_region_offset[0] + PEM_RST_INT_ENA_W1C(0)) < 0) {
+		CP_LIB_LOG(ERR, CNXK, "Failed to write PEM_RST_INT_ENA_W1C\n");
+		return -EBUSY;
+	}
+
+	return 0;
 }
 
 static unsigned long virt_to_phys(void *virt)
@@ -285,6 +424,7 @@ int cnxk_pem_init(struct octep_vfio_info *vfio_info)
 		CP_LIB_LOG(ERR, CNXK, "Failed to get PEM device VFIO FD; ret=%d\n", device);
 		goto close_group;
 	}
+	vfio_info->pem_device_fd = device;
 
 	/* Test and setup the device */
 	ret = ioctl(device, VFIO_DEVICE_GET_INFO, &device_info);
@@ -317,6 +457,7 @@ int cnxk_pem_init(struct octep_vfio_info *vfio_info)
 		CP_LIB_LOG(DEBUG, CNXK, "mapped PEM device region-%d; size=0x%llx.\n",
 				reg.index, reg.size);
 		vfio_info->pem_region_base[i] = mem;
+		vfio_info->pem_region_offset[i] = reg.offset;
 		vfio_info->pem_region_size[i] = reg.size;
 	}
 
@@ -325,6 +466,10 @@ int cnxk_pem_init(struct octep_vfio_info *vfio_info)
 		goto uninit_pem;
 	}
 
+	if (cnxk_register_perst_intr(vfio_info)) {
+		CP_LIB_LOG(ERR, CNXK, "Failed to configure PERST interrupt\n");
+		goto uninit_pem;
+	}
 	return 0;
 
 uninit_pem:
@@ -395,6 +540,7 @@ int cnxk_dpi_init(struct octep_vfio_info *vfio_info)
 		CP_LIB_LOG(ERR, CNXK, "Failed to get DPI device VFIO FD; ret=%d\n", device);
 		goto close_group;
 	}
+	vfio_info->dpi_device_fd = device;
 
 	/* Test and setup the device */
 	ret = ioctl(device, VFIO_DEVICE_GET_INFO, &device_info);
@@ -420,6 +566,7 @@ int cnxk_dpi_init(struct octep_vfio_info *vfio_info)
 		CP_LIB_LOG(DEBUG, CNXK, "mapped DPI device region-%d; size=0x%llx.\n",
 			   reg.index, reg.size);
 		vfio_info->dpi_region_base[0] = mem;
+		vfio_info->dpi_region_offset[0] = reg.offset;
 		vfio_info->dpi_region_size[0] = reg.size;
 	}
 
