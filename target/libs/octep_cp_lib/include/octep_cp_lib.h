@@ -190,35 +190,6 @@ struct octep_cp_dom_cfg {
 	struct octep_cp_pf_cfg pfs[OCTEP_CP_PF_PER_DOM_MAX];
 };
 
-/* Information of devices accessed through VFIO-PCI */
-#define DEVICE_BDF_STRLEN 16
-struct octep_vfio_info {
-	int container;
-
-	/* PEM PF device info */
-	int pem_group_fd;
-	int pem_device_fd;
-	int pem_iommu;
-	char pem_dev[DEVICE_BDF_STRLEN];
-
-	void *pem_region_base[VFIO_PCI_NUM_REGIONS];
-	uint64_t pem_region_offset[VFIO_PCI_NUM_REGIONS];
-	uint64_t pem_region_size[VFIO_PCI_NUM_REGIONS];
-
-	/* pointer to control plane mailbox memory */
-	void *mbox_mem;
-
-	/* DPI PF device info */
-	int dpi_group_fd;
-	int dpi_device_fd;
-	int dpi_iommu;
-	char dpi_dev[DEVICE_BDF_STRLEN];
-
-	void *dpi_region_base[VFIO_PCI_NUM_REGIONS];
-	uint64_t dpi_region_offset[VFIO_PCI_NUM_REGIONS];
-	uint64_t dpi_region_size[VFIO_PCI_NUM_REGIONS];
-};
-
 /* library configuration */
 struct octep_cp_lib_cfg {
 	/* Info to be filled by caller */
@@ -234,8 +205,6 @@ struct octep_cp_lib_cfg {
 	uint16_t ndoms;
 	/* configuration for pcie mac domains */
 	struct octep_cp_dom_cfg doms[OCTEP_CP_DOM_MAX];
-
-	struct octep_vfio_info vfio;
 };
 
 /* pcie mac domain pf information */
@@ -385,5 +354,10 @@ int octep_cp_lib_uninit_pem(int dom_idx);
  * return value: 0 on success, -errno on failure.
  */
 int octep_cp_lib_uninit();
+#if USE_PEM_AND_DPI_PF
+int cnxk_vfio_parse_dpi_dev(const char *dev);
+int cnxk_vfio_parse_pem_dev(const char *dev);
+uint64_t cnxk_pem_get_mbox_memory(int pem);
+#endif
 
 #endif /* __OCTEP_CP_LIB_H__ */

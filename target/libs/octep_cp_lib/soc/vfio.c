@@ -65,6 +65,9 @@
 
 #define BAD_PHYS_ADDR            (-1ULL)
 
+/* Information of devices accessed through VFIO-PCI */
+#define DEVICE_BDF_STRLEN 16
+
 #define PFN_MASK 0x7fffffffffffffULL
 #define PEM_BAR4_IDX_IOVA_SHIFT 22
 #define PEMx_BAR4_INDEX_OFFSET(idx) (0x700 + (idx << 3))
@@ -80,49 +83,78 @@ union cnxk_pem_bar4_idx {
 	} s;
 };
 
+struct octep_dpi_dev_info {
+	/* DPI PF device info */
+	int group_fd;
+	int device_fd;
+	int iommu;
+	char dev_bdf[DEVICE_BDF_STRLEN];
+
+	/* VFIO region info */
+	struct vfio_region_info region[VFIO_PCI_NUM_REGIONS];
+	/* mmapped address of regions */
+	void *mapped_region[VFIO_PCI_NUM_REGIONS];
+};
+
+struct octep_pem_dev_info {
+	/* PEM PF device info */
+	int group_fd;
+	int device_fd;
+	int iommu;
+	char dev_bdf[DEVICE_BDF_STRLEN];
+
+	/* VFIO region info */
+	struct vfio_region_info region[VFIO_PCI_NUM_REGIONS];
+	/* mmapped address of regions */
+	void *mapped_region[VFIO_PCI_NUM_REGIONS];
+
+	/* pointer to control plane mailbox memory */
+	void *mbox_mem;
+};
+
+struct octep_dpi_dev_info dpi_dev;
+struct octep_pem_dev_info pem_devs[OCTEP_CP_DOM_MAX];
+int vfio_container;
+
 /* Close the VFIO container used to access DPI and PEM devices */
-void cnxk_destroy_vfio_container(struct octep_vfio_info *vfio_info)
+void cnxk_destroy_vfio_container(void)
 {
-	if (vfio_info->container) {
-		close(vfio_info->container);
-		vfio_info->container = 0;
+	if (vfio_container) {
+		close(vfio_container);
+		vfio_container = 0;
 	}
 }
 
 /* Create a VFIO container to access DPI and PEM devices */
-int cnxk_create_vfio_container(struct octep_vfio_info *vfio_info)
+int cnxk_create_vfio_container(void)
 {
-	int container;
+	vfio_container = open("/dev/vfio/vfio", O_RDWR);
 
-	container = open("/dev/vfio/vfio", O_RDWR);
-
-	if (container < 0) {
+	if (vfio_container < 0) {
 		CP_LIB_LOG(ERR, CNXK, "failed to open VFIO device; err=%d\n", errno);
 		return -1;
 	}
 
-	if (ioctl(container, VFIO_GET_API_VERSION) != VFIO_API_VERSION) {
+	if (ioctl(vfio_container, VFIO_GET_API_VERSION) != VFIO_API_VERSION) {
 		CP_LIB_LOG(ERR, CNXK, "Invalid API version; err=%d\n", errno);
 		goto shutdown_container;
 	}
 
-	if (!ioctl(container, VFIO_CHECK_EXTENSION, VFIO_TYPE1_IOMMU)) {
+	if (!ioctl(vfio_container, VFIO_CHECK_EXTENSION, VFIO_TYPE1_IOMMU)) {
 		/* Doesn't support the IOMMU driver required. */
 		CP_LIB_LOG(ERR, CNXK,
 			   "Doesn't support the IOMMU TYPE1; err=%d\n", errno);
 		goto shutdown_container;
 	}
 
-	CP_LIB_LOG(INFO, CNXK, "Created VFIO container successfully; fd=%d\n", container);
-	vfio_info->container = container;
+	CP_LIB_LOG(INFO, CNXK, "Created VFIO container successfully; fd=%d\n", vfio_container);
 	return 0;
 
 shutdown_container:
-	close(container);
+	close(vfio_container);
 	return -1;
 }
 
-extern struct octep_cp_lib_cfg *lib_cfg;
 void *cnxk_pem_map_reg(int pem_idx, unsigned long long addr)
 {
 	uint64_t bar_offset;
@@ -146,24 +178,24 @@ void *cnxk_pem_map_reg(int pem_idx, unsigned long long addr)
 	}
 
 	if (is_pem_reg) {
-		if (lib_cfg->vfio.pem_region_size[bar_idx] < bar_offset) {
+		if (pem_devs[0].region[bar_idx].size <= bar_offset) {
 			CP_LIB_LOG(ERR, CNXK,
 				   "pem_map_reg: addr=0x%llx (offset=0x%llx) is beyond BAR-%d size of 0x%lx\n",
 				   addr, bar_offset, bar_idx,
-				   lib_cfg->vfio.pem_region_size[bar_idx]);
+				   pem_devs[0].region[bar_idx].size);
 			return NULL;
 		}
 
-		return (lib_cfg->vfio.pem_region_base[bar_idx] + bar_offset);
+		return (pem_devs[0].mapped_region[bar_idx] + bar_offset);
 	}
 
-	if (lib_cfg->vfio.dpi_region_size[bar_idx] < bar_offset) {
+	if (dpi_dev.region[bar_idx].size <= bar_offset) {
 		CP_LIB_LOG(ERR, CNXK,
 			   "dpi_map_reg: addr=0x%llx (offset=0x%llx) is beyond BAR-%d size of 0x%lx\n",
-			   addr, bar_offset, bar_idx, lib_cfg->vfio.dpi_region_size[bar_idx]);
+			   addr, bar_offset, bar_idx, dpi_dev.region[bar_idx].size);
 		return NULL;
 	}
-	return (lib_cfg->vfio.dpi_region_base[bar_idx] + bar_offset);
+	return (dpi_dev.mapped_region[0] + bar_offset);
 }
 
 #define PEM_RST_INT(x)          (0x300ULL + ((uint64_t)(x) << 36))
@@ -177,13 +209,14 @@ void *cnxk_pem_map_reg(int pem_idx, unsigned long long addr)
 #define PEM_RST_INT_B_LINKDOWN  0x0002
 #define PEM_RST_INT_B_PERST     0x0001
 
-/* FIXME: rename to check_ or poll_ ? */
-int cnxk_assert_perst_intr(struct octep_vfio_info *vfio)
+int cnxk_check_perst_intr(int pem)
 {
+	struct octep_pem_dev_info *pem_dev;
 	uint64_t word;
 
-	if (pread(vfio->pem_device_fd, &word, sizeof(uint64_t),
-		  vfio->pem_region_offset[0] + PEM_RST_INT(0)) < 0) {
+	pem_dev = &pem_devs[pem];
+	if (pread(pem_dev->device_fd, &word, sizeof(uint64_t),
+		  pem_dev->region[0].offset + PEM_RST_INT(0)) < 0) {
 		CP_LIB_LOG(ERR, LIB, "Failed to assert perst irq; could not read BAR region\n");
 		return -EINVAL;
 	}
@@ -196,7 +229,7 @@ int cnxk_assert_perst_intr(struct octep_vfio_info *vfio)
 	}
 }
 
-static int cnxk_register_perst_intr(struct octep_vfio_info *vfio)
+static int cnxk_register_perst_intr(struct octep_pem_dev_info *pem_dev)
 {
 	struct vfio_irq_info irq_info;
 	uint64_t word;
@@ -205,7 +238,7 @@ static int cnxk_register_perst_intr(struct octep_vfio_info *vfio)
 	irq_info.argsz = sizeof(struct vfio_irq_info);
 	irq_info.index = VFIO_PCI_MSIX_IRQ_INDEX;
 
-	if (ioctl(vfio->pem_device_fd, VFIO_DEVICE_GET_IRQ_INFO, &irq_info)) {
+	if (ioctl(pem_dev->device_fd, VFIO_DEVICE_GET_IRQ_INFO, &irq_info)) {
 		fprintf(stderr, "failed to get device irq info\n");
 		goto register_failed;
 	}
@@ -213,33 +246,33 @@ static int cnxk_register_perst_intr(struct octep_vfio_info *vfio)
 
 	/* STEP1: Disable interrupts */
 	word = (PEM_RST_INT_B_L2 | PEM_RST_INT_B_LINKDOWN | PEM_RST_INT_B_PERST);
-	if (pwrite(vfio->pem_device_fd, &word, sizeof(uint64_t),
-		   vfio->pem_region_offset[0] + PEM_RST_INT_ENA_W1C(0)) < 0) {
+	if (pwrite(pem_dev->device_fd, &word, sizeof(uint64_t),
+		   pem_dev->region[0].offset + PEM_RST_INT_ENA_W1C(0)) < 0) {
 		CP_LIB_LOG(ERR, CNXK, "Failed to write PEM_RST_INT_ENA_W1C\n");
 		goto register_failed;
 	}
 
 	/* STEP2: Clear outstanding interrupts */
-	if (pread(vfio->pem_device_fd, &word, sizeof(uint64_t),
-		  vfio->pem_region_offset[0] + PEM_RST_INT(0)) < 0) {
+	if (pread(pem_dev->device_fd, &word, sizeof(uint64_t),
+		  pem_dev->region[0].offset + PEM_RST_INT(0)) < 0) {
 		CP_LIB_LOG(ERR, CNXK, "Failed to read PEM_RST_INT\n");
 		goto register_failed;
 	}
-	if (pwrite(vfio->pem_device_fd, &word, sizeof(uint64_t),
-		   vfio->pem_region_offset[0] + PEM_RST_INT(0)) < 0) {
+	if (pwrite(pem_dev->device_fd, &word, sizeof(uint64_t),
+		   pem_dev->region[0].offset + PEM_RST_INT(0)) < 0) {
 		CP_LIB_LOG(ERR, CNXK, "Failed to write PEM_RST_INT\n");
 		goto register_failed;
 	}
 
 	/* STEP3: Auto clear DISPORT after PERST */
-	if (pread(vfio->pem_device_fd, &word, sizeof(uint64_t),
-		  vfio->pem_region_offset[0] + PEM_CFG(0)) < 0) {
+	if (pread(pem_dev->device_fd, &word, sizeof(uint64_t),
+		  pem_dev->region[0].offset + PEM_CFG(0)) < 0) {
 		CP_LIB_LOG(ERR, CNXK, "Failed to read PEM_CFG\n");
 		goto register_failed;
 	}
 	word |= PEM_CFG_B_AUTO_DP_CLR;
-	if (pwrite(vfio->pem_device_fd, &word, sizeof(uint64_t),
-		   vfio->pem_region_offset[0] + PEM_CFG(0)) < 0) {
+	if (pwrite(pem_dev->device_fd, &word, sizeof(uint64_t),
+		   pem_dev->region[0].offset + PEM_CFG(0)) < 0) {
 		CP_LIB_LOG(ERR, CNXK, "Failed to read PEM_CFG\n");
 		goto register_failed;
 	}
@@ -247,8 +280,8 @@ static int cnxk_register_perst_intr(struct octep_vfio_info *vfio)
 	/* FIXME: was link down enabled in existing lib/app ? */
 	/* STEP4: Enable LinkDown and PERST */
 	word = (PEM_RST_INT_B_LINKDOWN | PEM_RST_INT_B_PERST);
-	if (pwrite(vfio->pem_device_fd, &word, sizeof(uint64_t),
-		   vfio->pem_region_offset[0] + PEM_RST_INT_ENA_W1S(0)) < 0) {
+	if (pwrite(pem_dev->device_fd, &word, sizeof(uint64_t),
+		   pem_dev->region[0].offset + PEM_RST_INT_ENA_W1S(0)) < 0) {
 		CP_LIB_LOG(ERR, CNXK, "Failed to write PEM_RST_INT_ENA_W1S\n");
 		goto register_failed;
 	}
@@ -260,13 +293,13 @@ register_failed:
 	return -EFAULT;
 }
 
-int cnxk_enable_perst_intr(struct octep_vfio_info *vfio)
+int cnxk_enable_perst_intr(struct octep_pem_dev_info *pem_dev)
 {
 	uint64_t word;
 
 	word = (PEM_RST_INT_B_LINKDOWN | PEM_RST_INT_B_PERST);
-	if (pwrite(vfio->pem_device_fd, &word, sizeof(uint64_t),
-		   vfio->pem_region_offset[0] + PEM_RST_INT_ENA_W1S(0)) < 0) {
+	if (pwrite(pem_dev->device_fd, &word, sizeof(uint64_t),
+		   pem_dev->region[0].offset + PEM_RST_INT_ENA_W1S(0)) < 0) {
 		CP_LIB_LOG(ERR, CNXK, "Failed to write PEM_RST_INT_ENA_W1S\n");
 		return -EBUSY;
 	}
@@ -274,31 +307,33 @@ int cnxk_enable_perst_intr(struct octep_vfio_info *vfio)
 	return 0;
 }
 
-int cnxk_clear_perst_intr(struct octep_vfio_info *vfio)
+int cnxk_clear_perst_intr(int pem)
 {
+	struct octep_pem_dev_info *pem_dev;
 	uint64_t word;
 
-	if (pread(vfio->pem_device_fd, &word, sizeof(uint64_t),
-		  vfio->pem_region_offset[0] + PEM_RST_INT(0)) < 0) {
+	pem_dev = &pem_devs[pem];
+	if (pread(pem_dev->device_fd, &word, sizeof(uint64_t),
+		  pem_dev->region[0].offset + PEM_RST_INT(0)) < 0) {
 		CP_LIB_LOG(ERR, CNXK, "Failed to read PEM_RST_INT\n");
 		return -EBUSY;
 	}
 
-	if (pwrite(vfio->pem_device_fd, &word, sizeof(uint64_t),
-		   vfio->pem_region_offset[0] + PEM_RST_INT(0)) < 0) {
+	if (pwrite(pem_dev->device_fd, &word, sizeof(uint64_t),
+		   pem_dev->region[0].offset + PEM_RST_INT(0)) < 0) {
 		CP_LIB_LOG(ERR, CNXK, "Failed to write PEM_RST_INT\n");
 		return -EBUSY;
 	}
 	return 0;
 }
 
-int cnxk_disable_perst_intr(struct octep_vfio_info *vfio)
+int cnxk_disable_perst_intr(struct octep_pem_dev_info *pem_dev)
 {
 	uint64_t word;
 
 	word = (PEM_RST_INT_B_LINKDOWN | PEM_RST_INT_B_PERST);
-	if (pwrite(vfio->pem_device_fd, &word, sizeof(uint64_t),
-		   vfio->pem_region_offset[0] + PEM_RST_INT_ENA_W1C(0)) < 0) {
+	if (pwrite(pem_dev->device_fd, &word, sizeof(uint64_t),
+		   pem_dev->region[0].offset + PEM_RST_INT_ENA_W1C(0)) < 0) {
 		CP_LIB_LOG(ERR, CNXK, "Failed to write PEM_RST_INT_ENA_W1C\n");
 		return -EBUSY;
 	}
@@ -341,10 +376,10 @@ static unsigned long virt_to_phys(void *virt)
 	return ((page & PFN_MASK) * page_size) + (virtual % page_size);
 }
 
-static int cnxk_pem_setup_mbox_memory(struct octep_vfio_info *vfio)
+static int cnxk_pem_setup_mbox_memory(struct octep_pem_dev_info *pem_dev)
 {
+	void *pem_bar0 = pem_dev->mapped_region[0];
 	union cnxk_pem_bar4_idx bar4_idx = {0};
-	void *pem_bar0 = vfio->pem_region_base[0];
 	int length = PEMX_BAR4_INDEX_SIZE;
 	unsigned long paddr;
 	void *addr;
@@ -362,32 +397,53 @@ static int cnxk_pem_setup_mbox_memory(struct octep_vfio_info *vfio)
 	bar4_idx.s.addr_v = 1;
 	bar4_idx.s.addr_idx = paddr >> PEM_BAR4_IDX_IOVA_SHIFT;
 	cp_write64(bar4_idx.val, pem_bar0 + PEMx_BAR4_INDEX_OFFSET(PEMX_BAR4_INDEX_MBOX));
-	vfio->mbox_mem = addr;
+	pem_dev->mbox_mem = addr;
 	return 0;
 }
 
-static void cnxk_pem_uninit(struct octep_vfio_info *vfio_info)
+uint64_t cnxk_pem_get_mbox_memory(int pem)
 {
-	int idx;
-	for (idx = 0; idx < VFIO_PCI_NUM_REGIONS; idx++) {
-		if (vfio_info->pem_region_base[idx])
-			munmap(vfio_info->pem_region_base[idx], vfio_info->pem_region_size[idx]);
-	}
+	return (uint64_t)pem_devs[pem].mbox_mem;
 }
 
-int cnxk_pem_init(struct octep_vfio_info *vfio_info)
+static void cnxk_pem_uninit(int pem)
 {
+	struct octep_pem_dev_info *pem_dev;
+	int i;
+
+	pem_dev = &pem_devs[pem];
+
+	if (pem_dev->mbox_mem) {
+		munmap(pem_dev->mbox_mem, PEMX_BAR4_INDEX_SIZE);
+		pem_dev->mbox_mem = NULL;
+	}
+
+	for (i = 0; i < VFIO_PCI_NUM_REGIONS; i++) {
+		if (!pem_dev->mapped_region[i])
+			continue;
+
+		munmap(pem_dev->mapped_region[i], pem_dev->region[i].size);
+	}
+
+	if (pem_dev->group_fd)
+		close(pem_dev->group_fd);
+	if (pem_dev->device_fd)
+		close(pem_dev->device_fd);
+}
+
+int cnxk_pem_init(int pem)
+{
+	struct octep_pem_dev_info *pem_dev;
 	struct vfio_group_status group_status = { .argsz = sizeof(group_status) };
 	struct vfio_device_info device_info = { .argsz = sizeof(device_info) };
 	struct vfio_region_info reg = { .argsz = sizeof(reg) };
-	int container, group, device, ret, i;
+	int group, device, ret, i;
 	char filepath[FILENAME_MAX];
 	void *mem;
 
-	container = vfio_info->container;
-
+	pem_dev = &pem_devs[pem];
 	/* Open the group */
-	snprintf(filepath, sizeof(filepath), "%s%d", "/dev/vfio/", vfio_info->pem_iommu);
+	snprintf(filepath, sizeof(filepath), "%s%d", "/dev/vfio/", pem_dev->iommu);
 	group = open(filepath, O_RDWR);
 	if (group < 0) {
 		CP_LIB_LOG(ERR, CNXK,
@@ -411,7 +467,7 @@ int cnxk_pem_init(struct octep_vfio_info *vfio_info)
 	}
 
 	/* Add the group to the container */
-	ret = ioctl(group, VFIO_GROUP_SET_CONTAINER, &container);
+	ret = ioctl(group, VFIO_GROUP_SET_CONTAINER, &vfio_container);
 	if (ret == -1) {
 		CP_LIB_LOG(ERR, CNXK,
 			   "Failed to add PEM VFIO group to the container; ret=%d\n", ret);
@@ -419,12 +475,12 @@ int cnxk_pem_init(struct octep_vfio_info *vfio_info)
 	}
 
 	/* Get a file descriptor for the device */
-	device = ioctl(group, VFIO_GROUP_GET_DEVICE_FD, vfio_info->pem_dev);
+	device = ioctl(group, VFIO_GROUP_GET_DEVICE_FD, pem_dev->dev_bdf);
 	if (device == -1) {
 		CP_LIB_LOG(ERR, CNXK, "Failed to get PEM device VFIO FD; ret=%d\n", device);
 		goto close_group;
 	}
-	vfio_info->pem_device_fd = device;
+	pem_dev->device_fd = device;
 
 	/* Test and setup the device */
 	ret = ioctl(device, VFIO_DEVICE_GET_INFO, &device_info);
@@ -456,17 +512,16 @@ int cnxk_pem_init(struct octep_vfio_info *vfio_info)
 		}
 		CP_LIB_LOG(DEBUG, CNXK, "mapped PEM device region-%d; size=0x%llx.\n",
 				reg.index, reg.size);
-		vfio_info->pem_region_base[i] = mem;
-		vfio_info->pem_region_offset[i] = reg.offset;
-		vfio_info->pem_region_size[i] = reg.size;
+		pem_dev->mapped_region[i] = mem;
+		pem_dev->region[i] = reg;
 	}
 
-	if (cnxk_pem_setup_mbox_memory(vfio_info)) {
+	if (cnxk_pem_setup_mbox_memory(pem_dev)) {
 		CP_LIB_LOG(ERR, CNXK, "Failed to setup mailbox memory\n");
 		goto uninit_pem;
 	}
 
-	if (cnxk_register_perst_intr(vfio_info)) {
+	if (cnxk_register_perst_intr(pem_dev)) {
 		CP_LIB_LOG(ERR, CNXK, "Failed to configure PERST interrupt\n");
 		goto uninit_pem;
 	}
@@ -474,19 +529,35 @@ int cnxk_pem_init(struct octep_vfio_info *vfio_info)
 
 uninit_pem:
 	printf("PEM init failed\n");
-	cnxk_pem_uninit(vfio_info);
+	cnxk_pem_uninit(pem);
 
 close_group:
 	close(group);
 	return -1;
 }
 
-int cnxk_dpi_init(struct octep_vfio_info *vfio_info)
+static void cnxk_dpi_uninit(void)
+{
+	int i;
+
+	if (dpi_dev.group_fd)
+		close(dpi_dev.group_fd);
+	if (dpi_dev.device_fd)
+		close(dpi_dev.device_fd);
+
+	for (i = 0; i < VFIO_PCI_NUM_REGIONS; i++) {
+		if (!dpi_dev.mapped_region[i])
+			continue;
+		munmap(dpi_dev.mapped_region[i], dpi_dev.region[i].size);
+	}
+}
+
+static int cnxk_dpi_init(void)
 {
 	struct vfio_group_status group_status = { .argsz = sizeof(group_status) };
 	struct vfio_device_info device_info = { .argsz = sizeof(device_info) };
 	struct vfio_region_info reg = { .argsz = sizeof(reg) };
-	int container, group, device, ret;
+	int group, device, ret;
 	char filepath[FILENAME_MAX];
 	int eng = 0, port = 0;
 	uint64_t regval;
@@ -494,14 +565,14 @@ int cnxk_dpi_init(struct octep_vfio_info *vfio_info)
 	void *mem;
 
 	CP_LIB_LOG(INFO, CNXK, "Initializing DPI ...\n");
-	container = vfio_info->container;
 
 	/* Open the group */
-	snprintf(filepath, sizeof(filepath), "%s%d", "/dev/vfio/", vfio_info->dpi_iommu);
+	snprintf(filepath, sizeof(filepath), "%s%d", "/dev/vfio/", dpi_dev.iommu);
 	group = open(filepath, O_RDWR);
 	if (group < 0) {
 		CP_LIB_LOG(ERR, CNXK,
-				"failed to open DPI VFIO group; err=%d\n", errno);
+			   "failed to open DPI VFIO group at %s; reason: %s\n",
+			   filepath, strerror(errno));
 		return -1;
 	}
 
@@ -520,7 +591,7 @@ int cnxk_dpi_init(struct octep_vfio_info *vfio_info)
 	}
 
 	/* Add the group to the container */
-	ret = ioctl(group, VFIO_GROUP_SET_CONTAINER, &container);
+	ret = ioctl(group, VFIO_GROUP_SET_CONTAINER, &vfio_container);
 	if (ret == -1) {
 		CP_LIB_LOG(ERR, CNXK,
 			   "Failed to add DPI VFIO group to the container; ret=%d\n", ret);
@@ -528,19 +599,19 @@ int cnxk_dpi_init(struct octep_vfio_info *vfio_info)
 	}
 
 	/* To be done only once; duplicate calls will fail */
-	ret = ioctl(container, VFIO_SET_IOMMU, VFIO_TYPE1_IOMMU);
+	ret = ioctl(vfio_container, VFIO_SET_IOMMU, VFIO_TYPE1_IOMMU);
 	if (ret == -1) {
 		CP_LIB_LOG(ERR, CNXK, "Failed to set IOMMU model; ret=%d\n", ret);
 		goto close_group;
 	}
 
 	/* Get a file descriptor for the device */
-	device = ioctl(group, VFIO_GROUP_GET_DEVICE_FD, vfio_info->dpi_dev);
+	device = ioctl(group, VFIO_GROUP_GET_DEVICE_FD, dpi_dev.dev_bdf);
 	if (device == -1) {
 		CP_LIB_LOG(ERR, CNXK, "Failed to get DPI device VFIO FD; ret=%d\n", device);
 		goto close_group;
 	}
-	vfio_info->dpi_device_fd = device;
+	dpi_dev.device_fd = device;
 
 	/* Test and setup the device */
 	ret = ioctl(device, VFIO_DEVICE_GET_INFO, &device_info);
@@ -565,9 +636,8 @@ int cnxk_dpi_init(struct octep_vfio_info *vfio_info)
 		}
 		CP_LIB_LOG(DEBUG, CNXK, "mapped DPI device region-%d; size=0x%llx.\n",
 			   reg.index, reg.size);
-		vfio_info->dpi_region_base[0] = mem;
-		vfio_info->dpi_region_offset[0] = reg.offset;
-		vfio_info->dpi_region_size[0] = reg.size;
+		dpi_dev.mapped_region[0] = mem;
+		dpi_dev.region[0] = reg;
 	}
 
 	for (eng = 0; eng < MAX_DPI_ENGINES; eng++) {
@@ -607,9 +677,107 @@ int cnxk_dpi_init(struct octep_vfio_info *vfio_info)
 	return 0;
 fail:
 	CP_LIB_LOG(ERR, CNXK, "DPI init failed !!\n");
+	close(dpi_dev.device_fd);
+	dpi_dev.device_fd = 0;
 
 close_group:
 	close(group);
 	return -1;
 }
 
+int cnxk_vfio_global_init(void)
+{
+	int ret;
+
+	/* create VFIO container */
+	if (cnxk_create_vfio_container())
+		return -ENODEV;
+
+	/* Initialize DPI */
+	if (cnxk_dpi_init()) {
+		ret = -ENODEV;
+		goto destroy_container;
+	}
+	return 0;
+
+destroy_container:
+	cnxk_destroy_vfio_container();
+	return ret;
+}
+
+void cnxk_vfio_global_uninit(void)
+{
+	cnxk_dpi_uninit();
+	cnxk_destroy_vfio_container();
+}
+
+static int get_pci_iommu_group(char *path)
+{
+	char buf[FILENAME_MAX];
+	int group;
+
+	memset(buf, 0, sizeof(buf));
+	if (readlink(path, buf, FILENAME_MAX) < 0) {
+		CP_LIB_LOG(ERR, CNXK,
+			   "failed to read link from path %s\n", path);
+		return -1;
+	}
+
+	group = atoi(strrchr(buf, '/') + 1);
+	return group;
+}
+
+int cnxk_vfio_parse_dpi_dev(const char *dev)
+{
+	char filepath[FILENAME_MAX];
+	struct stat sb;
+
+	snprintf(filepath, sizeof(filepath), "%s%s", "/sys/bus/pci/devices/", dev);
+	if (stat(filepath, &sb) || !S_ISDIR(sb.st_mode)) {
+		CP_LIB_LOG(ERR, LIB, "Invalid DPI device BDF %s\n", dev);
+		return -1;
+	}
+	strncpy(dpi_dev.dev_bdf, dev, sizeof(dpi_dev.dev_bdf) - 1);
+
+	/* get IOMMU group of the DPI device */
+	snprintf(filepath, sizeof(filepath), "%s%s/%s",
+		 "/sys/bus/pci/devices/", dev, "iommu_group");
+	dpi_dev.iommu = get_pci_iommu_group(filepath);
+	if (dpi_dev.iommu < 0) {
+		CP_LIB_LOG(ERR, LIB,
+				"Failed to find IOMMU group of DPI device at %s\n",
+				dev);
+		return -1;
+	}
+
+	CP_LIB_LOG(INFO, CNXK, "DPI: device = %s; IOMMU group = %d\n", dev, dpi_dev.iommu);
+	return 0;
+}
+
+int cnxk_vfio_parse_pem_dev(const char *dev)
+{
+	struct octep_pem_dev_info *pem_dev;
+	char filepath[FILENAME_MAX];
+	struct stat sb;
+
+	/* FIXME: extend the parsing for multiple PEMs and non-zero PEM if required */
+	pem_dev = &pem_devs[0];
+	snprintf(filepath, sizeof(filepath), "%s%s", "/sys/bus/pci/devices/", dev);
+	if (stat(filepath, &sb) || !S_ISDIR(sb.st_mode)) {
+		CP_LIB_LOG(ERR, LIB, "Invalid PEM device BDF %s\n", dev);
+		return -1;
+	}
+	strncpy(pem_dev->dev_bdf, dev, sizeof(pem_dev->dev_bdf) - 1);
+
+	/* get IOMMU group of the PEM device */
+	snprintf(filepath, sizeof(filepath), "%s%s/%s",
+		 "/sys/bus/pci/devices/", dev, "iommu_group");
+	pem_dev->iommu = get_pci_iommu_group(filepath);
+	if (pem_dev->iommu < 0) {
+		CP_LIB_LOG(ERR, LIB, "Failed to find IOMMU group of PEM device at %s\n", dev);
+		return -1;
+	}
+
+	CP_LIB_LOG(INFO, CNXK, "PEM: device = %s; IOMMU group = %d\n", dev, pem_dev->iommu);
+	return 0;
+}
