@@ -102,10 +102,10 @@ static inline void *map_reg(__attribute__((unused)) int pem_idx, unsigned long l
 
 static inline int unmap_reg(void* addr, off_t offset, size_t len)
 {
-#ifndef USE_PEM_AND_DPI_PF
-	return munmap((addr - offset), (len + offset));
-#else
+#if USE_PEM_AND_DPI_PF
 	return 0;
+#else
+	return munmap((addr - offset), (len + offset));
 #endif
 }
 
@@ -135,13 +135,13 @@ static int init_mbox(struct octep_cp_lib_cfg *cfg, struct cnxk_pem *pem,
 		     struct cnxk_pf *pf)
 {
 	struct octep_ctrl_mbox *mbox;
-#ifndef USE_PEM_AND_DPI_PF
+#if !USE_PEM_AND_DPI_PF
 	char memdev_name[32];
 #endif
 	int err;
 
 	mbox = &pf->mbox;
-#ifndef USE_PEM_AND_DPI_PF
+#if !USE_PEM_AND_DPI_PF
 	snprintf(memdev_name, 32, "/dev/pem%lld_ep_bar4_mem", pem->idx);
 	mbox->bar4_fd = open(memdev_name, O_RDWR | O_SYNC);
 	if(mbox->bar4_fd <= 0) {
@@ -160,7 +160,7 @@ static int init_mbox(struct octep_cp_lib_cfg *cfg, struct cnxk_pem *pem,
 	if (err) {
 		CP_LIB_LOG(INFO, CNXK, "pem[%d] pf[%d] mbox init failed.\n",
 			   pem->idx, pf->idx);
-#ifndef USE_PEM_AND_DPI_PF
+#if !USE_PEM_AND_DPI_PF
 		close(mbox->bar4_fd);
 #endif
 	}
@@ -234,10 +234,10 @@ static int init_pf(struct octep_cp_lib_cfg *cfg, struct cnxk_pem *pem,
 {
 	int err;
 
-#ifndef USE_PEM_AND_DPI_PF
+#if !USE_PEM_AND_DPI_PF
 	pf->bar4_addr = PEMX_BAR4_INDEX_ADDR + (pf->idx * MBOX_SZ);
 #else
-	pf->bar4_addr = (uint64_t)cfg->vfio.mbox_mem + (pf->idx * MBOX_SZ);
+	pf->bar4_addr = cnxk_pem_get_mbox_memory(pem->idx) + (pf->idx * MBOX_SZ);
 #endif
 	err = init_mbox(cfg, pem, pf);
 	if (err)
@@ -253,7 +253,7 @@ static int uninit_pf(struct cnxk_pem *pem, struct cnxk_pf *pf)
 {
 	if (pf->mbox.barmem) {
 		octep_ctrl_mbox_uninit(&pf->mbox);
-#ifndef USE_PEM_AND_DPI_PF
+#if !USE_PEM_AND_DPI_PF
 		close(pf->mbox.bar4_fd);
 #endif
 	}
@@ -348,7 +348,7 @@ static int uninit_pem(struct cnxk_pem *pem)
 	return 0;
 }
 
-#ifndef USE_PEM_AND_DPI_PF
+#if !USE_PEM_AND_DPI_PF
 static int find_pem_uiodev(char *name)
 {
 	struct dirent *files;
@@ -402,13 +402,17 @@ static int init_pem(struct octep_cp_lib_cfg *cfg, struct cnxk_pem *pem,
 {
 	struct octep_cp_pf_cfg *pf_cfg;
 	struct cnxk_pf *pf;
-#ifndef USE_PEM_AND_DPI_PF
+#if !USE_PEM_AND_DPI_PF
 	char uio_path[256];
 	int err, j, fd;
 	char uio_file[16];
 	int uio_num;
 #else
 	int err, j;
+
+	/* Initialize PEM and setup BAR4 */
+	if (cnxk_pem_init(dom_cfg->idx))
+		return -1;
 #endif
 
 	pem->idx = dom_cfg->idx;
@@ -416,7 +420,7 @@ static int init_pem(struct octep_cp_lib_cfg *cfg, struct cnxk_pem *pem,
 	if (err < 0)
 		return err;
 
-#ifndef USE_PEM_AND_DPI_PF
+#if !USE_PEM_AND_DPI_PF
 	snprintf(uio_file, sizeof(uio_file), "PEM%lld", pem->idx);
 	uio_num = find_pem_uiodev(uio_file);
 	if (uio_num < 0) {
@@ -469,21 +473,8 @@ int cnxk_init(struct octep_cp_lib_cfg *cfg)
 	CP_LIB_LOG(INFO, CNXK, "init\n");
 
 #if USE_PEM_AND_DPI_PF
-	/* create VFIO container */
-	if (cnxk_create_vfio_container(&cfg->vfio))
+	if (cnxk_vfio_global_init())
 		return -ENODEV;
-
-	/* Initialize DPI */
-	if (cnxk_dpi_init(&cfg->vfio)) {
-		err = -1;
-		goto free_container;
-	}
-
-	/* Initialize PEM and setup BAR4 */
-	if (cnxk_pem_init(&cfg->vfio)) {
-		err = -1;
-		goto dpi_uninit;
-	}
 #endif
 
 	/* Initialize pf interfaces */
@@ -510,10 +501,7 @@ init_fail:
 		if (pems[i].valid)
 			uninit_pem(&pems[i]);
 #if USE_PEM_AND_DPI_PF
-dpi_uninit:
-	/* FIXME: call dpi_uninit ? */
-free_container:
-	cnxk_destroy_vfio_container(&cfg->vfio);
+	cnxk_vfio_global_uninit();
 #endif
 
 	return err;
@@ -713,18 +701,25 @@ int cnxk_send_event(struct octep_cp_event_info *info)
 
 int cnxk_recv_event(struct octep_cp_event_info *info, int num)
 {
-#ifndef USE_PEM_AND_DPI_PF
-	int i, n_ev, data, n;
 	struct cnxk_pem *pem;
+	int i, n_ev;
+#if !USE_PEM_AND_DPI_PF
+	int data;
+#endif
 
 	for (i = 0, n_ev = 0; i < OCTEP_CP_DOM_MAX; i++) {
 		pem = &pems[i];
 		if (!pem->valid)
 			continue;
 
-		n = read(pem->uio_fd, &data, sizeof(int));
-		if (n <= 0)
+#if USE_PEM_AND_DPI_PF
+		if (cnxk_check_perst_intr(pem->idx))
 			continue;
+		cnxk_clear_perst_intr(pem->idx);
+#else
+		if (read(pem->uio_fd, &data, sizeof(int)) <= 0)
+			continue;
+#endif
 
 		info[n_ev].e = OCTEP_CP_EVENT_TYPE_PERST;
 		info[n_ev].u.perst.dom_idx = pem->idx;
@@ -732,19 +727,6 @@ int cnxk_recv_event(struct octep_cp_event_info *info, int num)
 			break;
 	}
 
-#else
-	int n_ev = 0;
-
-	/* FIXME: extend for all PEMs and multiple events */
-	if (!cnxk_assert_perst_intr(&lib_cfg->vfio)) {
-		/* Got PERST */
-		info[0].e = OCTEP_CP_EVENT_TYPE_PERST;
-		info[0].u.perst.dom_idx = 0;
-		n_ev = 1;
-		/* clear the perst */
-		cnxk_clear_perst_intr(&lib_cfg->vfio);
-	}
-#endif
 	return n_ev;
 }
 
@@ -759,7 +741,7 @@ int cnxk_uninit()
 			uninit_pem(&pems[i]);
 
 #if USE_PEM_AND_DPI_PF
-	cnxk_destroy_vfio_container(&user_cfg.vfio);
+	cnxk_vfio_global_uninit();
 #endif
 	return 0;
 }
