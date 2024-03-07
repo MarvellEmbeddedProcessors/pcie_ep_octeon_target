@@ -120,10 +120,10 @@ int octep_ctrl_mbox_init(struct octep_ctrl_mbox *mbox)
 	if (!mbox)
 		return -EINVAL;
 
-#ifndef USE_PEM_AND_DPI_PF
-	if (!mbox->bar4_fd || !mbox->barmem || !mbox->barmem_sz)
-#else
+#if USE_PEM_AND_DPI_PF
 	if (!mbox->barmem || !mbox->barmem_sz)
+#else
+	if (!mbox->bar4_fd || !mbox->barmem || !mbox->barmem_sz)
 #endif
 		return -EINVAL;
 
