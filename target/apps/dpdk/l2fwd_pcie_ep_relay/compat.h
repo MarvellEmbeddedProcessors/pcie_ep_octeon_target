@@ -248,20 +248,6 @@ int l2fwd_pcie_ep_get_pci_dev_addr(uint16_t port, struct rte_pci_addr *addr)
 
 	return 0;
 }
-#else
-static inline
-int l2fwd_pcie_ep_get_pci_dev_addr(uint16_t port, struct rte_pci_addr *addr)
-{
-	struct rte_eth_dev_info dev_info;
-	int err;
-
-	err = rte_eth_dev_info_get(port, &dev_info);
-	if (err < 0)
-		return err;
-
-	/* TODO rte_bus_(rte_dev_bus(dev_info.device)); */
-	return -ENOTSUP;
-}
 #endif
 
 
@@ -271,6 +257,7 @@ l2fwd_configure_pkt_len(struct rte_eth_conf *port_conf, struct rte_eth_dev_info 
 	port_conf->rxmode.mtu = dev_info->max_mtu;
 }
 
+#if RTE_VERSION_NUM(22, 11, 0, 0) > L2FWD_PCIE_EP_RTE_VERSION
 static inline
 unsigned int l2fwd_pcie_ep_find_port(const struct rte_pci_addr *dbdf)
 {
@@ -289,6 +276,26 @@ unsigned int l2fwd_pcie_ep_find_port(const struct rte_pci_addr *dbdf)
 
 	return RTE_MAX_ETHPORTS;
 }
+
+#else
+
+static inline
+unsigned int l2fwd_pcie_ep_find_port(const struct rte_pci_addr *dbdf)
+{
+	int err;
+
+	char name[64] = {0};
+	rte_pci_device_name(dbdf, name, sizeof(name));
+
+	uint16_t port_id = 0;
+	err = rte_eth_dev_get_port_by_name(name, &port_id);
+	if (err < 0)
+		return RTE_MAX_ETHPORTS;
+	else
+		return port_id;
+}
+
+#endif
 
 #endif /* L2FWD_PCIE_EP_RTE_VERSION */
 
