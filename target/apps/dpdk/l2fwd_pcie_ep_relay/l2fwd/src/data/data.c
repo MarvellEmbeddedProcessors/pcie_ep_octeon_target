@@ -447,6 +447,8 @@ static int configure_port(unsigned int port)
 	if (err < 0)
 		return err;
 
+    /* Update Hash with new RSS Key */
+	port_conf.rx_adv_conf.rss_conf.rss_key_len = dev_info.hash_key_size;
 	err = rte_eth_dev_configure(port, num_rx_queues, num_tx_queues, &port_conf);
 	if (err < 0) {
 		RTE_LOG(ERR, L2FWD_DATA,
@@ -470,10 +472,6 @@ static int configure_port(unsigned int port)
 			port, nb_rxd, nb_txd, strerror(-err));
 		return err;
 	}
-
-	/* Update Hash with new RSS Key */
-	port_conf.rx_adv_conf.rss_conf.rss_key_len = dev_info.hash_key_size;
-	rte_eth_dev_rss_hash_update(port, &port_conf.rx_adv_conf.rss_conf);
 
 	err = configure_port_queues(port, &dev_info, &port_conf);
 	if (err < 0)
