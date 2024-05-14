@@ -1029,6 +1029,9 @@ main(int argc, char **argv)
 		 *	rte_eth_devices[portid].data->dev_conf.link_speeds;
 		 */
 		l2fwd_configure_pkt_len(&local_port_conf, &dev_info);
+		/* Update Hash with new RSS Key */
+		local_port_conf.rx_adv_conf.rss_conf.rss_key_len =
+							dev_info.hash_key_size;
 
 		ret = rte_eth_dev_configure(portid, l2fwd_queues_per_port, l2fwd_queues_per_port,
 					    &local_port_conf);
@@ -1046,12 +1049,6 @@ main(int argc, char **argv)
 			rte_exit(EXIT_FAILURE,
 				 "Cannot adjust number of descriptors: err=%d, port=%u\n",
 				 ret, portid);
-
-		/* Update Hash with new RSS Key */
-		local_port_conf.rx_adv_conf.rss_conf.rss_key_len =
-							dev_info.hash_key_size;
-		rte_eth_dev_rss_hash_update(portid,
-					&local_port_conf.rx_adv_conf.rss_conf);
 
 		ret = rte_eth_macaddr_get(portid,
 					  &l2fwd_ports_eth_addr[portid]);
