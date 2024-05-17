@@ -343,6 +343,9 @@ static int uninit_pem(struct cnxk_pem *pem)
 		if (pem->pfs[j].valid)
 			uninit_pf(pem, &(pem->pfs[j]));
 	}
+#if USE_PEM_AND_DPI_PF
+	cnxk_pem_uninit(pem->idx);
+#endif
 	pem->valid = false;
 
 	return 0;
