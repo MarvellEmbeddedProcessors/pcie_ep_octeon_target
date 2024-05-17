@@ -406,7 +406,7 @@ uint64_t cnxk_pem_get_mbox_memory(int pem)
 	return (uint64_t)pem_devs[pem].mbox_mem;
 }
 
-static void cnxk_pem_uninit(int pem)
+void cnxk_pem_uninit(int pem)
 {
 	struct octep_pem_dev_info *pem_dev;
 	int i;
@@ -425,10 +425,12 @@ static void cnxk_pem_uninit(int pem)
 		munmap(pem_dev->mapped_region[i], pem_dev->region[i].size);
 	}
 
-	if (pem_dev->group_fd)
-		close(pem_dev->group_fd);
 	if (pem_dev->device_fd)
 		close(pem_dev->device_fd);
+	if (pem_dev->group_fd) {
+		close(pem_dev->group_fd);
+		pem_dev->group_fd = 0;
+	}
 }
 
 int cnxk_pem_init(int pem)
@@ -450,6 +452,7 @@ int cnxk_pem_init(int pem)
 				"failed to open PEM VFIO group at %s; err=%d\n", filepath, errno);
 		return -1;
 	}
+	pem_dev->group_fd = group;
 
 	/* Test the group is viable and available */
 	ret = ioctl(group, VFIO_GROUP_GET_STATUS, &group_status);
@@ -540,10 +543,12 @@ static void cnxk_dpi_uninit(void)
 {
 	int i;
 
-	if (dpi_dev.group_fd)
-		close(dpi_dev.group_fd);
 	if (dpi_dev.device_fd)
 		close(dpi_dev.device_fd);
+	if (dpi_dev.group_fd) {
+		close(dpi_dev.group_fd);
+		dpi_dev.group_fd = 0;
+	}
 
 	for (i = 0; i < VFIO_PCI_NUM_REGIONS; i++) {
 		if (!dpi_dev.mapped_region[i])
@@ -575,6 +580,7 @@ static int cnxk_dpi_init(void)
 			   filepath, strerror(errno));
 		return -1;
 	}
+	dpi_dev.group_fd = group;
 
 	ret = ioctl(group, VFIO_GROUP_GET_STATUS, &group_status);
 	if (ret == -1) {
