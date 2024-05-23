@@ -61,7 +61,8 @@ struct cnxk_pem {
 
 static struct cnxk_pem pems[OCTEP_CP_DOM_MAX] = { 0 };
 
-static inline void *devmem_map_reg(unsigned long long addr, size_t len, int prot, off_t *offset)
+static inline void *map_reg(unsigned long long addr, size_t len, int prot,
+			    off_t *offset)
 {
 	off_t pg_addr, pg_offset;
 	long pg_sz;
@@ -90,23 +91,9 @@ static inline void *devmem_map_reg(unsigned long long addr, size_t len, int prot
 	return (map + pg_offset);
 }
 
-static inline void *map_reg(__attribute__((unused)) int pem_idx, unsigned long long addr,
-			    size_t len, int prot, off_t *offset)
-{
-#if USE_PEM_AND_DPI_PF
-	return cnxk_pem_map_reg(pem_idx, addr);
-#else
-	return devmem_map_reg(addr, len, prot, offset);
-#endif
-}
-
 static inline int unmap_reg(void* addr, off_t offset, size_t len)
 {
-#if USE_PEM_AND_DPI_PF
-	return 0;
-#else
 	return munmap((addr - offset), (len + offset));
-#endif
 }
 
 static int open_oei_trig_csr(struct cnxk_pem *pem, struct cnxk_pf *pf)
@@ -116,8 +103,10 @@ static int open_oei_trig_csr(struct cnxk_pem *pem, struct cnxk_pf *pf)
 	 * PEM idx is > 1 ->  SDP1
 	 */
 	pf->oei_trig_addr =
-		map_reg(pem->idx, SDP0_EPFX_OEI_TRIG(((pem->idx > 1) ? 1L : 0), pf->idx), 8,
-			PROT_READ | PROT_WRITE, &pf->oei_trig_offset);
+		map_reg(SDP0_EPFX_OEI_TRIG(((pem->idx > 1) ? 1L : 0), pf->idx),
+				    8,
+				    PROT_READ | PROT_WRITE,
+				    &pf->oei_trig_offset);
 	if (!pf->oei_trig_addr) {
 		CP_LIB_LOG(INFO, CNXK,
 			   "Error mapping pem[%d] pf[%d] oei_trig_addr(%p)\n",
@@ -135,13 +124,10 @@ static int init_mbox(struct octep_cp_lib_cfg *cfg, struct cnxk_pem *pem,
 		     struct cnxk_pf *pf)
 {
 	struct octep_ctrl_mbox *mbox;
-#if !USE_PEM_AND_DPI_PF
 	char memdev_name[32];
-#endif
 	int err;
 
 	mbox = &pf->mbox;
-#if !USE_PEM_AND_DPI_PF
 	snprintf(memdev_name, 32, "/dev/pem%lld_ep_bar4_mem", pem->idx);
 	mbox->bar4_fd = open(memdev_name, O_RDWR | O_SYNC);
 	if(mbox->bar4_fd <= 0) {
@@ -150,7 +136,6 @@ static int init_mbox(struct octep_cp_lib_cfg *cfg, struct cnxk_pem *pem,
 			   pem->idx, pf->idx);
 		return -ENOMEM;
 	}
-#endif
 
 	mbox->min_version = cfg->min_version;
 	mbox->max_version = cfg->max_version;
@@ -160,9 +145,7 @@ static int init_mbox(struct octep_cp_lib_cfg *cfg, struct cnxk_pem *pem,
 	if (err) {
 		CP_LIB_LOG(INFO, CNXK, "pem[%d] pf[%d] mbox init failed.\n",
 			   pem->idx, pf->idx);
-#if !USE_PEM_AND_DPI_PF
 		close(mbox->bar4_fd);
-#endif
 	}
 	CP_LIB_LOG(INFO, CNXK, "pem[%d] pf[%d] control plane versions %x:%x\n",
 		   pem->idx, pf->idx, cfg->min_version, cfg->max_version);
@@ -190,9 +173,11 @@ static int set_fw_ready(struct cnxk_pem *pem, struct cnxk_pf *pf,
 		 * of 8 addresses.  It has not been tested for multiple of 4 addresses,
 		 * nor for addresses with bit 16 set.
 		 */
-		addr = map_reg(pem->idx,
-			       PEMX_BASE(pem->idx) + (0x8000 | CN10K_PCIEEP_VSECST_CTL), 8,
-			       PROT_READ | PROT_WRITE, &offset);
+		addr = map_reg((PEMX_BASE(pem->idx) +
+				(0x8000 | CN10K_PCIEEP_VSECST_CTL)),
+			       8,
+			       PROT_READ | PROT_WRITE,
+			       &offset);
 		if (!addr) {
 			CP_LIB_LOG(INFO, CNXK,
 				   "Error setting pem[%d] pf[%d] fw ready(%d).\n",
@@ -205,8 +190,10 @@ static int set_fw_ready(struct cnxk_pem *pem, struct cnxk_pf *pf,
 			   pem->idx, pf->idx,
 			   status, addr);
 	} else {
-		addr = map_reg(pem->idx, PEMX_BASE(pem->idx) + PEMX_CFG_WR_OFFSET, 8,
-			       PROT_READ | PROT_WRITE, &offset);
+		addr = map_reg((PEMX_BASE(pem->idx) + PEMX_CFG_WR_OFFSET),
+			       8,
+			       PROT_READ | PROT_WRITE,
+			       &offset);
 		if (!addr) {
 			CP_LIB_LOG(INFO, CNXK,
 				   "Error setting pem[%d] pf[%d] fw ready(%d).\n",
@@ -234,11 +221,7 @@ static int init_pf(struct octep_cp_lib_cfg *cfg, struct cnxk_pem *pem,
 {
 	int err;
 
-#if !USE_PEM_AND_DPI_PF
 	pf->bar4_addr = PEMX_BAR4_INDEX_ADDR + (pf->idx * MBOX_SZ);
-#else
-	pf->bar4_addr = cnxk_pem_get_mbox_memory(pem->idx) + (pf->idx * MBOX_SZ);
-#endif
 	err = init_mbox(cfg, pem, pf);
 	if (err)
 		return err;
@@ -253,9 +236,7 @@ static int uninit_pf(struct cnxk_pem *pem, struct cnxk_pf *pf)
 {
 	if (pf->mbox.barmem) {
 		octep_ctrl_mbox_uninit(&pf->mbox);
-#if !USE_PEM_AND_DPI_PF
 		close(pf->mbox.bar4_fd);
-#endif
 	}
 
 	if (pf->oei_trig_addr)
@@ -287,7 +268,10 @@ static int check_pem_status(struct cnxk_pem *pem)
 	uint64_t val;
 	void* addr;
 
-	addr = map_reg(pem->idx, PEMX_BASE(pem->idx) + PEMX_ON_OFFSET, 8, PROT_READ, &offset);
+	addr = map_reg((PEMX_BASE(pem->idx) + PEMX_ON_OFFSET),
+		       8,
+		       PROT_READ,
+		       &offset);
 	if (!addr) {
 		CP_LIB_LOG(ERR, CNXK, "Error mapping pem[%d] status\n",
 			   pem->idx);
@@ -312,8 +296,8 @@ static int check_pem_status(struct cnxk_pem *pem)
 		return ret;
 	}
 
-	addr = map_reg(pem->idx, PEMX_BASE(pem->idx) + PEMX_DIS_PORT_OFFSET, 8,
-		       PROT_READ | PROT_WRITE, &offset);
+	addr = map_reg((PEMX_BASE(pem->idx) + PEMX_DIS_PORT_OFFSET),
+		       8, PROT_READ | PROT_WRITE, &offset);
 	if (!addr) {
 		CP_LIB_LOG(ERR, CNXK, "Error mapping pem[%d] disable port register\n",
 			   pem->idx);
@@ -343,15 +327,11 @@ static int uninit_pem(struct cnxk_pem *pem)
 		if (pem->pfs[j].valid)
 			uninit_pf(pem, &(pem->pfs[j]));
 	}
-#if USE_PEM_AND_DPI_PF
-	cnxk_pem_uninit(pem->idx);
-#endif
 	pem->valid = false;
 
 	return 0;
 }
 
-#if !USE_PEM_AND_DPI_PF
 static int find_pem_uiodev(char *name)
 {
 	struct dirent *files;
@@ -398,32 +378,21 @@ static int find_pem_uiodev(char *name)
 	closedir(dir);
 	return -1;
 }
-#endif
 
 static int init_pem(struct octep_cp_lib_cfg *cfg, struct cnxk_pem *pem,
 		    struct octep_cp_dom_cfg *dom_cfg)
 {
 	struct octep_cp_pf_cfg *pf_cfg;
 	struct cnxk_pf *pf;
-#if !USE_PEM_AND_DPI_PF
 	char uio_path[256];
 	int err, j, fd;
 	char uio_file[16];
 	int uio_num;
-#else
-	int err, j;
-
-	/* Initialize PEM and setup BAR4 */
-	if (cnxk_pem_init(dom_cfg->idx))
-		return -1;
-#endif
-
 	pem->idx = dom_cfg->idx;
 	err = check_pem_status(pem);
 	if (err < 0)
 		return err;
 
-#if !USE_PEM_AND_DPI_PF
 	snprintf(uio_file, sizeof(uio_file), "PEM%lld", pem->idx);
 	uio_num = find_pem_uiodev(uio_file);
 	if (uio_num < 0) {
@@ -438,7 +407,6 @@ static int init_pem(struct octep_cp_lib_cfg *cfg, struct cnxk_pem *pem,
 		return -errno;
 
 	pem->uio_fd = fd;
-#endif
 	for (j = 0; j < dom_cfg->npfs; j++) {
 		pf_cfg = &dom_cfg->pfs[j];
 		if (pf_cfg->idx >= OCTEP_CP_PF_PER_DOM_MAX) {
@@ -475,11 +443,6 @@ int cnxk_init(struct octep_cp_lib_cfg *cfg)
 
 	CP_LIB_LOG(INFO, CNXK, "init\n");
 
-#if USE_PEM_AND_DPI_PF
-	if (cnxk_vfio_global_init())
-		return -ENODEV;
-#endif
-
 	/* Initialize pf interfaces */
 	memset(pems, 0, sizeof(pems[0]) * OCTEP_CP_DOM_MAX);
 	for (i = 0; i < cfg->ndoms; i++) {
@@ -503,9 +466,6 @@ init_fail:
 	for (i = 0; i < OCTEP_CP_DOM_MAX; i++)
 		if (pems[i].valid)
 			uninit_pem(&pems[i]);
-#if USE_PEM_AND_DPI_PF
-	cnxk_vfio_global_uninit();
-#endif
 
 	return err;
 }
@@ -704,25 +664,17 @@ int cnxk_send_event(struct octep_cp_event_info *info)
 
 int cnxk_recv_event(struct octep_cp_event_info *info, int num)
 {
+	int i, n_ev, data, n;
 	struct cnxk_pem *pem;
-	int i, n_ev;
-#if !USE_PEM_AND_DPI_PF
-	int data;
-#endif
 
 	for (i = 0, n_ev = 0; i < OCTEP_CP_DOM_MAX; i++) {
 		pem = &pems[i];
 		if (!pem->valid)
 			continue;
 
-#if USE_PEM_AND_DPI_PF
-		if (cnxk_check_perst_intr(pem->idx))
+		n = read(pem->uio_fd, &data, sizeof(int));
+		if (n <= 0)
 			continue;
-		cnxk_clear_perst_intr(pem->idx);
-#else
-		if (read(pem->uio_fd, &data, sizeof(int)) <= 0)
-			continue;
-#endif
 
 		info[n_ev].e = OCTEP_CP_EVENT_TYPE_PERST;
 		info[n_ev].u.perst.dom_idx = pem->idx;
@@ -743,9 +695,6 @@ int cnxk_uninit()
 		if (pems[i].valid)
 			uninit_pem(&pems[i]);
 
-#if USE_PEM_AND_DPI_PF
-	cnxk_vfio_global_uninit();
-#endif
 	return 0;
 }
 
