@@ -105,44 +105,6 @@ cp_eth_random_addr(uint8_t *addr)
 	addr[0] |= CP_ETHER_LOCAL_ADMIN_ADDR; /* set local assignment bit */
 }
 
-#if USE_PEM_AND_DPI_PF
-static __cp_always_inline uint32_t
-cp_read32_fd(uint64_t addr, int __attribute__ ((unused)) fd)
-{
-	return cp_read32((void *)addr);
-}
-
-static __cp_always_inline uint64_t
-cp_read64_fd(uint64_t addr, int  __attribute__ ((unused)) fd)
-{
-	return cp_read64((void *)addr);
-}
-
-static __cp_always_inline size_t
-cp_read_fd(void *buf, size_t count, uint64_t addr, int  __attribute__ ((unused)) fd)
-{
-	memcpy(buf, (void *)addr, count);
-	return count;
-}
-
-static __cp_always_inline void
-cp_write32_fd(uint32_t value, uint64_t addr, int  __attribute__ ((unused)) fd)
-{
-	return cp_write32(value, (void *)addr);
-}
-
-static __cp_always_inline void
-cp_write64_fd(uint64_t value, uint64_t addr, int  __attribute__ ((unused)) fd)
-{
-	return cp_write64(value, (void *)addr);
-}
-
-static __cp_always_inline void
-cp_write_fd(void *buf, size_t count, uint64_t addr, int  __attribute__ ((unused)) fd)
-{
-	memcpy((void *)addr, buf, count);
-}
-#else
 static __cp_always_inline uint32_t
 cp_read32_fd(uint64_t addr, int fd)
 {
@@ -193,6 +155,5 @@ cp_write_fd(void* buf, size_t count, uint64_t addr, int fd)
 	lseek(fd, addr, SEEK_SET);
 	write(fd, buf, count);
 }
-#endif
 
 #endif /* __CP_COMPAT_H__ */

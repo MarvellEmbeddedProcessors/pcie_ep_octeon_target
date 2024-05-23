@@ -4,8 +4,6 @@
 #ifndef __OCTEP_CP_LIB_H__
 #define __OCTEP_CP_LIB_H__
 
-#include <linux/vfio.h>
-
 #ifndef BIT_ULL
 #define BIT_ULL(nr) (1ULL << (nr))
 #endif
@@ -237,9 +235,6 @@ struct octep_cp_lib_info {
 	struct octep_cp_dom_info doms[OCTEP_CP_DOM_MAX];
 };
 
-/* Parse command line arguments for octep_cp library */
-int octep_cp_lib_parse_args(int argc, char **argv, struct octep_cp_lib_cfg *cfg);
-
 /* Initialize octep_cp library.
  *
  * Library will fill in information after initialization.
@@ -354,10 +349,5 @@ int octep_cp_lib_uninit_pem(int dom_idx);
  * return value: 0 on success, -errno on failure.
  */
 int octep_cp_lib_uninit();
-#if USE_PEM_AND_DPI_PF
-int cnxk_vfio_parse_dpi_dev(const char *dev);
-int cnxk_vfio_parse_pem_dev(const char *dev);
-uint64_t cnxk_pem_get_mbox_memory(int pem);
-#endif
 
 #endif /* __OCTEP_CP_LIB_H__ */

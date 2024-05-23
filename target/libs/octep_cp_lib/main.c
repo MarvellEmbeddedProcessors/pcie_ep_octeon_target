@@ -7,8 +7,6 @@
 #include <string.h>
 #include <stdint.h>
 #include <stdlib.h>
-#include <getopt.h>
-#include <sys/stat.h>
 
 #include "octep_cp_lib.h"
 #include "cp_log.h"
@@ -20,45 +18,6 @@ volatile enum cp_lib_state state = CP_LIB_STATE_INVALID;
 struct octep_cp_lib_cfg user_cfg = {0};
 /* soc operations */
 static struct cp_lib_soc_ops *sops = NULL;
-struct octep_cp_lib_cfg *lib_cfg;
-
-static const char short_opts[] = {};
-static const struct option long_opts[] = {
-#if USE_PEM_AND_DPI_PF
-	{"dpi_dev", 1, 0, 'd'},
-	{"pem_dev", 1, 0, 'p'},
-#endif
-	{NULL, 0, 0, 0}
-};
-
-/* Parse the command line arguments */
-__attribute__((visibility("default")))
-int octep_cp_lib_parse_args(int argc, char **argv, struct octep_cp_lib_cfg *cfg)
-{
-	int option_index, opt;
-	int ret = 0;
-
-	while ((opt = getopt_long(argc, argv, short_opts,
-				  long_opts, &option_index)) != EOF) {
-		switch (opt) {
-#if USE_PEM_AND_DPI_PF
-		case 'd': /* DPI device */
-			if (cnxk_vfio_parse_dpi_dev(optarg))
-				ret = -1;
-			break;
-		case 'p': /* PEM device */
-			if (cnxk_vfio_parse_pem_dev(optarg))
-				ret = -1;
-			break;
-#endif
-		default:
-			CP_LIB_LOG(ERR, CNXK, "Invalid option.\n");
-			ret = -1;
-			break;
-		}
-	}
-	return ret;
-}
 
 __attribute__((visibility("default")))
 int octep_cp_lib_init(struct octep_cp_lib_cfg *cfg)
@@ -66,7 +25,6 @@ int octep_cp_lib_init(struct octep_cp_lib_cfg *cfg)
 	int err;
 
 	CP_LIB_LOG(INFO, LIB, "init\n");
-	lib_cfg = cfg;
 	if (state >= CP_LIB_STATE_INIT)
 		return 0;
 
