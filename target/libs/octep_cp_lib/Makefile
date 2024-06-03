@@ -14,7 +14,7 @@ LD ?= $(CROSS_COMPILE)ld
 
 LIB = liboctep_cp
 
-LIB_CFLAGS = $(CFLAGS) -O3 -Werror -Wall -fPIC -g \
+LIB_CFLAGS = $(CFLAGS) -O3 -Werror -Wall -Wundef -fPIC -g \
 		-I$(CURDIR) \
 		-I$(CURDIR)/include \
 		-I$(CURDIR)/soc \
@@ -22,6 +22,10 @@ LIB_CFLAGS = $(CFLAGS) -O3 -Werror -Wall -fPIC -g \
 		-I$(CURDIR)/plugin \
 
 LIB_LDFLAGS = $(LDFLAGS) -shared -fvisibility=hidden
+
+ifeq (,$(findstring USE_PEM_AND_DPI_PF,$(CFLAGS)))
+	LIB_CFLAGS += -DUSE_PEM_AND_DPI_PF=0
+endif
 
 SRCS = main.c
 SRCS += soc/soc.c soc/cnxk.c
