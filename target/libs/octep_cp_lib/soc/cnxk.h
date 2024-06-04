@@ -107,4 +107,15 @@ int cnxk_uninit_pem(int dom_idx);
  */
 int cnxk_uninit();
 
+#if USE_PEM_AND_DPI_PF
+int cnxk_vfio_global_init(void);
+void cnxk_vfio_global_uninit(void);
+int cnxk_pem_init(int pem);
+void cnxk_pem_uninit(int pem);
+void *cnxk_pem_map_reg(int pem_idx, unsigned long long addr);
+int cnxk_check_perst_intr(int pem);
+int cnxk_clear_perst_intr(int pem);
+
+extern struct octep_cp_lib_cfg *lib_cfg;
+#endif
 #endif /* __CNXK_H__ */
