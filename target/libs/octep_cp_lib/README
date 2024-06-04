@@ -30,6 +30,18 @@ LIB_DIR is location of library source code
   make
 ```
 
+In environments where the marvell provided OOT PEM kernel driver (pcie-marvell-cnxk-ep.ko)
+is not available, the VFIO driver solution can be enabled in the library.
+
+Note: The VFIO-PCI driver solution is currently available only for cn106xx.
+
+To enable this solution, add USE_PEM_AND_DPI_PF=1 to CFLAGS to compile support for PEM and DPI PF vfio drivers in:
+```bash
+
+	export CFLAGS="$CFLAGS -DUSE_PEM_AND_DPI_PF=1"
+	make
+```
+
 Optional parameters for make are
 
 - PLAT=<aarch64(default)/x86_64>

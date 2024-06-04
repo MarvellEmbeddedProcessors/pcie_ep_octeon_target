@@ -96,6 +96,27 @@ Run the app as follows
   -m <1-n> Max control messages and events to be polled at one time (default: 6)
   htop can be used to check cpu usage by the app
 
+If the octep_cp_lib used, has been compiled to enable support for PEM and DPI PF vfio driver, then
+the following steps has to be followed to run the application.
+
+```bash
+
+  #Create hugepages
+  mkdir -p /dev/huge
+  mount -t hugetlbfs nodev /dev/huge
+  echo 12 > /sys/kernel/mm/hugepages/hugepages-524288kB/nr_hugepages
+
+  #Below shows the usual PEM PF device in lspci command
+  0001:00:10.0 System peripheral [0880]: Cavium, Inc. Device [177d:a06c]
+
+  #Below shows the usual DPI PF device in lspci command
+  0000:06:00.0 System peripheral [0880]: Cavium, Inc. Device [177d:a080]
+
+  #Run the application. Here is the example for cn106xx cards
+  ./octep_cp_agent /usr/bin/cn106xx.cfg -- --dpi_dev 0000:06:00.0 --pem_dev 0001:00:10.0
+
+```
+
 Editing config files {#section6}
 --------------------
 The config files provide various card specific information for the CP agent to parse, such as details about number of PEMs,
