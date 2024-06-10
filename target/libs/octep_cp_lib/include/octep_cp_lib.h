@@ -10,6 +10,10 @@
 #define BIT_ULL(nr) (1ULL << (nr))
 #endif
 
+#ifndef USE_PEM_AND_DPI_PF
+#define USE_PEM_AND_DPI_PF 0
+#endif
+
 #define OCTEP_CP_VERSION(a, b, c)		(((a & 0xff) << 16) + \
 						 ((b & 0xff) << 8) + \
 						  (c & 0xff))
