@@ -7,6 +7,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifndef USE_PEM_AND_DPI_PF
+#define USE_PEM_AND_DPI_PF 0
+#endif
+
 #define CP_ETHER_ADDR_LEN		6 /**< Length of Ethernet address. */
 #define CP_ETHER_GROUP_ADDR		0x01 /**< Mcast or bcast Eth. addr. */
 #define CP_ETHER_LOCAL_ADMIN_ADDR 	0x02 /**< Locally assigned Eth. addr. */
