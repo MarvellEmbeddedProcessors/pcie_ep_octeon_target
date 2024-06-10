@@ -23,10 +23,6 @@ LIB_CFLAGS = $(CFLAGS) -O3 -Werror -Wall -Wundef -fPIC -g \
 
 LIB_LDFLAGS = $(LDFLAGS) -shared -fvisibility=hidden
 
-ifeq (,$(findstring USE_PEM_AND_DPI_PF,$(CFLAGS)))
-	LIB_CFLAGS += -DUSE_PEM_AND_DPI_PF=0
-endif
-
 SRCS = main.c
 SRCS += soc/soc.c soc/cnxk.c
 SRCS += soc/octep_ctrl_mbox.c
