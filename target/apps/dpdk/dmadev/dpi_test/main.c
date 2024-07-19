@@ -166,7 +166,7 @@ static inline int dma_test_xfer_perf(void)
 	/* Alloc ptrs */
 	for (i = 0; i < burst_size; i++) {
 		for (j = 0; j < max_ptr; j++) {
-			lptr[i][j] = remote_addr;
+			lptr[i][j] = remote_addr + (i * max_ptr * data_size);
 			fptr[i][j] = (uint8_t *)rte_malloc("xfer_block", data_size, 128);
 			if (!fptr[i][j]) {
 				printf("Unable to allocate internal memory\n");
@@ -185,7 +185,7 @@ static inline int dma_test_xfer_perf(void)
 				buffer_fill(lptr[i][j], data_size, 0);
 				dst_ptr = rte_malloc_virt2iova(lptr[i][j]);
 			} else {
-				lptr[i][j] = lptr[i][j] + (j  * 64 * 1024);
+				lptr[i][j] = lptr[i][j] + (j  * data_size);
 				dst_ptr = src_ptr;
 			}
 
