@@ -17,24 +17,15 @@ permissions:
 jobs:
   ubuntu-cn10k-build:
     name: ubuntu-cn10k-arm64
-    runs-on: ubuntu-latest
-
-    strategy:
-      fail-fast: true
-      matrix:
-        include:
-          - arch: aarch64
-            distro: ubuntu22.04
-            compiler: gcc
-            library: static
+    runs-on: ubuntu-24.04-arm
 
     steps:
       - name: Checkout sources
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
       - name: Generate cache keys
         id: get_ref_keys
         run: |
-          echo 'ccache=ccache-${{ matrix.distro }}-${{ matrix.compiler }}-${{ matrix.arch }}-'$(date -u +%Y-w%W) >> $GITHUB_OUTPUT
+          echo 'ccache=ccache-'$(date -u +%Y-m%M) >> $GITHUB_OUTPUT
       - name: Retrieve ccache cache
         uses: actions/cache@v4
         with:
@@ -50,35 +41,25 @@ jobs:
           [ -s /tmp/tags ] && PKG_POSTFIX= || PKG_POSTFIX=-devel
           echo "PKG_VERSION_NAME=`cat VERSION`" >> "${PWD}/artifacts/env"
           echo "PKG_POSTFIX=${PKG_POSTFIX}" >> "${PWD}/artifacts/env"
-      - uses: uraimo/run-on-arch-action@v2.7.2
-        name: Build OCTEON-EP and generate package
+      - name: Build OCTEON-EP and generate package
         id: build
-        with:
-          arch: ${{ matrix.arch }}
-          distro: ${{ matrix.distro }}
-          githubToken: ${{ github.token }}
-          setup: |
+        run: |
             mkdir -p ~/.ccache
-          dockerRunArgs: |
-            --volume "${PWD}/artifacts:/artifacts"
-            --volume "${HOME}/.ccache:/root/.ccache"
-          shell: /bin/bash
-          install: |
-            apt-get update -q -y
-            apt-get install -y build-essential gcc meson ccache git doxygen apt-utils dialog
-            apt-get install -y ccache git software-properties-common wget libconfig-dev
-          run: |
-            source /artifacts/env
+            BASE_DIR=${PWD}
+            sudo apt-get update -q -y
+            sudo apt-get install -y build-essential gcc meson ccache git doxygen apt-utils dialog
+            sudo apt-get install -y ccache git software-properties-common wget libconfig-dev
+            source ${BASE_DIR}/artifacts/env
             git config --global --add safe.directory "${PWD}"
             DISTRO=ubuntu-`lsb_release -rs`
-            echo "DISTRO=${DISTRO}" >> /artifacts/env
+            echo "DISTRO=${DISTRO}" >> ${BASE_DIR}/artifacts/env
             export CC='ccache gcc'
             export AR='ar'
             export LD='ld'
             export CFLAGS="-DUSE_PEM_AND_DPI_PF=1"
             export INSTALL_PATH=$PWD/install/usr
             cd target/libs/octep_cp_lib
-            echo "cache_dir = /root/.ccache" > /root/.ccache/ccache.conf
+            echo "cache_dir = ~/.ccache" > ~/.ccache/ccache.conf
             ccache -p
             make install
             cd -
@@ -101,7 +82,7 @@ jobs:
             cd -
             mv "${PWD}/install" "${PWD}/oct-ep-target-cn10k${PKG_POSTFIX}_${PKG_VERSION_NAME}_arm64"
             dpkg --build "${PWD}/oct-ep-target-cn10k${PKG_POSTFIX}_${PKG_VERSION_NAME}_arm64"
-            cp "${PWD}/oct-ep-target-cn10k${PKG_POSTFIX}_${PKG_VERSION_NAME}_arm64.deb" /artifacts/.
+            cp "${PWD}/oct-ep-target-cn10k${PKG_POSTFIX}_${PKG_VERSION_NAME}_arm64.deb" ${BASE_DIR}/artifacts/.
       - name: Export version name
         id: artifacts
         run: |
@@ -113,7 +94,9 @@ jobs:
           echo $DISTRO
           echo "DISTRO=${DISTRO}" >> "$GITHUB_OUTPUT"
           [[ "$PKG_POSTFIX" == "-devel" ]] && TAG=devel || TAG=${PKG_VERSION_NAME}
+          [[ "$PKG_POSTFIX" == "-devel" ]] && IS_DEVEL="true" || IS_DEVEL="false"
           echo "TAG=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "IS_DEVEL=${IS_DEVEL}" >> "$GITHUB_OUTPUT"
       - name: Delete existing release
         if: ${{ github.event_name == 'push' }}
         env:
@@ -139,4 +122,6 @@ jobs:
             https://api.github.com/repos/marvellembeddedprocessors/packages/dispatches \
             -d '{"event_type":"dispatch-event", "client_payload": {"package" : "octeon-ep",
             "tag": "oct-ep-target-cn10k-${{ steps.artifacts.outputs.PKG_VERSION_NAME }}-${{ steps.artifacts.outputs.DISTRO }}-${{ steps.artifacts.outputs.TAG }}",
-            "has_dpdk" : "false", "distro" : "${{ steps.artifacts.outputs.DISTRO }}"}}'
+            "has_dpdk" : "false", "distro" : "${{ steps.artifacts.outputs.DISTRO }}",
+            "platform" : "cn10k",
+            "devel": "${{ steps.artifacts.outputs.IS_DEVEL }}"}}'
