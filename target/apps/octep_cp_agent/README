@@ -109,11 +109,8 @@ the following steps has to be followed to run the application.
   #Below shows the usual PEM PF device in lspci command
   0001:00:10.0 System peripheral [0880]: Cavium, Inc. Device [177d:a06c]
 
-  #Below shows the usual DPI PF device in lspci command
-  0000:06:00.0 System peripheral [0880]: Cavium, Inc. Device [177d:a080]
-
-  #Below shows the usual second SDP RVU PF device in lspci command, which maps the
-  # SDP misc and OEI registers in its BAR2
+  #Below shows the SDP RVU PF devices in lspci command
+  0002:18:00.0 Ethernet controller [0200]: Cavium, Inc. Device [177d:a0ef] (rev 51)
   0002:19:00.0 Ethernet controller [0200]: Cavium, Inc. Device [177d:a0ef] (rev 51)
 
   #Bind PEM PF and SDP RVU PF to vfio-pci driver
@@ -121,14 +118,9 @@ the following steps has to be followed to run the application.
   echo "177d a06c" > /sys/bus/pci/drivers/vfio-pci/new_id
   echo "177d a0ef" > /sys/bus/pci/drivers/vfio-pci/new_id
 
-  #If you want to initialize DPI in the cp agent, do the following as well
-  echo "177d a080" > /sys/bus/pci/drivers/vfio-pci/new_id
-
   echo "0001:00:10.0" > /sys/bus/pci/drivers/vfio-pci/bind
+  echo "0002:18:00.0" > /sys/bus/pci/drivers/vfio-pci/bind
   echo "0002:19:00.0" > /sys/bus/pci/drivers/vfio-pci/bind
-
-  #If you want to initialize DPI in the cp agent, do the following as well
-  echo "0000:06:00.0" > /sys/bus/pci/drivers/vfio-pci/bind
 
   #Take note to unbind the PEM/DPI PF from any other driver if it is already bound, before
   #trying to bind the device to vfio-pci. The current driver to which the PFs are bound can be checked by
@@ -141,10 +133,10 @@ the following steps has to be followed to run the application.
   echo "<PEM/DPI BDF>" > /sys/bus/pci/drivers/<driver>/unbind
 
   #Run the application. Here is the example for cn106xx cards, using sdp_rvu_pf and pem_dev as args
-  ./octep_cp_agent /usr/bin/cn106xx.cfg -- --sdp_rvu_pf 0002:19:00.0 --pem_dev 0001:00:10.0
+  ./octep_cp_agent /usr/bin/cn106xx.cfg -- --sdp_rvu_pf 0002:18:00.0,0002:19:00.0 --pem_dev 0001:00:10.0
 
-  #You can also pass the DPI PF argument to initialize DPI in the octep_cp_agent
-  ./octep_cp_agent /usr/bin/cn106xx.cfg -- --sdp_rvu_pf 0002:19:00.0 --pem_dev 0001:00:10.0 --dpi_dev 0000:06:00.0
+  #Note above that the first SDP RVU PF (0002:18:00.0) must be given as the first BDF in the comma separated
+  #list
 
 ```
 
