@@ -44,6 +44,8 @@
 #define OCTEP_CTRL_MBOX_F2HQ_CONS(m)	((OCTEP_CTRL_MBOX_F2HQ_INFO(m)) + 4)
 #define OCTEP_CTRL_MBOX_F2HQ_SZ(m)	((OCTEP_CTRL_MBOX_F2HQ_INFO(m)) + 8)
 
+#define OCTEP_BAR4_MBOX_INIT_VALUE	0xa5a5a5a5a5a5a5a5
+
 static const uint32_t mbox_hdr_sz = sizeof(union octep_ctrl_mbox_msg_hdr);
 
 static inline int is_host_ready(struct octep_ctrl_mbox *mbox)
@@ -54,8 +56,10 @@ static inline int is_host_ready(struct octep_ctrl_mbox *mbox)
 		mbox->host_version = cp_read64_fd(OCTEP_CTRL_MBOX_INFO_HOST_VERSION(mbox->barmem),
 						  mbox->bar4_fd);
 
-	if (!mbox->host_version)
+	if (mbox->host_version == OCTEP_BAR4_MBOX_INIT_VALUE || !mbox->host_version) {
+		mbox->host_version = 0;
 		return 0;
+	}
 
 	val = cp_read64_fd(OCTEP_CTRL_MBOX_INFO_HOST_STATUS(mbox->barmem),
 			   mbox->bar4_fd);
@@ -202,6 +206,14 @@ static int write_mbox_data(struct octep_ctrl_mbox_q *q, uint32_t *pi,
 	}
 
 	return 0;
+}
+
+bool octep_ctrl_mbox_host_ready(struct octep_ctrl_mbox *mbox)
+{
+	if (!mbox)
+		return false;
+
+	return !!(is_host_ready(mbox));
 }
 
 int octep_ctrl_mbox_send(struct octep_ctrl_mbox *mbox,
