@@ -4,6 +4,8 @@
 #ifndef __OCTEP_CTRL_MBOX_H__
 #define __OCTEP_CTRL_MBOX_H__
 
+#include <stdbool.h>
+
 /*              barmem structure
  * |===========================================|
  * |Info (16 + 120 + 120 = 256 bytes)          |
@@ -154,6 +156,14 @@ struct octep_ctrl_mbox {
  * return value: 0 on success, -errno on failure.
  */
 int octep_ctrl_mbox_init(struct octep_ctrl_mbox *mbox);
+
+/* Check if host is ready
+ *
+ * @param mbox: non-null pointer to struct octep_ctrl_mbox.
+ *
+ * return value: true if host is ready, false if not or mbox is NULL.
+ */
+bool octep_ctrl_mbox_host_ready(struct octep_ctrl_mbox *mbox);
 
 /* Send mbox message.
  *
