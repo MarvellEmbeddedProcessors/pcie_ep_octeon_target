@@ -25,6 +25,7 @@ struct octep_cp_lib_cfg *lib_cfg;
 static const char short_opts[] = {};
 static const struct option long_opts[] = {
 #if USE_PEM_AND_DPI_PF
+	{"dpi_dev", 1, 0, 'd'},
 	{"pem_dev", 1, 0, 'p'},
 	{"sdp_rvu_pf", 1, 0, 's'},
 #endif
@@ -42,6 +43,10 @@ int octep_cp_lib_parse_args(int argc, char **argv, struct octep_cp_lib_cfg *cfg)
 				  long_opts, &option_index)) != EOF) {
 		switch (opt) {
 #if USE_PEM_AND_DPI_PF
+		case 'd': /* DPI device */
+			if (cnxk_vfio_parse_dpi_dev(optarg))
+				ret = -1;
+			break;
 		case 'p': /* PEM device */
 			if (cnxk_vfio_parse_pem_dev(optarg))
 				ret = -1;
