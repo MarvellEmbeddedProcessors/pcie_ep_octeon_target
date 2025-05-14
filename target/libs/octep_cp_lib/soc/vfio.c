@@ -502,8 +502,7 @@ static int cnxk_sdp_rvu_pf_init(void)
 	struct vfio_group_status group_status = { .argsz = sizeof(group_status) };
 	struct vfio_device_info device_info = { .argsz = sizeof(device_info) };
 	struct vfio_region_info reg = { .argsz = sizeof(reg) };
-	int bar_idx[] = { 2, 4 }, pf = 0;
-	int group, device, ret;
+	int group, device, ret, pf = 0;
 	char filepath[FILENAME_MAX];
 	void *mem;
 
@@ -576,6 +575,7 @@ static int cnxk_sdp_rvu_pf_init(void)
 		}
 
 		for (int i = 0; i < 2; i++) {
+			const int bar_idx[] = { 2, 4 };
 			reg.index = bar_idx[i];
 			ret = ioctl(device, VFIO_DEVICE_GET_REGION_INFO, &reg);
 			if (ret == -1) {
