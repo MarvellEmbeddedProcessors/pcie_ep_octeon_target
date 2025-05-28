@@ -558,6 +558,9 @@ int cnxk_get_info(struct octep_cp_lib_info *info)
 			if (!pf->valid)
 				continue;
 
+			if (!octep_ctrl_mbox_host_ready(&pf->mbox))
+				continue;
+
 			pf_info = &dom_info->pfs[info_j++];
 			pf_info->idx = j;
 			pf_info->max_msg_sz = pf->mbox.h2fq.sz;
