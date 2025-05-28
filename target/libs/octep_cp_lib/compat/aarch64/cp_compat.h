@@ -122,10 +122,30 @@ cp_read64_fd(uint64_t addr, int  __attribute__ ((unused)) fd)
 	return cp_read64((void *)addr);
 }
 
+/* This is required for copy operations from device memory which do not work on
+ * addresses which are unaligned to 16B. This is because of specific
+ * optimizations to libc memcpy.
+ */
+static __cp_always_inline volatile void *
+mbox_memcpy(volatile void *d, const volatile void *s, size_t l)
+{
+	const volatile uint8_t *sb;
+	volatile uint8_t *db;
+	size_t i;
+
+	if (!d || !s)
+		return NULL;
+	db = (volatile uint8_t *)d;
+	sb = (const volatile uint8_t *)s;
+	for (i = 0; i < l; i++)
+		db[i] = sb[i];
+	return d;
+}
+
 static __cp_always_inline size_t
 cp_read_fd(void *buf, size_t count, uint64_t addr, int  __attribute__ ((unused)) fd)
 {
-	memcpy(buf, (void *)addr, count);
+	mbox_memcpy(buf, (void *)addr, count);
 	return count;
 }
 
@@ -144,7 +164,7 @@ cp_write64_fd(uint64_t value, uint64_t addr, int  __attribute__ ((unused)) fd)
 static __cp_always_inline void
 cp_write_fd(void *buf, size_t count, uint64_t addr, int  __attribute__ ((unused)) fd)
 {
-	memcpy((void *)addr, buf, count);
+	mbox_memcpy((void *)addr, buf, count);
 }
 #else
 static __cp_always_inline uint32_t
