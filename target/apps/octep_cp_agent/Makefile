@@ -22,7 +22,7 @@ LDFLAGS_STATIC = $(LDFLAGS) -l:liboctep_cp.a -lconfig -lrt
 
 STATIC_BIN = $(APP_NAME)
 SHARED_BIN = $(APP_NAME)-shared
-INSTALL_DIR = $(INSTALL_PATH)/bin
+INSTALL_DIR = $(INSTALL_PATH)
 
 all: static shared install
 .PHONY: shared static install clean
