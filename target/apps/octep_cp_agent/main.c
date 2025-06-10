@@ -173,16 +173,22 @@ static void print_usage(const char *prgname)
 	       "  -y <milliseconds>\n"
 	       "    yield cpu for msecs between subsequent calls to msg poll (default: 1ms)\n"
 	       "  -m <1-n>\n"
-	       "    Max control messages and events to be polled at one time (default: 6)\n",
+	       "    Max control messages and events to be polled at one time (default: 6)\n"
+	       "  -h\n"
+	       "    Displays this help\n",
 	       prgname);
 }
 
 static const char short_options[] =
 	"y:"  /* cpu yield */
 	"m:"  /* max msg count */
+	"h"   /* Help */
 	;
 
 static const struct option lgopts[] = {
+	{"yield", required_argument, 0, 'y'},
+	{"max_msg_count", required_argument, 0, 'm'},
+	{"help", no_argument, 0, 'h'},
 	{NULL, 0, 0, 0}
 };
 
@@ -213,6 +219,7 @@ int parse_args(int argc, char **argv)
 				max_num_msg = 6;
 
 			break;
+		case 'h':
 		default:
 			print_usage(prgname);
 			return -1;
@@ -242,7 +249,9 @@ int main(int argc, char *argv[])
 
 	/* skip program name and config file params */
 	optind = 2;
-	parse_args(argc, argv);
+	err = parse_args(argc, argv);
+	if (err < 0)
+		return err;
 
 	ev = calloc(max_num_msg, sizeof(struct octep_cp_event_info));
 	if (!ev)
