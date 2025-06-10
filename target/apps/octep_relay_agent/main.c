@@ -181,16 +181,20 @@ static void print_usage(const char *prgname)
 static const char short_options[] =
 	"y:"  /* cpu yield */
 	"m:"  /* max msg count */
+	"h"   /* Help */
 	;
 
 static const struct option lgopts[] = {
+	{"yield", required_argument, 0, 'y'},
+	{"max_msg_count", required_argument, 0, 'm'},
+	{"help", no_argument, 0, 'h'},
 	{NULL, 0, 0, 0}
 };
 
 /* Parse the argument given in the command line of the application */
 static int parse_args(int argc, char **argv)
 {
-	int opt, ret, cpu_yield_ms;
+	int opt, cpu_yield_ms;
 	char **argvopt;
 	int option_index;
 	char *prgname = argv[0];
@@ -215,6 +219,7 @@ static int parse_args(int argc, char **argv)
 				max_num_msg = 6;
 
 			break;
+		case 'h':
 		default:
 			print_usage(prgname);
 			return -1;
@@ -224,9 +229,7 @@ static int parse_args(int argc, char **argv)
 	if (optind >= 0)
 		argv[optind-1] = prgname;
 
-	ret = optind-1;
-	optind = 1; /* reset getopt lib */
-	return ret;
+	return optind - 1;
 }
 
 static void octep_plugin_relay_server_init(void)
@@ -290,7 +293,12 @@ int main(int argc, char *argv[])
 	if (err)
 		return err;
 
-	parse_args(argc, argv);
+	/* skip program name and config file params */
+	optind = 2;
+	err = parse_args(argc, argv);
+	if (err < 0)
+		return err;
+
 	ev = calloc(max_num_msg, sizeof(struct octep_cp_event_info));
 	if (!ev)
 		return -ENOMEM;
@@ -300,6 +308,10 @@ int main(int argc, char *argv[])
 	octep_plugin_relay_server_init();
 
 	timer_create(CLOCK_REALTIME, NULL, &tim);
+
+	printf("APP: cpu yield time (-y) = %lds %ldns\n", cpu_yield_tspec.tv_sec,
+							  cpu_yield_tspec.tv_nsec);
+	printf("APP: max control msgs/events per poll (-m) = %d\n", max_num_msg);
 
 	hb_interval = 0;
 	cp_lib_cfg.min_version = CP_VERSION_CURRENT;
