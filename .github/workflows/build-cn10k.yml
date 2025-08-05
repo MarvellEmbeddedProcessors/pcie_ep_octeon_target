@@ -57,16 +57,18 @@ jobs:
             export AR='ar'
             export LD='ld'
             export CFLAGS="-DUSE_PEM_AND_DPI_PF=1"
-            export INSTALL_PATH=$PWD/install/usr
+            export INSTALL_BASE="${PWD}/install/usr"
+            export INSTALL_PATH="${INSTALL_BASE}"
             cd target/libs/octep_cp_lib
             echo "cache_dir = ~/.ccache" > ~/.ccache/ccache.conf
             ccache -p
             make install
             cd -
+            export INSTALL_PATH="${INSTALL_BASE}/bin"
             cd target/apps/octep_cp_agent/
-            CFLAGS="-I$INSTALL_PATH/include" LDFLAGS="-L$INSTALL_PATH/lib" make install
-            cp cn103-102.cfg $INSTALL_PATH/bin/.
-            cp cn106xx.cfg $INSTALL_PATH/bin/.
+            CFLAGS="-I${INSTALL_BASE}/include" LDFLAGS="-L${INSTALL_BASE}/lib" make install
+            cp cn103-102.cfg $INSTALL_PATH/.
+            cp cn106xx.cfg $INSTALL_PATH/.
             cd -
             mkdir -p "${PWD}/install/debian"
             mkdir -p "${PWD}/install/DEBIAN"
