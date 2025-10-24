@@ -169,14 +169,21 @@ static int app_handle_perst(int dom_idx)
 /* display usage */
 static void print_usage(const char *prgname)
 {
-	printf("%s config_file\n"
+	char extra_args[50];
+	int rc;
+
+	rc = octep_cp_lib_extra_args(extra_args, 50);
+
+	printf("%s config_file <short_opts> %s %s\n"
 	       "  -y <milliseconds>\n"
 	       "    yield cpu for msecs between subsequent calls to msg poll (default: 1ms)\n"
 	       "  -m <1-n>\n"
 	       "    Max control messages and events to be polled at one time (default: 6)\n"
 	       "  -h\n"
 	       "    Displays this help\n",
-	       prgname);
+	       prgname,
+	       rc ? "--" : "",
+	       rc ? extra_args : "");
 }
 
 static const char short_options[] =
@@ -243,9 +250,17 @@ int main(int argc, char *argv[])
 		return -EINVAL;
 	}
 
+	if (!strcmp(argv[1], "-h") ||
+	    !strcmp(argv[1], "--help")) {
+		print_usage(argv[0]);
+		return 0;
+	}
+
 	err = app_config_init(argv[1]);
-	if (err)
+	if (err) {
+		print_usage(argv[0]);
 		return err;
+	}
 
 	/* skip program name and config file params */
 	optind = 2;
