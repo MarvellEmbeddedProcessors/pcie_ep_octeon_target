@@ -31,6 +31,20 @@ static const struct option long_opts[] = {
 	{NULL, 0, 0, 0}
 };
 
+/* Provide extra command line arguments */
+__attribute__((visibility("default")))
+int octep_cp_lib_extra_args(char *buffer, ssize_t size)
+{
+	if (buffer == NULL)
+		return -EINVAL;
+
+#if USE_PEM_AND_DPI_PF
+	strncpy(buffer, "--pem_dev <pci_id> --sdp_rvu_pf <pci_id>", size);
+	return sizeof("--pem_dev <pci_id> --sdp_rvu_pf <pci_id>");
+#endif
+	return 0;
+}
+
 /* Parse the command line arguments */
 __attribute__((visibility("default")))
 int octep_cp_lib_parse_args(int argc, char **argv, struct octep_cp_lib_cfg *cfg)

@@ -247,6 +247,9 @@ struct octep_cp_lib_info {
 	struct octep_cp_dom_info doms[OCTEP_CP_DOM_MAX];
 };
 
+/* Provide extra command line arguments */
+int octep_cp_lib_extra_args(char *buffer, ssize_t size);
+
 /* Parse command line arguments for octep_cp library */
 int octep_cp_lib_parse_args(int argc, char **argv, struct octep_cp_lib_cfg *cfg);
 
