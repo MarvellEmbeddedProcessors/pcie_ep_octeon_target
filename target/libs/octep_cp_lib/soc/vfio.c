@@ -25,6 +25,11 @@
 #define PEM_BAR0_START(pem_idx) (0x8E0000000000ULL | ((uint64_t)pem_idx << 36))
 #define PEM_BAR4_START(pem_idx) (0x8E0F00000000ULL | ((uint64_t)pem_idx << 36))
 #define SDP_RVU_PF_BAR2_START(pf_idx) (0x86E080000000 | ((uint64_t)pf_idx << 22))
+#define SDP_EPFX_RINFO(pem_idx)	(0x000209F0 | ((uint64_t)pem_idx << 25))
+#define SDP_EPFX_RINFO_RPVF_SHIFT	(32)
+#define SDP_EPFX_RINFO_RPVF_MASK	(0xFULL << SDP_EPFX_RINFO_RPVF_SHIFT)
+#define SDP_EPFX_RINFO_NVFS_SHIFT	(48)
+#define SDP_EPFX_RINFO_NVFS_MASK	(0x7FULL << SDP_EPFX_RINFO_NVFS_SHIFT)
 
 #define DPI_DMA_CONTROL_DMA_ENB(x)      (((x) & 0x3fULL) << 48)
 
@@ -149,6 +154,27 @@ shutdown_container:
 	return -1;
 }
 
+static inline uint64_t get_sdp_rvu_pf_bar2_start(int pem_idx)
+{
+	int nvfs, rpvf;
+	uint64_t val;
+
+	switch (pem_idx) {
+	case 0:
+		return SDP_RVU_PF_BAR2_START(0);
+	case 1:
+		/* SDP generic BAR0 registers are at BAR2 of RVU SDP PF0 */
+		val = cp_read64(sdp_dev[0].mapped_region[2] + SDP_EPFX_RINFO(0));
+		nvfs = (val & SDP_EPFX_RINFO_NVFS_MASK) >> SDP_EPFX_RINFO_NVFS_SHIFT;
+		rpvf = (val & SDP_EPFX_RINFO_RPVF_MASK) >> SDP_EPFX_RINFO_RPVF_SHIFT;
+
+		return (SDP_RVU_PF_BAR2_START(0) + ((nvfs * rpvf) >> 2) * 0x20000);
+	default:
+		CP_LIB_LOG(ERR, CNXK, "%s: invalid SDP RVU PF %d\n", __func__, pem_idx);
+		return UINT64_MAX;
+	}
+}
+
 void *cnxk_pem_map_reg(int pem_idx, unsigned long long addr)
 {
 	uint64_t bar_offset;
@@ -168,7 +194,7 @@ void *cnxk_pem_map_reg(int pem_idx, unsigned long long addr)
 		/* Use pf_idx = 1, since misc and other registers such as OEI are
 		 * present in the second SDP RVU PF
 		 */
-		bar_offset = addr - SDP_RVU_PF_BAR2_START(1);
+		bar_offset = addr - get_sdp_rvu_pf_bar2_start(1);
 	} else {
 		CP_LIB_LOG(ERR, CNXK, "pem_sdp_rvu_map_reg: Invalid addr 0x%llx\n", addr);
 		return NULL;
