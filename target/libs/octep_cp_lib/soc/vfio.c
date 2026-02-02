@@ -168,7 +168,7 @@ static inline uint64_t get_sdp_rvu_pf_bar2_start(int pem_idx)
 		nvfs = (val & SDP_EPFX_RINFO_NVFS_MASK) >> SDP_EPFX_RINFO_NVFS_SHIFT;
 		rpvf = (val & SDP_EPFX_RINFO_RPVF_MASK) >> SDP_EPFX_RINFO_RPVF_SHIFT;
 
-		return (SDP_RVU_PF_BAR2_START(0) + ((nvfs * rpvf) >> 2) * 0x20000);
+		return (SDP_RVU_PF_BAR2_START(0) + ((nvfs * rpvf) >> 1) * 0x20000);
 	default:
 		CP_LIB_LOG(ERR, CNXK, "%s: invalid SDP RVU PF %d\n", __func__, pem_idx);
 		return UINT64_MAX;
