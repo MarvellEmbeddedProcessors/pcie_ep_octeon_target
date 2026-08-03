@@ -393,11 +393,7 @@ void cnxk_pem_uninit(int pem)
 	int i;
 
 	pem_dev = &pem_devs[pem];
-
-	if (pem_dev->mbox_mem) {
-		munmap(pem_dev->mbox_mem, PEMX_BAR4_INDEX_SIZE);
-		pem_dev->mbox_mem = NULL;
-	}
+	pem_dev->mbox_mem = NULL;
 
 	for (i = 0; i < VFIO_PCI_NUM_REGIONS; i++) {
 		if (!pem_dev->mapped_region[i])
